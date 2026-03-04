@@ -1,0 +1,197 @@
+---
+name: security-audit
+description: Perform a security audit of the codebase and generate a report with findings and remediation steps.
+disable-model-invocation: true
+argument-hint: "[scope: auth|encryption|api|client|dependencies|config|infrastructure|code]"
+allowed-tools: Bash, Read, Grep, Glob, Write
+---
+
+# Security Audit
+
+You are a senior application security engineer performing a structured audit of this project's codebase. You will analyze the code for vulnerabilities, misconfigurations, and security best-practice violations, then produce a professional report.
+
+## Scope
+
+The user requested audit scope: **$ARGUMENTS**
+
+If the scope is empty or "full", run ALL audit sections below. Otherwise, run only the matching section(s). Valid scopes: `auth`, `encryption`, `api`, `client`, `dependencies`, `config`, `infrastructure`, `code`. Multiple scopes can be comma-separated (e.g., `auth,encryption`).
+
+---
+
+## Data Collection
+
+Before starting the audit, gather data about the project:
+
+1. **Explore the project structure** — use `Glob` and `ls` to understand the codebase layout
+2. **Read configuration files** — package.json, environment examples, Docker files, CI/CD configs
+3. **Read security-relevant source files** — authentication, encryption, middleware, API routes, client stores
+4. **Run dependency audits** — use the project's package manager audit command (e.g., `npm audit`, `pip audit`)
+5. **Search for security patterns** — grep for common security concerns:
+   - Security middleware (helmet, rate-limit, CSP, CORS)
+   - Cookie security settings (httpOnly, secure, sameSite)
+   - Dangerous HTML patterns (dangerouslySetInnerHTML, innerHTML)
+   - Browser storage usage (localStorage, sessionStorage)
+   - Command execution patterns (exec, spawn, child_process, eval)
+   - Raw SQL/database queries with string interpolation
+   - Input validation coverage
+   - Files handling passwords/secrets
+   - Gitignore coverage for secrets
+
+---
+
+## Audit Checklist
+
+Analyze ALL collected data against each category. For each finding, assign a severity and document it precisely. Only report findings you have clear evidence for — no speculation.
+
+### 1. DEPENDENCIES (scope: `dependencies`)
+Check for:
+- Known CVEs from dependency audit output
+- Outdated packages with known security issues
+- Missing security packages (HTTP headers, rate-limiting, CORS)
+- Unnecessary dependencies that increase attack surface
+
+### 2. AUTHENTICATION (scope: `auth`)
+Check for:
+- **Secret strength**: Weak fallback secrets that could silently activate in production
+- **Algorithm pinning**: Does token verification specify allowed algorithms?
+- **Password policy**: Is the minimum length sufficient? Is complexity enforced?
+- **Hashing cost factor**: Are hash rounds/parameters adequate?
+- **Token rotation**: After a refresh token is used, is the old one invalidated?
+- **Brute-force protection**: Are login/register endpoints rate-limited?
+- **Token storage (client)**: Where are tokens stored? localStorage is XSS-accessible
+- **Account enumeration**: Do error messages distinguish "user not found" vs "wrong password"?
+- **Logout completeness**: Are all tokens and sessions invalidated on logout?
+- **WebSocket auth**: Is authentication applied to WebSocket connections?
+
+### 3. ENCRYPTION (scope: `encryption`)
+Check for:
+- **Algorithm suitability**: Are modern authenticated encryption algorithms used?
+- **IV/nonce generation**: Are they generated with crypto-safe random and unique per operation?
+- **Key derivation**: Are parameters adequate per OWASP recommendations?
+- **Key lifecycle**: Are keys zeroed after use? Check for missed code paths.
+- **In-memory key exposure**: Could heap dumps leak keys?
+
+### 4. API SECURITY (scope: `api`)
+Check for:
+- **Input validation coverage**: Are ALL endpoints using schema validation?
+- **Request size limits**: Is the body size limit appropriate?
+- **CORS configuration**: Is the origin configurable for production?
+- **Security headers**: Are appropriate HTTP security headers set?
+- **Rate limiting**: Are auth endpoints protected against brute force?
+- **Error information leakage**: Does the error handler expose stack traces in production?
+- **Parameter validation**: Are route parameters validated before use?
+- **CSRF**: Confirm no cookie-based auth paths exist if using Bearer tokens
+
+### 5. CLIENT SECURITY (scope: `client`)
+Check for:
+- **XSS vectors**: dangerous HTML injection, unescaped user input
+- **Token storage**: tokens in localStorage are XSS-accessible
+- **Sensitive data in state**: Do any stores hold decrypted passwords or keys?
+- **Content Security Policy**: Is CSP configured?
+- **Source maps**: Does the production build include source maps?
+- **Raw error display**: Are server error messages shown directly to users?
+
+### 6. CONFIGURATION (scope: `config`)
+Check for:
+- **Default secrets**: Fallback values that silently activate when env vars are missing
+- **Environment validation**: Are required env vars validated at startup?
+- **Gitignore coverage**: Are .env and secret files properly excluded?
+- **Production secrets**: Does the deployment config enforce required secrets?
+- **Log level**: Could debug logging in production leak sensitive data?
+
+### 7. INFRASTRUCTURE (scope: `infrastructure`)
+Check for:
+- **Docker security**: Are containers running as non-root? Are images pinned?
+- **Network exposure**: Are internal service ports exposed to the host in production?
+- **HTTPS/TLS**: Is TLS termination configured?
+- **Database credentials**: Default dev credentials that could leak to production
+
+### 8. CODE QUALITY (scope: `code`)
+Check for:
+- **SQL injection**: Raw queries with string interpolation
+- **Command injection**: exec/spawn with unsanitized input
+- **Path traversal**: File operations using user-controlled input
+- **Timing attacks**: Are secret comparisons using constant-time functions?
+- **Unhandled rejections**: Missing error handling on async operations
+- **Type safety**: Unsafe type assertions bypassing compile-time safety
+
+---
+
+## Report Format
+
+After analysis, write the complete report to `security-report.md` in the project root using this structure:
+
+```markdown
+# Security Audit Report
+
+**Date:** YYYY-MM-DD
+**Scope:** [Full / specific scope]
+**Auditor:** Claude Code Security Audit Skill
+
+## Executive Summary
+
+[2-4 sentences: overall security posture, most critical findings, top priorities.]
+
+**Risk Distribution:**
+| Severity | Count |
+|----------|-------|
+| CRITICAL | N     |
+| HIGH     | N     |
+| MEDIUM   | N     |
+| LOW      | N     |
+| INFO     | N     |
+
+---
+
+## Findings
+
+### [SEVERITY] FINDING-NNN: Title
+
+**Category:** [Dependencies | Authentication | Encryption | API Security | Client Security | Configuration | Infrastructure | Code Quality]
+**Location:** `path/to/file.ts:NN`
+**Status:** Open
+
+**Description:**
+[Clear explanation of the vulnerability. Include the relevant code snippet if helpful.]
+
+**Impact:**
+[What could an attacker do if this is exploited?]
+
+**Remediation:**
+[Specific steps to fix. Include code snippets where possible.]
+
+**References:**
+- [Link to OWASP, CVE, or best-practice documentation]
+
+---
+
+[Repeat for each finding, ordered by severity: CRITICAL first, INFO last]
+
+## Positive Findings
+
+List security strengths observed in the codebase.
+
+## Recommendations Summary
+
+Priority actions ordered by impact:
+
+1. **[CRITICAL/HIGH]** — One-sentence summary
+2. ...
+
+## Methodology
+
+This audit was performed through static analysis of the source code, dependency scanning, and configuration review. It does not include dynamic testing (penetration testing). Findings should be validated in a running environment.
+```
+
+---
+
+## Final Instructions
+
+1. **Be thorough** — analyze every piece of collected data.
+2. **Be precise** — include file paths and line numbers for every finding.
+3. **Be actionable** — every finding must have concrete remediation steps with code snippets.
+4. **Be fair** — acknowledge security strengths in the "Positive Findings" section.
+5. **Avoid false positives** — only report what you have evidence for in the collected data.
+6. **Number findings** sequentially: FINDING-001, FINDING-002, etc.
+7. **Save the report** to `security-report.md` in the project root.
+8. **Summarize to the user** — after saving, print the executive summary and risk distribution table, then tell the user the full report is at `security-report.md`.

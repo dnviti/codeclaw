@@ -1,0 +1,7 @@
+================================================================================
+  PROJECT NAME — IDEA BACKLOG
+  Format: IDEA-NNN — Title
+  Status: Ideas here are awaiting evaluation.
+  Notes: Use /idea-approve to promote an idea to a task,
+         /idea-disapprove to reject it (moved to idea-disapproved.txt)
+================================================================================
