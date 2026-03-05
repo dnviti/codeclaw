@@ -10,6 +10,18 @@ argument-hint: "[project purpose or stack]"
 
 You are a project initialization assistant. Your job is to guide the user through setting up a new project from scratch — from understanding their needs to scaffolding the project and configuring the entire skills ecosystem so that `/app-start`, `/app-stop`, and `/app-restart` work out of the box.
 
+## CRITICAL: User Interaction Rules
+
+This skill requires multiple user decisions. At each `AskUserQuestion` call, you MUST:
+
+1. **STOP completely** after calling `AskUserQuestion` — do NOT generate any further text or tool calls in the same turn
+2. **WAIT for the user's actual response** before proceeding to the next step
+3. **Never assume an answer** — if the response is empty or unclear, ask again with the same options
+4. **Never batch multiple questions** — ask ONE question at a time and wait for each answer
+5. **Only use the exact options specified** in each step — do not invent additional options or rephrase them
+
+There are exactly 4-5 decision points in this skill (Steps 1, 2, 3, 4, and 5). Each one requires a full stop and wait.
+
 ## Current Directory State
 
 ### Existing files:
@@ -29,13 +41,23 @@ The user invoked with: **$ARGUMENTS**
 
 ### Step 1: Understand the Project Purpose
 
-If `$ARGUMENTS` already provides a clear project description, use it as context. Otherwise, use `AskUserQuestion` to gather:
-
-1. **Purpose and domain** — What is the project for? (e.g., e-commerce platform, CLI tool, REST API, portfolio site, mobile app, data pipeline)
-2. **Target audience** — Who will use it? (developers, end-users, internal team)
+Analyze `$ARGUMENTS` to determine the project's purpose. You need to understand these aspects:
+1. **Purpose and domain** — What is the project for?
+2. **Target audience** — Who will use it?
 3. **Expected scale** — Prototype, small production, or large-scale?
-4. **Deployment target** — Where will it run? (Vercel, AWS, self-hosted, Docker, static hosting, desktop, mobile)
-5. **Any specific requirements** — Real-time features, multi-tenancy, offline support, etc.
+4. **Deployment target** — Where will it run?
+5. **Any specific requirements** — Real-time, multi-tenancy, offline, etc.
+
+**If `$ARGUMENTS` provides enough context** (e.g., "React e-commerce app" or "Python CLI tool for data processing"), infer reasonable defaults for all 5 aspects and proceed directly to Step 2. Do NOT ask the user to restate what they already told you.
+
+**If `$ARGUMENTS` is empty or too vague to determine even the project type**, you MUST STOP and use `AskUserQuestion` with these options:
+
+- **"Web application (frontend + backend)"**
+- **"API / backend service"**
+- **"CLI tool / script"**
+- **"Other (I will describe it)"**
+
+STOP HERE after calling `AskUserQuestion`. Do NOT proceed to Step 2 until you have a clear understanding of the project type.
 
 ### Step 2: Suggest the Implementation Approach
 
@@ -53,10 +75,13 @@ Based on the user's answers, recommend a tech stack. Present it clearly:
 **Rationale:** [2-3 sentences explaining why this stack fits the user's needs]
 ```
 
-Use `AskUserQuestion` to let the user:
-- Accept the recommendation
-- Choose a different stack (let them specify)
-- Provide more details to refine the recommendation
+Present the recommended stack to the user, then STOP and use `AskUserQuestion` with these exact options:
+
+- **"Looks good, use this stack"** — proceed to Step 3
+- **"I want a different stack (I will specify)"** — wait for user to describe their preferred stack, then re-present
+- **"Cancel"** — abort the initialization
+
+STOP HERE after calling `AskUserQuestion`. Do NOT proceed to Step 3 until the user confirms the stack.
 
 ### Step 3: Research Scaffolding Options
 
@@ -67,24 +92,30 @@ Use `WebSearch` to find the best scaffolding tools and templates for the chosen 
 
 Use `WebFetch` on the most promising results to extract the actual scaffolding commands and options.
 
-Present **2-3 options** to the user via `AskUserQuestion`:
+Present your findings to the user as a numbered list:
+1. **Official CLI / tool** — The framework's own scaffolding (e.g., `create-next-app`, `cargo init`). Show the exact command, pros and cons.
+2. **Community template** — A popular starter with extras. Show the exact command, pros and cons.
+3. **Manual setup** — For full control over every dependency.
 
-1. **Official CLI / tool** — The framework's own scaffolding tool (e.g., `create-next-app`, `cargo init`, `django-admin startproject`, `go mod init`)
-   - Pros and cons
-   - Exact command
+Then STOP and use `AskUserQuestion` with these exact options:
 
-2. **Community template** — A popular community starter with extras (auth, testing, CI)
-   - Pros and cons
-   - Exact command
+- **"Option 1: Official CLI"** — use the official scaffolding tool
+- **"Option 2: Community template"** — use the community template
+- **"Option 3: Manual setup"** — set up manually
+- **"I have my own (I will provide the command)"** — wait for user input
 
-3. **Custom / manual setup** — For full control over every dependency
-
-4. **User's own** — Let the user provide their own scaffolding command or template URL
+STOP HERE after calling `AskUserQuestion`. Do NOT proceed to Step 4 until the user chooses a scaffolding approach.
 
 ### Step 4: Execute Scaffolding
 
 **Before scaffolding:**
-- Check the current directory state. If the directory is **not empty**, warn the user and ask how to proceed (scaffold in a subdirectory, clean first, or abort).
+- Check the current directory state. If the directory is **not empty**, STOP and use `AskUserQuestion` with these options:
+  - **"Scaffold here anyway"** — proceed in current directory
+  - **"Scaffold in a subdirectory (I will name it)"** — wait for user to provide a directory name
+  - **"Abort"** — cancel the initialization
+
+  STOP HERE after calling `AskUserQuestion` if the directory is not empty. Do NOT proceed until the user responds.
+
 - Prefer **non-interactive flags** when available (e.g., `npx create-next-app@latest . --typescript --yes`, `cargo init --name myapp`).
 
 **Execute** the chosen scaffolding command via `Bash`.
@@ -95,9 +126,14 @@ Present **2-3 options** to the user via `AskUserQuestion`:
 
 ### Step 5: Initialize Git Repository
 
-Use `AskUserQuestion` to ask the user if they want to initialize a git repository for this project.
+STOP and use `AskUserQuestion` with these exact options:
 
-**If yes:**
+- **"Yes, initialize git"** — proceed with git init, .gitignore, and branch setup
+- **"No, skip git"** — skip this step entirely
+
+STOP HERE after calling `AskUserQuestion`. Do NOT proceed until the user responds.
+
+**If the user chose "Yes, initialize git":**
 
 1. **Get the `.gitignore`:**
    - Use `WebSearch` to find the official `.gitignore` template for the chosen stack/framework (e.g., search for `"gitignore [language/framework] github"` — GitHub maintains templates at `github/gitignore`).
@@ -127,7 +163,7 @@ Use `AskUserQuestion` to ask the user if they want to initialize a git repositor
    > - Branches: `main` (initial commit), `develop` (current, default working branch)
    > - `.gitignore` configured for [stack]"
 
-**If the user declines git initialization:**
+**If the user chose "No, skip git":**
 - Skip this step entirely. Do not initialize git.
 - If the scaffolding tool already initialized a git repo, inform the user that the scaffold created one and ask if they want to keep it or remove it.
 
