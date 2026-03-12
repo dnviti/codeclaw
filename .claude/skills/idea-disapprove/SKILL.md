@@ -1,23 +1,42 @@
 ---
 name: idea-disapprove
-description: Disapprove an idea by moving it from ideas.txt to idea-disapproved.txt with a rejection reason.
+description: Disapprove an idea by moving it from ideas.txt to idea-disapproved.txt (local mode) or closing the GitHub Issue with a rejection reason (GitHub-only mode).
 disable-model-invocation: true
-allowed-tools: Bash, Read, Grep, Glob, Edit, Write
 argument-hint: "[IDEA-NNN]"
 ---
 
 # Disapprove an Idea
 
-You are the idea triage assistant for this project. Your job is to move rejected ideas from `ideas.txt` to the `idea-disapproved.txt` archive, recording the reason for disapproval.
+You are the idea triage assistant for this project. Your job is to reject ideas, recording the reason for disapproval.
 
 Always respond and work in English.
 
+## Mode Detection
+
+Determine the operating mode first:
+
+```bash
+GH_ENABLED="$(jq -r '.enabled // false' .claude/github-issues.json 2>/dev/null)"
+GH_SYNC="$(jq -r '.sync // false' .claude/github-issues.json 2>/dev/null)"
+GH_REPO="$(jq -r '.repo' .claude/github-issues.json 2>/dev/null)"
+```
+
+- **GitHub-only mode** (`GH_ENABLED=true` AND `GH_SYNC != true`): Close the GitHub Issue with rejection reason. No local file operations.
+- **Dual sync mode** (`GH_ENABLED=true` AND `GH_SYNC=true`): Move idea in local files, then close GitHub Issue.
+- **Local only mode** (`GH_ENABLED=false` or config missing): Move idea from `ideas.txt` to `idea-disapproved.txt`.
+
 ## Current State
 
-### Ideas available for disapproval:
+### GitHub-only mode — ideas available:
+
+```bash
+gh issue list --repo "$GH_REPO" --label "idea" --state open --json number,title --jq '.[] | "#\(.number) \(.title)"' 2>/dev/null
+```
+
+### Local/Dual mode — ideas available for disapproval:
 !`python3 scripts/task_manager.py list-ideas --file ideas --format summary`
 
-### Already disapproved ideas:
+### Local/Dual mode — already disapproved ideas:
 !`python3 scripts/task_manager.py list-ideas --file disapproved --format summary`
 
 ## Arguments
@@ -28,13 +47,22 @@ The user wants to disapprove: **$ARGUMENTS**
 
 ### Step 1: Select the Idea
 
-- **If an IDEA-NNN code was provided**: Find that idea in `ideas.txt`. If not found, inform the user and list available ideas.
-- **If no argument was provided**: List all ideas from `ideas.txt` with their codes, titles, and categories. Use `AskUserQuestion` to ask the user which idea to disapprove.
+**In GitHub-only mode:**
+- If an IDEA-NNN code was provided: `gh issue list --repo "$GH_REPO" --search "[IDEA-NNN] in:title" --label idea --state open --json number,title,body`
+- If no argument: list all open ideas from GitHub and use `AskUserQuestion` to ask which to disapprove.
 
-If `ideas.txt` has no ideas, inform the user: "No ideas available for disapproval."
+**In local/dual mode:**
+- If an IDEA-NNN code was provided: Find that idea in `ideas.txt`. If not found, inform the user and list available ideas.
+- If no argument: List all ideas from `ideas.txt` and use `AskUserQuestion`.
+
+If no ideas are available, inform the user: "No ideas available for disapproval."
 
 ### Step 2: Show the Full Idea
 
+**In GitHub-only mode:**
+- Read the issue body: `gh issue view $ISSUE_NUM --repo "$GH_REPO" --json title,body`
+
+**In local/dual mode:**
 Get the full parsed idea data:
 ```bash
 python3 scripts/task_manager.py parse IDEA-NNN
@@ -66,29 +94,40 @@ Options:
 - **"Yes, disapprove it"** — proceed
 - **"Cancel"** — abort
 
-### Step 5: Move the Idea
+### Step 5: Execute the Disapproval
 
-**5a.** The `parse` output from Step 2 contains the `raw` field with the full block text.
+**In GitHub-only mode:**
 
-**5b. Add the disapproval field** to the block. Insert a `REJECTION REASON:` line after the `MOTIVATION:` section:
-
+Close the GitHub Issue with the rejection reason:
+```bash
+IDEA_ISSUE=$(gh issue list --repo "$GH_REPO" --search "[IDEA-NNN] in:title" --label idea --state open --json number --jq '.[0].number' 2>/dev/null)
+gh issue close "$IDEA_ISSUE" --repo "$GH_REPO" --reason "not planned" --comment "Idea disapproved. Reason: $REASON" 2>/dev/null || true
 ```
-  REJECTION REASON:
-  [Reason] (YYYY-MM-DD)
-```
 
-**5c. Append the modified block to `idea-disapproved.txt`:**
-Use `Edit` to append the block (with `REJECTION REASON:` added) at the end of `idea-disapproved.txt`.
+**In dual sync mode:**
 
-**5d. Remove the idea from `ideas.txt`:**
-Run: `python3 scripts/task_manager.py remove IDEA-NNN --file ideas.txt`
-This cleanly removes the block and handles whitespace cleanup automatically.
+1. The `parse` output from Step 2 contains the `raw` field with the full block text.
+2. **Add the rejection field** to the block. Insert a `REJECTION REASON:` line after the `MOTIVATION:` section:
+   ```
+     REJECTION REASON:
+     [Reason] (YYYY-MM-DD)
+   ```
+3. **Append the modified block to `idea-disapproved.txt`:**
+   Use `Edit` to append the block (with `REJECTION REASON:` added) at the end of `idea-disapproved.txt`.
+4. **Remove the idea from `ideas.txt`:**
+   Run: `python3 scripts/task_manager.py remove IDEA-NNN --file ideas.txt`
+   This cleanly removes the block and handles whitespace cleanup automatically.
+5. **Close the GitHub Issue** (same as GitHub-only mode above). If `gh` command fails, warn but do NOT fail — the local operations are already complete.
+
+**In local only mode:**
+
+Same as dual sync steps 1-4, but skip the GitHub Issue close.
 
 ### Step 6: Confirm and Report
 
-After successfully moving the idea, report:
+After successfully disapproving the idea, report:
 
-> "Idea **IDEA-NNN — Title** has been disapproved and moved to `idea-disapproved.txt`.
+> "Idea **IDEA-NNN — Title** has been disapproved.
 >
 > - **Reason:** [reason]
 > - **Date:** YYYY-MM-DD
@@ -98,8 +137,8 @@ After successfully moving the idea, report:
 ## Important Rules
 
 1. **NEVER modify task files** (`to-do.txt`, `progressing.txt`, `done.txt`).
-2. **NEVER delete ideas permanently** — always archive to `idea-disapproved.txt`.
-3. **NEVER skip user confirmation** — always confirm before moving.
+2. **NEVER delete ideas permanently** — in local/dual mode, always archive to `idea-disapproved.txt`. In GitHub-only mode, the closed issue serves as the archive.
+3. **NEVER skip user confirmation** — always confirm before disapproving.
 4. **English content** — the `REJECTION REASON:` field and its content must be in English.
-5. **Preserve formatting** — maintain the idea block's indentation, dash count (78), and field order when moving.
+5. **Preserve formatting** — maintain the idea block's indentation, dash count (78), and field order when moving (local/dual mode).
 6. **Clean removal** — after removing an idea from `ideas.txt`, ensure no orphaned separator lines or excessive blank lines remain.

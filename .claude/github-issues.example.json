@@ -1,0 +1,21 @@
+{
+  "enabled": false,
+  "sync": false,
+  "repo": "owner/repo",
+  "labels": {
+    "source": "claude-code",
+    "task": "task",
+    "idea": "idea",
+    "priority": {
+      "HIGH": "priority:high",
+      "MEDIUM": "priority:medium",
+      "LOW": "priority:low"
+    },
+    "status": {
+      "todo": "status:todo",
+      "in-progress": "status:in-progress",
+      "done": "status:done"
+    },
+    "sections": {}
+  }
+}

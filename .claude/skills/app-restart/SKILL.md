@@ -2,7 +2,6 @@
 name: app-restart
 description: Restart the project's development environment. Stops existing processes, then starts fresh with setup and dev server, with error monitoring.
 disable-model-invocation: true
-allowed-tools: Bash
 ---
 
 # Restart the Application

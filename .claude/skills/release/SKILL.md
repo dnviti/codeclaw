@@ -2,8 +2,7 @@
 name: release
 description: Manage semantic versioning, changelog generation, and git tagging.
 disable-model-invocation: true
-allowed-tools: Bash, Read, Grep, Glob, Edit, Write, AskUserQuestion
-argument-hint: "[major|minor|patch] or empty for auto-detection"
+argument-hint: "[major|minor|patch|stable] or empty for auto-detection"
 ---
 
 # Release a New Version
@@ -24,7 +23,7 @@ Always respond and work in English.
 !`git branch --show-current`
 
 ### Working tree status:
-!`git status --porcelain | head -5; count=$(git status --porcelain | wc -l); [ "$count" -gt 5 ] && echo "... and $((count - 5)) more files"`
+!`git status --porcelain | head -5; count=$(git status --porcelain | wc -l); [ "$count" -gt 5 ] && echo "... and $((count - 5)) more files" || true`
 
 ### Commits since last tag:
 !`TAG=$(git tag -l '[TAG_PREFIX]*' --sort=-v:refname | head -1); if [ -n "$TAG" ]; then git log "$TAG"..HEAD --oneline --no-merges | head -20; else git log --oneline --no-merges | head -20; fi`
@@ -72,6 +71,8 @@ From the "Current State" section:
 Store:
 - `LAST_TAG` — the most recent `[TAG_PREFIX]*` tag (or empty if none)
 - `CURRENT_VERSION` — the version string (e.g., `1.0.0`)
+- `IS_BETA` — `true` if `CURRENT_VERSION` ends with `-beta`, `false` otherwise
+- `BASE_VERSION` — `CURRENT_VERSION` with the `-beta` suffix stripped (e.g., `2.0.0-beta` → `2.0.0`). Equals `CURRENT_VERSION` when `IS_BETA` is `false`
 
 ### Step 3: Collect Changes Since Last Release
 
@@ -95,7 +96,10 @@ Also check for `BREAKING CHANGE:` in commit bodies:
 git log <LAST_TAG>..HEAD --no-merges --format="%B" | grep -c "BREAKING CHANGE"
 ```
 
-**Cross-reference with done.txt:** For any task codes found in commits, read `done.txt` and extract the task title for richer changelog entries.
+**Cross-reference task titles:** For any task codes found in commits, look up the task title for richer changelog entries.
+
+- **In GitHub-only mode** (`GH_ENABLED=true` AND `GH_SYNC != true` — check `.claude/github-issues.json`): Use `gh issue list --repo "$GH_REPO" --search "[$CODE] in:title" --label task --json title --jq '.[0].title'` to find task titles.
+- **In local/dual mode**: Read `done.txt` and extract the task title.
 
 **If zero meaningful changes are found** (only `chore: update` type commits with no features or fixes):
 
@@ -109,6 +113,30 @@ STOP HERE after calling `AskUserQuestion`. Do NOT proceed until the user respond
 
 ### Step 4: Suggest Version Bump
 
+#### 4a: Beta promotion check
+
+**If `$ARGUMENTS` is `stable` or `promote`:**
+
+If `IS_BETA` is `false`, warn the user: "No beta version to promote — current version is `CURRENT_VERSION`." and stop.
+
+If `IS_BETA` is `true`, set `NEW_VERSION = BASE_VERSION` and skip to Step 4c.
+
+**If `IS_BETA` is `true` (and `$ARGUMENTS` is NOT `stable`/`promote`):**
+
+The current version is a beta. Present to the user:
+
+> Current version is **CURRENT_VERSION** (beta release).
+
+Use `AskUserQuestion` with these options:
+- **"Promote to stable vBASE_VERSION"** — finalize the beta as a stable release
+- **"Cancel"** — stop here
+
+STOP HERE after calling `AskUserQuestion`. Do NOT proceed until the user responds.
+
+If promoting: set `NEW_VERSION = BASE_VERSION` and skip to Step 4c.
+
+#### 4b: Determine bump type
+
 Classify detected changes to determine the bump type:
 
 | Change type | Bump | Trigger |
@@ -121,17 +149,30 @@ Classify detected changes to determine the bump type:
 
 **If `$ARGUMENTS` contains `major`, `minor`, or `patch`:** use that override instead of auto-detection.
 
-Calculate the new version by incrementing `CURRENT_VERSION`:
+Calculate the new version by incrementing `BASE_VERSION`:
 - **major**: `X.0.0` (reset minor and patch)
 - **minor**: `M.X.0` (reset patch)
 - **patch**: `M.N.X`
 
+**Major bumps always start as beta.** If the bump type is `major`, append `-beta` to the version:
+- `X.0.0` becomes `X.0.0-beta`
+
+#### 4c: Confirm version
+
 Present to the user:
 
+If the version ends with `-beta`:
+> **Version bump:** `CURRENT_VERSION` → `NEW_VERSION` (major beta — N new features, M fixes detected)
+> Major releases go through a beta phase first. Run `/release stable` to promote later.
+
+If promoting from beta:
+> **Promoting:** `CURRENT_VERSION` → `NEW_VERSION` (beta → stable)
+
+Otherwise:
 > **Version bump:** `CURRENT_VERSION` → `NEW_VERSION` (`TYPE` — N new features, M fixes detected)
 
 Use `AskUserQuestion` with these options:
-- **"Use vX.Y.Z"** — proceed with the suggested version
+- **"Use vNEW_VERSION"** — proceed with the suggested version
 - **"I want a different version"** — wait for the user to specify
 - **"Cancel release"** — stop here
 
@@ -223,16 +264,15 @@ Present a summary of all changes:
 > - [CHANGELOG_FILE] updated with N entries across M categories
 > - Version bumped in N manifest files
 > - Will commit as: `chore(release): [TAG_PREFIX]X.Y.Z`
-> - Will create annotated tag: `[TAG_PREFIX]X.Y.Z`
 
 Use `AskUserQuestion` with these options:
-- **"Commit and tag"** — proceed to Step 10
+- **"Commit"** — proceed to Step 10
 - **"Show me the diff first"** — run `git diff` and present it, then ask again
 - **"Cancel release"** — revert all changes with `git checkout -- .` and stop
 
 STOP HERE after calling `AskUserQuestion`. Do NOT proceed until the user responds.
 
-### Step 10: Commit and Tag
+### Step 10: Commit
 
 Stage and commit the version bump:
 
@@ -241,25 +281,306 @@ git add [PACKAGE_JSON_PATHS] [CHANGELOG_FILE]
 git commit -m "chore(release): [TAG_PREFIX]X.Y.Z"
 ```
 
-Create an annotated git tag:
+### Step 11: Publish
+
+After the commit, ask the user whether to publish and tag automatically.
+
+Use `AskUserQuestion` with these options:
+- **"Publish and tag automatically"** — proceed to Step 11a
+- **"Stop here, I'll do it manually"** — show manual instructions (see below) and stop
+
+STOP HERE after calling `AskUserQuestion`. Do NOT proceed until the user responds.
+
+**If the user chooses "Stop here"**, show the appropriate manual instructions and stop:
+
+**If the release is a beta** (version ends with `-beta`):
+
+> **Beta release [TAG_PREFIX]X.Y.Z-beta committed.**
+>
+> **Manual steps:**
+> 1. Run `/git-publish` to push `[RELEASE_BRANCH]` and create a PR to `main`.
+> 2. After the PR merges, tag the release on `main`:
+>    ```
+>    git fetch origin main
+>    git tag -a [TAG_PREFIX]X.Y.Z-beta origin/main -m "Release [TAG_PREFIX]X.Y.Z-beta"
+>    git push origin [TAG_PREFIX]X.Y.Z-beta
+>    ```
+> 3. To promote to stable later, run `/release stable`.
+
+**If the release is a promotion from beta:**
+
+> **Release [TAG_PREFIX]X.Y.Z promoted from beta.**
+>
+> **Manual steps:**
+> 1. Run `/git-publish` to push `[RELEASE_BRANCH]` and create a PR to `main`.
+> 2. After the PR merges, tag the stable release on `main`:
+>    ```
+>    git fetch origin main
+>    git tag -a [TAG_PREFIX]X.Y.Z origin/main -m "Release [TAG_PREFIX]X.Y.Z"
+>    git push origin [TAG_PREFIX]X.Y.Z
+>    ```
+
+**Otherwise (minor/patch release):**
+
+> **Release [TAG_PREFIX]X.Y.Z committed.**
+>
+> **Manual steps:**
+> 1. Run `/git-publish` to push `[RELEASE_BRANCH]` and create a PR to `main`.
+> 2. After the PR merges, tag the release on `main`:
+>    ```
+>    git fetch origin main
+>    git tag -a [TAG_PREFIX]X.Y.Z origin/main -m "Release [TAG_PREFIX]X.Y.Z"
+>    git push origin [TAG_PREFIX]X.Y.Z
+>    ```
+
+**If the user chooses "Publish and tag automatically"**, proceed to Step 11a.
+
+### Step 11a: Push develop
+
+Push the release commit and any tags to origin:
 
 ```bash
-git tag -a [TAG_PREFIX]X.Y.Z -m "Release [TAG_PREFIX]X.Y.Z"
+git push origin [RELEASE_BRANCH] --tags
 ```
 
-### Step 11: Report
+If this fails, show the error to the user, provide manual instructions, and stop automation.
 
-Present the release summary:
+### Step 11b: Create or reuse Pull Request
 
-> **Release [TAG_PREFIX]X.Y.Z completed successfully:**
+Check whether an open PR from `[RELEASE_BRANCH]` into `main` already exists:
+
+```bash
+gh pr list --base main --head [RELEASE_BRANCH] --state open --json number,url --jq '.[0]'
+```
+
+- If a PR already exists, reuse it. Store its URL.
+- If no PR exists, create one.
+
+**Check if GitHub Issues integration is enabled:**
+
+```bash
+GH_ENABLED="$(jq -r '.enabled // false' .claude/github-issues.json 2>/dev/null)"
+```
+
+**If `GH_ENABLED` is `true`:**
+
+1. Collect task codes from commits between main and develop:
+   ```bash
+   TASK_CODES=$(git log main..[RELEASE_BRANCH] --oneline --no-merges | grep -oE '[A-Z][A-Z0-9]+-[0-9]{3}' | sort -u)
+   ```
+
+2. For each task code, find the corresponding GitHub issue number:
+   ```bash
+   GH_REPO="$(jq -r '.repo' .claude/github-issues.json)"
+   # For each code in TASK_CODES:
+   ISSUE_NUM=$(gh issue list --repo "$GH_REPO" --search "[$CODE] in:title" --label task --json number --jq '.[0].number' 2>/dev/null)
+   ```
+
+3. Build the PR body with issue references:
+   ```
+   ## Changes
+   [commit summaries from git log main..[RELEASE_BRANCH] --oneline --no-merges]
+
+   ## Related Issues
+   Refs #N1 ([PREFIX-NNN])
+   Refs #N2 ([PREFIX-NNN])
+
+   ---
+   *Generated by Claude Code via `/release`*
+   ```
+
+4. Create the PR:
+   ```bash
+   gh pr create --base main --head [RELEASE_BRANCH] \
+     --title "Release [TAG_PREFIX]X.Y.Z" \
+     --body "$PR_BODY"
+   ```
+
+**If `GH_ENABLED` is `false` or the file is missing**, use the simple body:
+
+```bash
+gh pr create --base main --head [RELEASE_BRANCH] \
+  --title "Release [TAG_PREFIX]X.Y.Z" \
+  --body "Merge [RELEASE_BRANCH] into main for release [TAG_PREFIX]X.Y.Z"
+```
+
+Store the returned PR URL.
+
+If PR creation fails, show the error and provide manual instructions. Stop automation.
+
+### Step 11c: Enable auto-merge
+
+```bash
+gh pr merge <PR_URL> --auto --merge
+```
+
+If this fails with an error about auto-merge not being enabled on the repository, warn the user:
+
+> "Auto-merge is not enabled for this repository.
+> Enable it at **Settings → General → Allow auto-merge**, or merge manually.
+> I will still poll for the PR to be merged."
+
+Continue to Step 11d regardless — the user may merge manually while we poll.
+
+### Step 11d: Wait for PR merge
+
+Poll the PR status every 15 seconds for up to 10 minutes using a single bash command:
+
+```bash
+TIMEOUT=600
+INTERVAL=15
+ELAPSED=0
+while [ "$ELAPSED" -lt "$TIMEOUT" ]; do
+  STATE=$(gh pr view <PR_URL> --json state --jq '.state')
+  if [ "$STATE" = "MERGED" ]; then
+    echo "PR_MERGED"
+    exit 0
+  fi
+  if [ "$STATE" = "CLOSED" ]; then
+    echo "PR_CLOSED"
+    exit 1
+  fi
+  sleep $INTERVAL
+  ELAPSED=$((ELAPSED + INTERVAL))
+done
+echo "TIMEOUT"
+exit 2
+```
+
+Run this command with a 600000ms timeout.
+
+**If the output is `PR_MERGED`:** Proceed to Step 11e.
+
+**If the output is `PR_CLOSED`:**
+
+> "The PR was closed without merging. Release commit exists on `[RELEASE_BRANCH]` but was not published to `main`."
+
+Stop automation here.
+
+**If the output is `TIMEOUT`:**
+
+> "The PR has not merged yet — CI may still be running.
+> Once it merges, tag the release manually:
+> ```
+> git fetch origin main
+> git tag -a [TAG_PREFIX]X.Y.Z origin/main -m "Release [TAG_PREFIX]X.Y.Z"
+> git push origin [TAG_PREFIX]X.Y.Z
+> ```"
+
+Stop automation here.
+
+### Step 11e: Tag release on main
+
+After the PR has merged, create and push the release tag:
+
+First check if the tag already exists:
+
+```bash
+git tag -l [TAG_PREFIX]X.Y.Z
+```
+
+If the tag already exists, warn: "Tag `[TAG_PREFIX]X.Y.Z` already exists, skipping tag creation." and proceed to Step 11.5.
+
+Otherwise:
+
+```bash
+git fetch origin main
+git tag -a [TAG_PREFIX]X.Y.Z origin/main -m "Release [TAG_PREFIX]X.Y.Z"
+git push origin [TAG_PREFIX]X.Y.Z
+```
+
+If tagging or pushing fails, show the error and provide the manual commands. Still proceed to Step 11.5 if the tag exists remotely.
+
+### Step 11.5: Create GitHub Release (if enabled)
+
+Check if GitHub Issues integration is enabled:
+
+```bash
+GH_ENABLED="$(jq -r '.enabled // false' .claude/github-issues.json 2>/dev/null)"
+```
+
+**If `GH_ENABLED` is `true`:**
+
+Create a GitHub Release with enriched notes:
+
+1. Collect task codes from the changelog entries generated in Step 5.
+
+2. For each task code, find the GitHub issue number:
+   ```bash
+   GH_REPO="$(jq -r '.repo' .claude/github-issues.json)"
+   ISSUE_NUM=$(gh issue list --repo "$GH_REPO" --search "[$CODE] in:title" --label task --json number --jq '.[0].number' 2>/dev/null)
+   ```
+
+3. Build enriched release notes:
+   ```
+   ## What's Changed
+   [changelog content from Step 5 — Added, Changed, Fixed, Removed, Security sections]
+
+   ## Issues Resolved
+   - #N1 — [PREFIX-NNN] Task title
+   - #N2 — [PREFIX-NNN] Task title
+
+   **Full Changelog:** [GITHUB_REPO_URL]/compare/[TAG_PREFIX]PREVIOUS...[TAG_PREFIX]X.Y.Z
+   ```
+
+4. Create or edit the GitHub Release:
+   ```bash
+   gh release create "[TAG_PREFIX]X.Y.Z" --repo "$GH_REPO" \
+     --title "[TAG_PREFIX]X.Y.Z" \
+     --notes "$RELEASE_NOTES" \
+     --target main
+   ```
+   For beta releases, add `--prerelease`:
+   ```bash
+   gh release create "[TAG_PREFIX]X.Y.Z-beta" --repo "$GH_REPO" \
+     --title "[TAG_PREFIX]X.Y.Z-beta" \
+     --notes "$RELEASE_NOTES" \
+     --target main \
+     --prerelease
+   ```
+
+5. If the release already exists (created by CI), update it instead:
+   ```bash
+   gh release edit "[TAG_PREFIX]X.Y.Z" --repo "$GH_REPO" --notes "$RELEASE_NOTES" 2>/dev/null || true
+   ```
+
+**If `GH_ENABLED` is `false` or the file is missing:** Skip this step.
+
+**If `gh` fails:** Warn but do not fail — the local release commit and tag are already done.
+
+### Step 12: Final Report
+
+Present a summary of the completed release:
+
+**If the release is a beta** (version ends with `-beta`):
+
+> **Beta release [TAG_PREFIX]X.Y.Z-beta published successfully:**
+> - Version bumped in all manifest files
+> - [CHANGELOG_FILE] updated with N entries
+> - Commit: `chore(release): [TAG_PREFIX]X.Y.Z-beta`
+> - PR: <PR_URL> (merged)
+> - Tag: `[TAG_PREFIX]X.Y.Z-beta` pushed to `main`
+> - GitHub Release: created as **prerelease** (if enabled)
+> - To promote to stable later, run `/release stable`
+
+**If the release is a promotion from beta:**
+
+> **Release [TAG_PREFIX]X.Y.Z promoted and published:**
+> - Version bumped from `X.Y.Z-beta` to `X.Y.Z` in all manifest files
+> - [CHANGELOG_FILE] updated
+> - PR: <PR_URL> (merged)
+> - Tag: `[TAG_PREFIX]X.Y.Z` pushed to `main`
+> - GitHub Release: created (if enabled)
+
+**Otherwise (minor/patch release):**
+
+> **Release [TAG_PREFIX]X.Y.Z published successfully:**
 > - Version bumped in all manifest files
 > - [CHANGELOG_FILE] updated with N entries
 > - Commit: `chore(release): [TAG_PREFIX]X.Y.Z`
-> - Tag: `[TAG_PREFIX]X.Y.Z` (annotated)
->
-> **Next steps:**
-> - Run `[PUBLISH_SKILL]` to merge `[RELEASE_BRANCH]` into `main` and push both branches with tags
-> - Or push manually: `git push origin [RELEASE_BRANCH] --tags`
+> - PR: <PR_URL> (merged)
+> - Tag: `[TAG_PREFIX]X.Y.Z` pushed to `main`
+> - GitHub Release: created (if enabled)
 
 ## Important Rules
 
@@ -270,3 +591,6 @@ Present the release summary:
 5. **Exclude non-user-facing commits from the changelog** — `chore:`, `ci:`, `test:`, `docs:`, `style:`, `build:` commits should not appear in the changelog.
 6. **Preserve the Keep a Changelog format exactly** — match the structure, link format, and section ordering of the existing `[CHANGELOG_FILE]`.
 7. **All output must be in English.**
+8. **Major releases MUST go through beta first** — a major bump always produces `X.0.0-beta`. The beta stays until the user explicitly runs `/release stable` to promote it.
+9. **NEVER promote a non-beta version** — if the current version does not end with `-beta`, the `stable`/`promote` argument must be rejected.
+10. **If the user chooses manual publish**, show manual instructions and stop. Do not proceed to the automated publish steps.

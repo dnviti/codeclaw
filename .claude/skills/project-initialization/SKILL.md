@@ -2,7 +2,6 @@
 name: project-initialization
 description: Initialize a new project from scratch. Guides through choosing a tech stack, scaffolds the project, and configures the skills ecosystem.
 disable-model-invocation: true
-allowed-tools: Bash, Read, Write, Edit, Grep, Glob, AskUserQuestion, WebSearch, WebFetch
 argument-hint: "[project purpose or stack]"
 ---
 
@@ -329,7 +328,51 @@ The following skills are now configured for your project:
 - `/docs` — documentation with project-specific categories
 - `/task-scout` — feature scouting tuned to your project domain
 - `/release` — semantic versioning, changelog generation, and git tagging
+- `/code-optimize` — code quality analysis and optimization
+- `/git-publish` — push develop and open auto-merging PR into main
 ```
+
+### Step 8: GitHub Issues Integration (Optional)
+
+After the orientation report, ask the user if they want to enable GitHub Issues integration for task and idea tracking.
+
+Use `AskUserQuestion` with these options:
+- **"Yes, enable GitHub Issues"** — proceed with setup
+- **"No, use local files only"** — skip this step
+
+STOP HERE after calling `AskUserQuestion`. Do NOT proceed until the user responds.
+
+**If the user chose "Yes, enable GitHub Issues":**
+
+1. Copy the example config:
+   ```bash
+   cp .claude/github-issues.example.json .claude/github-issues.json
+   ```
+
+2. Ask the user for their GitHub repository (e.g., `user/project`):
+   Use `AskUserQuestion` with a free-text prompt.
+
+3. Update the config with the provided repo:
+   ```bash
+   jq --arg repo "$REPO" '.repo = $repo | .enabled = true' .claude/github-issues.json > tmp.json && mv tmp.json .claude/github-issues.json
+   ```
+
+4. Ask the user about the sync mode:
+   Use `AskUserQuestion` with these options:
+   - **"GitHub-only (no local task files)"** — set `sync: false`
+   - **"Dual sync (local files + GitHub)"** — set `sync: true`
+
+5. Run the label setup script:
+   ```bash
+   bash scripts/setup-github-labels.sh
+   ```
+
+6. Report the GitHub Issues setup:
+   > "GitHub Issues integration enabled:
+   > - Repository: [repo]
+   > - Mode: [GitHub-only / Dual sync]
+   > - Labels: created on GitHub
+   > - All task/idea skills will now use GitHub Issues"
 
 ## Important Rules
 

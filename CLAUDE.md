@@ -67,6 +67,18 @@ Ideas are stored separately from tasks and must be explicitly approved before en
 
 Use `/idea-create` to add ideas, `/idea-approve` to promote an idea to a task, `/idea-refactor` to update ideas based on codebase changes, and `/idea-disapprove` to reject an idea. Ideas must never be picked up directly by `/task-pick`.
 
+### Task & Idea Management Modes
+
+Tasks and ideas support three operating modes, controlled by `.claude/github-issues.json`:
+
+| `enabled` | `sync` | Mode | Data Source |
+|-----------|--------|------|-------------|
+| `true` | `false` (or absent) | **GitHub-only** | GitHub Issues only. No local files. |
+| `true` | `true` | **Dual sync** | Local files first, then GitHub Issues. |
+| `false` | — | **Local only** | Local text files only (default). |
+
+**Setup:** Copy `.claude/github-issues.example.json` to `.claude/github-issues.json`, configure the `repo` field, and run `bash scripts/setup-github-labels.sh` to create the required labels. Or use `/project-initialization` which offers this setup interactively.
+
 ## Cross-Platform Notes
 
 This framework supports **Windows, macOS, and Linux** with automatic OS detection.

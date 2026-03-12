@@ -2,7 +2,6 @@
 name: app-stop
 description: Stop the project's development environment. Kills dev server processes and optionally stops Docker containers.
 disable-model-invocation: true
-allowed-tools: Bash
 ---
 
 # Stop the Application

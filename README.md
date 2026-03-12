@@ -7,9 +7,10 @@ claude-task-development-framework gives your AI-assisted development workflow a 
 ## Features
 
 - **Two-pipeline workflow** — separate idea evaluation from task execution
-- **17 built-in skills** — slash commands for every stage of the development lifecycle
+- **20 built-in skills** — slash commands for every stage of the development lifecycle
 - **Adaptive project initialization** — `/project-initialization` scaffolds your project and tailors all skills to your chosen stack, domain, and architecture
 - **Plain-text tracking** — tasks and ideas live in simple `.txt` files, fully version-controllable
+- **GitHub Issues integration** — optional tri-modal sync with GitHub Issues for task and idea tracking
 - **Automated hooks** — file edits automatically surface related tasks and progress summaries
 - **Quality gates** — verification, linting, and smoke tests run before tasks can be closed
 - **Cross-platform** — works on Linux, macOS, and Windows with automatic OS detection
@@ -44,7 +45,9 @@ claude-task-development-framework gives your AI-assisted development workflow a 
 
 3. **Customize `to-do.txt`** — update the project name in the header and define your section structure (e.g., SECTION A — Core Features, SECTION B — Enhancements).
 
-4. **Start Claude Code** in your project directory and use the slash commands:
+4. **(Optional) Enable GitHub Issues integration** — see [GitHub Issues Integration](#github-issues-integration-optional) for setup instructions.
+
+5. **Start Claude Code** in your project directory and use the slash commands:
 
    ```
    /idea-create Add user authentication with JWT
@@ -121,6 +124,14 @@ to-do.txt [ ]  ──→  progressing.txt [~]  ──→  done.txt [x]
 | `/security-audit` | `/security-audit [scope]` | Perform security audits and generate detailed reports |
 | `/github-pages-updater` | `/github-pages-updater` | Create or update a GitHub Pages landing site for the project |
 
+### Release & Publishing
+
+| Skill | Usage | Description |
+|-------|-------|-------------|
+| `/code-optimize` | `/code-optimize` | Analyze codebase for optimization opportunities across 7 categories and apply selected fixes |
+| `/git-publish` | `/git-publish` | Push development branch and open an auto-merging PR into main |
+| `/release` | `/release [major\|minor\|patch\|stable]` | Bump version, update changelog, tag, and optionally publish with GitHub Release |
+
 ## Adaptive Skill Configuration
 
 When you run `/project-initialization`, it doesn't just scaffold your project — it personalizes the entire skill ecosystem to match your chosen stack and domain. The following skills are adapted with project-specific values:
@@ -133,8 +144,11 @@ When you run `/project-initialization`, it doesn't just scaffold your project �
 | **idea-create** | Domain-specific idea categories |
 | **docs** | Project-specific documentation categories |
 | **task-scout** | Project context (domain, stack, audience) and research categories |
+| **release** | Tag prefix, release branch name, changelog path, package.json paths |
+| **git-publish** | Development branch name, main branch name |
+| **code-optimize** | Verify command reference |
 
-Skills that are already dynamic (task-pick, task-continue, task-status, idea-refactor, idea-disapprove, github-pages-updater) read from CLAUDE.md and the codebase at runtime, so they adapt automatically without needing placeholders.
+Skills that are already dynamic (task-pick, task-continue, task-status, idea-refactor, idea-disapprove, github-pages-updater, security-audit) read from CLAUDE.md and the codebase at runtime, so they adapt automatically without needing placeholders.
 
 ## Task Format
 
@@ -212,6 +226,36 @@ You can also create tasks directly with `/task-create` if you don't need the ide
 
 Use `/task-status` at any time to see your current progress and what to work on next.
 
+## GitHub Issues Integration (Optional)
+
+The framework supports an optional GitHub Issues integration that can operate in three modes:
+
+| `enabled` | `sync` | Mode | Data Source |
+|-----------|--------|------|-------------|
+| `true` | `false` | **GitHub-only** | GitHub Issues only — no local text files |
+| `true` | `true` | **Dual sync** | Local files first, then synced to GitHub Issues |
+| `false` | — | **Local only** | Local `.txt` files only (default) |
+
+### Setup
+
+1. Copy the example config:
+   ```bash
+   cp .claude/github-issues.example.json .claude/github-issues.json
+   ```
+
+2. Edit `.claude/github-issues.json` — set `"enabled": true`, configure your `"repo"`, and choose `"sync"` mode.
+
+3. Create the required labels on your GitHub repo:
+   ```bash
+   bash scripts/setup-github-labels.sh
+   ```
+
+4. Ensure `gh` CLI is authenticated: `gh auth status`
+
+When GitHub Issues is enabled, all task and idea skills (`/task-create`, `/task-pick`, `/idea-create`, `/idea-approve`, etc.) automatically detect the mode and use the appropriate data source. In GitHub-only mode, tasks are managed entirely through GitHub Issues with status labels. In dual sync mode, local files are the source of truth with GitHub Issues kept in sync.
+
+The framework works fully without GitHub Issues — local-only mode is the default and requires no additional setup.
+
 ## Scripts
 
 The framework includes two Python scripts (zero external dependencies, stdlib only):
@@ -273,10 +317,12 @@ claude-task-development-framework/
 ├── idea-disapproved.txt         # Rejected ideas archive
 ├── scripts/
 │   ├── task_manager.py          # Task/idea management CLI and post-edit hook
-│   └── app_manager.py           # Cross-platform port and process management
+│   ├── app_manager.py           # Cross-platform port and process management
+│   └── setup-github-labels.sh   # Create GitHub labels for Issues integration
 └── .claude/
     ├── settings.json            # Hook configuration
-    └── skills/                  # 17 Claude Code skills
+    ├── github-issues.example.json # GitHub Issues integration config template
+    └── skills/                  # 20 Claude Code skills
         ├── task-create/         # Create tasks
         ├── task-pick/           # Pick up and close tasks
         ├── task-continue/       # Resume in-progress tasks
@@ -293,7 +339,10 @@ claude-task-development-framework/
         ├── docs/                # Manage documentation
         ├── test-engineer/       # Manage tests and CI/CD
         ├── security-audit/      # Security audits
-        └── github-pages-updater/# GitHub Pages site management
+        ├── github-pages-updater/# GitHub Pages site management
+        ├── code-optimize/       # Codebase optimization analysis
+        ├── git-publish/         # PR-based publishing to main
+        └── release/             # Version bumping and release management
 ```
 
 ## License

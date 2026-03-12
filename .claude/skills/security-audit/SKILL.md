@@ -3,7 +3,6 @@ name: security-audit
 description: Perform a security audit of the codebase and generate a report with findings and remediation steps.
 disable-model-invocation: true
 argument-hint: "[scope: auth|encryption|api|client|dependencies|config|infrastructure|code]"
-allowed-tools: Bash, Read, Grep, Glob, Write
 ---
 
 # Security Audit
@@ -44,6 +43,8 @@ Before starting the audit, gather data about the project:
 Analyze ALL collected data against each category. For each finding, assign a severity and document it precisely. Only report findings you have clear evidence for — no speculation.
 
 ### 1. DEPENDENCIES (scope: `dependencies`)
+*MITRE ATT&CK: T1195 (Supply Chain Compromise), T1190 (Exploit Public-Facing Application)*
+
 Check for:
 - Known CVEs from dependency audit output
 - Outdated packages with known security issues
@@ -51,6 +52,8 @@ Check for:
 - Unnecessary dependencies that increase attack surface
 
 ### 2. AUTHENTICATION (scope: `auth`)
+*MITRE ATT&CK: T1078 (Valid Accounts), T1110 (Brute Force), T1528 (Steal Application Access Token)*
+
 Check for:
 - **Secret strength**: Weak fallback secrets that could silently activate in production
 - **Algorithm pinning**: Does token verification specify allowed algorithms?
@@ -64,6 +67,8 @@ Check for:
 - **WebSocket auth**: Is authentication applied to WebSocket connections?
 
 ### 3. ENCRYPTION (scope: `encryption`)
+*MITRE ATT&CK: T1557 (Adversary-in-the-Middle), T1552 (Unsecured Credentials)*
+
 Check for:
 - **Algorithm suitability**: Are modern authenticated encryption algorithms used?
 - **IV/nonce generation**: Are they generated with crypto-safe random and unique per operation?
@@ -72,6 +77,8 @@ Check for:
 - **In-memory key exposure**: Could heap dumps leak keys?
 
 ### 4. API SECURITY (scope: `api`)
+*MITRE ATT&CK: T1190 (Exploit Public-Facing Application), T1499 (Endpoint Denial of Service)*
+
 Check for:
 - **Input validation coverage**: Are ALL endpoints using schema validation?
 - **Request size limits**: Is the body size limit appropriate?
@@ -83,6 +90,8 @@ Check for:
 - **CSRF**: Confirm no cookie-based auth paths exist if using Bearer tokens
 
 ### 5. CLIENT SECURITY (scope: `client`)
+*MITRE ATT&CK: T1059.007 (JavaScript), T1185 (Browser Session Hijacking)*
+
 Check for:
 - **XSS vectors**: dangerous HTML injection, unescaped user input
 - **Token storage**: tokens in localStorage are XSS-accessible
@@ -92,6 +101,8 @@ Check for:
 - **Raw error display**: Are server error messages shown directly to users?
 
 ### 6. CONFIGURATION (scope: `config`)
+*MITRE ATT&CK: T1552.001 (Credentials In Files), T1562.001 (Disable or Modify Tools)*
+
 Check for:
 - **Default secrets**: Fallback values that silently activate when env vars are missing
 - **Environment validation**: Are required env vars validated at startup?
@@ -100,6 +111,8 @@ Check for:
 - **Log level**: Could debug logging in production leak sensitive data?
 
 ### 7. INFRASTRUCTURE (scope: `infrastructure`)
+*MITRE ATT&CK: T1610 (Deploy Container), T1613 (Container and Resource Discovery)*
+
 Check for:
 - **Docker security**: Are containers running as non-root? Are images pinned?
 - **Network exposure**: Are internal service ports exposed to the host in production?
@@ -107,6 +120,8 @@ Check for:
 - **Database credentials**: Default dev credentials that could leak to production
 
 ### 8. CODE QUALITY (scope: `code`)
+*MITRE ATT&CK: T1059 (Command and Scripting Interpreter), T1203 (Exploitation for Client Execution)*
+
 Check for:
 - **SQL injection**: Raw queries with string interpolation
 - **Command injection**: exec/spawn with unsanitized input

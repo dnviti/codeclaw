@@ -2,7 +2,6 @@
 name: app-start
 description: Start the project's development environment. Checks for running processes, runs setup commands, and launches the dev server with error monitoring.
 disable-model-invocation: true
-allowed-tools: Bash
 ---
 
 # Start the Application
