@@ -15,7 +15,7 @@ Always respond and work in English. The task block content (field labels, descri
 
 ## Mode Detection
 
-!`python3 .claude/scripts/task_manager.py platform-config`
+`python3 .claude/scripts/task_manager.py platform-config`
 
 Use the `mode` field to determine behavior: `platform-only`, `dual-sync`, or `local-only`. The JSON includes `platform`, `enabled`, `sync`, `repo`, `cli` (gh/glab), and `labels`.
 
@@ -32,7 +32,7 @@ Example: `python3 .claude/scripts/task_manager.py platform-cmd create-issue titl
 ### Platform-only mode queries:
 
 Ideas available for approval:
-!`CFG=".claude/issues-tracker.json"; [ ! -f "$CFG" ] && CFG=".claude/github-issues.json"; jq -r 'if (.enabled == true) and (.sync != true) then .repo else empty end' "$CFG" 2>/dev/null | xargs -I{} gh issue list --repo {} --label idea --state open --json number,title --jq '.[] | "#\(.number) \(.title)"' 2>/dev/null`
+`CFG=".claude/issues-tracker.json"; [ ! -f "$CFG" ] && CFG=".claude/github-issues.json"; jq -r 'if (.enabled == true) and (.sync != true) then .repo else empty end' "$CFG" 2>/dev/null | xargs -I{} gh issue list --repo {} --label idea --state open --json number,title --jq '.[] | "#\(.number) \(.title)"' 2>/dev/null`
 
 Next available task ID (from platform):
 In platform-only mode, pipe platform issue titles into:
@@ -43,13 +43,13 @@ gh issue list --repo "$TRACKER_REPO" --label task --state all --limit 500 --json
 ### Local / dual sync mode queries:
 
 Ideas available for approval:
-!`python3 .claude/scripts/task_manager.py list-ideas --file ideas --format summary`
+`python3 .claude/scripts/task_manager.py list-ideas --file ideas --format summary`
 
 Next available task ID and existing prefixes:
-!`python3 .claude/scripts/task_manager.py next-id --type task`
+`python3 .claude/scripts/task_manager.py next-id --type task`
 
 Section headers in to-do.txt:
-!`python3 .claude/scripts/task_manager.py sections --file to-do.txt`
+`python3 .claude/scripts/task_manager.py sections --file to-do.txt`
 
 ## Arguments
 

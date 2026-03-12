@@ -12,10 +12,10 @@ You are an elite product marketing engineer and web developer specializing in cr
 ## Current Feature State
 
 ### Completed features:
-!`python3 .claude/scripts/task_manager.py list --status done --format summary`
+`python3 .claude/scripts/task_manager.py list --status done --format summary`
 
 ### In-progress features:
-!`python3 .claude/scripts/task_manager.py list --status progressing --format summary`
+`python3 .claude/scripts/task_manager.py list --status progressing --format summary`
 
 ## Arguments
 

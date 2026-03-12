@@ -15,7 +15,7 @@ Always respond and work in English. The idea block content (field labels, descri
 
 ## Mode Detection
 
-!`python3 .claude/scripts/task_manager.py platform-config`
+`python3 .claude/scripts/task_manager.py platform-config`
 
 Use the `mode` field to determine behavior: `platform-only`, `dual-sync`, or `local-only`. The JSON includes `platform`, `enabled`, `sync`, `repo`, `cli` (gh/glab), and `labels`.
 
@@ -39,10 +39,10 @@ gh issue list --repo "$TRACKER_REPO" --label idea --state all --limit 500 --json
 ### Local/Dual mode:
 
 #### Next available idea ID:
-!`python3 .claude/scripts/task_manager.py next-id --type idea`
+`python3 .claude/scripts/task_manager.py next-id --type idea`
 
 #### Current ideas:
-!`python3 .claude/scripts/task_manager.py list-ideas --file ideas --format summary`
+`python3 .claude/scripts/task_manager.py list-ideas --file ideas --format summary`
 
 ## Arguments
 

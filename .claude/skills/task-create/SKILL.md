@@ -13,7 +13,7 @@ Always respond and work in English. The task block content (field labels, descri
 
 ## Mode Detection
 
-!`python3 .claude/scripts/task_manager.py platform-config`
+`python3 .claude/scripts/task_manager.py platform-config`
 
 Use the `mode` field to determine behavior: `platform-only`, `dual-sync`, or `local-only`. The JSON includes `platform`, `enabled`, `sync`, `repo`, `cli` (gh/glab), and `labels`.
 
@@ -39,10 +39,10 @@ This returns the same JSON as local mode: `next_number`, `max_found`, `prefixes`
 ### In local only and dual sync modes:
 
 #### Next available task ID and existing prefixes:
-!`python3 .claude/scripts/task_manager.py next-id --type task`
+`python3 .claude/scripts/task_manager.py next-id --type task`
 
 #### Section headers in to-do.txt:
-!`python3 .claude/scripts/task_manager.py sections --file to-do.txt`
+`python3 .claude/scripts/task_manager.py sections --file to-do.txt`
 
 ### Section info (Platform-only mode):
 

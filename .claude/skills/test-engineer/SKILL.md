@@ -27,16 +27,16 @@ The user invoked with: **$ARGUMENTS**
 ## Existing Test Infrastructure
 
 ### Test config files:
-!`python3 .claude/scripts/task_manager.py find-files --patterns "vitest.config.*,jest.config.*,pytest.ini,pyproject.toml,.mocharc.*" --max-depth 3 --limit 20`
+`python3 .claude/scripts/task_manager.py find-files --patterns "vitest.config.*,jest.config.*,pytest.ini,pyproject.toml,.mocharc.*" --max-depth 3 --limit 20`
 
 ### Existing test files:
-!`python3 .claude/scripts/task_manager.py find-files --patterns "*.test.*,*.spec.*,test_*" --max-depth 5 --limit 30`
+`python3 .claude/scripts/task_manager.py find-files --patterns "*.test.*,*.spec.*,test_*" --max-depth 5 --limit 30`
 
 ### Test scripts in package.json (if applicable):
-!`python3 -c "import json, sys; d=json.load(open('package.json')); [print(f'  {k}: {v}') for k,v in d.get('scripts',{}).items() if 'test' in k]" 2>/dev/null || echo "(no package.json or no test scripts)"`
+`python3 -c "import json, sys; d=json.load(open('package.json')); [print(f'  {k}: {v}') for k,v in d.get('scripts',{}).items() if 'test' in k]" 2>/dev/null || echo "(no package.json or no test scripts)"`
 
 ### GitHub Actions workflows:
-!`python3 .claude/scripts/task_manager.py find-files --patterns "*.yml,*.yaml" --max-depth 3 --limit 10`
+`python3 .claude/scripts/task_manager.py find-files --patterns "*.yml,*.yaml" --max-depth 3 --limit 10`
 
 ## Your Core Responsibilities
 
@@ -164,7 +164,7 @@ When invoked to test a specific task (e.g., `/test-engineer TASK-CODE` or `/test
 
 ### Step T1: Mode Detection
 
-!`python3 .claude/scripts/task_manager.py platform-config`
+`python3 .claude/scripts/task_manager.py platform-config`
 
 Use the `mode` field to determine behavior: `platform-only`, `dual-sync`, or `local-only`. The JSON includes `platform`, `enabled`, `sync`, `repo`, `cli` (gh/glab), and `labels`.
 

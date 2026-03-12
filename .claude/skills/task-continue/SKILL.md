@@ -13,7 +13,7 @@ This skill does NOT close or commit tasks — use `/task-pick` for that.
 
 ## Mode Detection
 
-!`python3 .claude/scripts/task_manager.py platform-config`
+`python3 .claude/scripts/task_manager.py platform-config`
 
 Use the `mode` field to determine behavior: `platform-only`, `dual-sync`, or `local-only`. The JSON includes `platform`, `enabled`, `sync`, `repo`, `cli` (gh/glab), and `labels`.
 
@@ -37,7 +37,7 @@ gh issue list --repo "$TRACKER_REPO" --label "task,status:in-progress" --state o
 ```
 
 ### Local/Dual mode — In-progress tasks:
-!`python3 .claude/scripts/task_manager.py list --status progressing --format summary`
+`python3 .claude/scripts/task_manager.py list --status progressing --format summary`
 
 ## Instructions
 

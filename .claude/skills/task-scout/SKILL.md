@@ -11,7 +11,7 @@ You are an elite product strategist and feature researcher. You have deep knowle
 
 ## Mode Detection
 
-!`python3 .claude/scripts/task_manager.py platform-config`
+`python3 .claude/scripts/task_manager.py platform-config`
 
 Use the `mode` field to determine behavior: `platform-only`, `dual-sync`, or `local-only`. The JSON includes `platform`, `enabled`, `sync`, `repo`, `cli` (gh/glab), and `labels`.
 
@@ -28,24 +28,24 @@ Example: `python3 .claude/scripts/task_manager.py platform-cmd create-issue titl
 ### Local mode / Dual sync mode
 
 #### In-progress tasks:
-!`python3 .claude/scripts/task_manager.py list --status progressing --format summary`
+`python3 .claude/scripts/task_manager.py list --status progressing --format summary`
 
 #### Pending tasks:
-!`python3 .claude/scripts/task_manager.py list --status todo --format summary`
+`python3 .claude/scripts/task_manager.py list --status todo --format summary`
 
 #### Completed tasks:
-!`python3 .claude/scripts/task_manager.py list --status done --format summary`
+`python3 .claude/scripts/task_manager.py list --status done --format summary`
 
 ### Platform-only mode
 
 #### In-progress tasks:
-!`CFG=".claude/issues-tracker.json"; [ ! -f "$CFG" ] && CFG=".claude/github-issues.json"; jq -r '.enabled // false' "$CFG" 2>/dev/null | grep -q true && jq -r '.sync // false' "$CFG" 2>/dev/null | grep -qv true && gh issue list --repo "$(jq -r '.repo' "$CFG")" --label "task,status:in-progress" --json number,title --jq '.[] | "- #\(.number) \(.title)"' 2>/dev/null || echo "(not in Platform-only mode)"`
+`CFG=".claude/issues-tracker.json"; [ ! -f "$CFG" ] && CFG=".claude/github-issues.json"; jq -r '.enabled // false' "$CFG" 2>/dev/null | grep -q true && jq -r '.sync // false' "$CFG" 2>/dev/null | grep -qv true && gh issue list --repo "$(jq -r '.repo' "$CFG")" --label "task,status:in-progress" --json number,title --jq '.[] | "- #\(.number) \(.title)"' 2>/dev/null || echo "(not in Platform-only mode)"`
 
 #### Pending tasks:
-!`CFG=".claude/issues-tracker.json"; [ ! -f "$CFG" ] && CFG=".claude/github-issues.json"; jq -r '.enabled // false' "$CFG" 2>/dev/null | grep -q true && jq -r '.sync // false' "$CFG" 2>/dev/null | grep -qv true && gh issue list --repo "$(jq -r '.repo' "$CFG")" --label "task,status:todo" --json number,title --jq '.[] | "- #\(.number) \(.title)"' 2>/dev/null || echo "(not in Platform-only mode)"`
+`CFG=".claude/issues-tracker.json"; [ ! -f "$CFG" ] && CFG=".claude/github-issues.json"; jq -r '.enabled // false' "$CFG" 2>/dev/null | grep -q true && jq -r '.sync // false' "$CFG" 2>/dev/null | grep -qv true && gh issue list --repo "$(jq -r '.repo' "$CFG")" --label "task,status:todo" --json number,title --jq '.[] | "- #\(.number) \(.title)"' 2>/dev/null || echo "(not in Platform-only mode)"`
 
 #### Completed tasks:
-!`CFG=".claude/issues-tracker.json"; [ ! -f "$CFG" ] && CFG=".claude/github-issues.json"; jq -r '.enabled // false' "$CFG" 2>/dev/null | grep -q true && jq -r '.sync // false' "$CFG" 2>/dev/null | grep -qv true && gh issue list --repo "$(jq -r '.repo' "$CFG")" --label "task,status:done" --state closed --limit 200 --json number,title --jq '.[] | "- #\(.number) \(.title)"' 2>/dev/null || echo "(not in Platform-only mode)"`
+`CFG=".claude/issues-tracker.json"; [ ! -f "$CFG" ] && CFG=".claude/github-issues.json"; jq -r '.enabled // false' "$CFG" 2>/dev/null | grep -q true && jq -r '.sync // false' "$CFG" 2>/dev/null | grep -qv true && gh issue list --repo "$(jq -r '.repo' "$CFG")" --label "task,status:done" --state closed --limit 200 --json number,title --jq '.[] | "- #\(.number) \(.title)"' 2>/dev/null || echo "(not in Platform-only mode)"`
 
 ## Arguments
 

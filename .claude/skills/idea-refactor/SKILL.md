@@ -15,7 +15,7 @@ Always respond and work in English. Idea content MUST remain in **English**.
 
 ## Mode Detection
 
-!`python3 .claude/scripts/task_manager.py platform-config`
+`python3 .claude/scripts/task_manager.py platform-config`
 
 Use the `mode` field to determine behavior: `platform-only`, `dual-sync`, or `local-only`. The JSON includes `platform`, `enabled`, `sync`, `repo`, `cli` (gh/glab), and `labels`.
 
@@ -49,10 +49,10 @@ gh issue list --repo "$TRACKER_REPO" --label "task,status:todo" --state open --j
 ### Local/Dual mode — data sources:
 
 #### All ideas:
-!`python3 .claude/scripts/task_manager.py list-ideas --file ideas --format summary`
+`python3 .claude/scripts/task_manager.py list-ideas --file ideas --format summary`
 
 #### All tasks (for overlap detection):
-!`python3 .claude/scripts/task_manager.py list --status all --format summary`
+`python3 .claude/scripts/task_manager.py list --status all --format summary`
 
 ## Arguments
 

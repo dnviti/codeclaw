@@ -10,7 +10,7 @@ You are a task status reporter. Analyze the data below and present a clear, well
 
 ## Mode Detection
 
-!`python3 .claude/scripts/task_manager.py platform-config`
+`python3 .claude/scripts/task_manager.py platform-config`
 
 Use the `mode` field to determine behavior: `platform-only`, `dual-sync`, or `local-only`. The JSON includes `platform`, `enabled`, `sync`, `repo`, `cli` (gh/glab), and `labels`.
 
@@ -91,7 +91,7 @@ Present the report following the same format as below (Instructions section).
 
 If mode is `dual-sync`, run a reconciliation check to detect discrepancies between local files and platform issues:
 
-!`python3 .claude/scripts/task_manager.py sync-from-platform --dry-run --format text 2>/dev/null || echo "(sync check not available)"`
+`python3 .claude/scripts/task_manager.py sync-from-platform --dry-run --format text 2>/dev/null || echo "(sync check not available)"`
 
 If discrepancies are found, include them in section 5 of the report below.
 
@@ -102,22 +102,22 @@ If discrepancies are found, include them in section 5 of the report below.
 These sections are used in local-only or dual-sync mode:
 
 ### Summary (JSON):
-!`python3 .claude/scripts/task_manager.py summary`
+`python3 .claude/scripts/task_manager.py summary`
 
 ### In-Progress Tasks:
-!`python3 .claude/scripts/task_manager.py list --status progressing --format summary`
+`python3 .claude/scripts/task_manager.py list --status progressing --format summary`
 
 ### Completed Tasks:
-!`python3 .claude/scripts/task_manager.py list --status done --format summary`
+`python3 .claude/scripts/task_manager.py list --status done --format summary`
 
 ### Blocked Tasks:
-!`python3 .claude/scripts/task_manager.py list --status blocked --format summary`
+`python3 .claude/scripts/task_manager.py list --status blocked --format summary`
 
 ### Pending Tasks:
-!`python3 .claude/scripts/task_manager.py list --status todo --format summary`
+`python3 .claude/scripts/task_manager.py list --status todo --format summary`
 
 ### Recommended Implementation Order:
-!`sed -n '/RECOMMENDED IMPLEMENTATION ORDER/,/^====/p' to-do.txt | tr -d '\r'`
+`sed -n '/RECOMMENDED IMPLEMENTATION ORDER/,/^====/p' to-do.txt | tr -d '\r'`
 
 ---
 

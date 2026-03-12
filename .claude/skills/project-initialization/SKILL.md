@@ -24,13 +24,13 @@ There are exactly 4-5 decision points in this skill (Steps 1, 2, 3, 4, and 5). E
 ## Current Directory State
 
 ### Existing files:
-!`python3 -c "from pathlib import Path; files=sorted(Path('.').iterdir()); [print(f.name) for f in files] if files else print('(empty directory)')"`
+`python3 -c "from pathlib import Path; files=sorted(Path('.').iterdir()); [print(f.name) for f in files] if files else print('(empty directory)')"`
 
 ### Git status:
-!`git status --short 2>&1 || echo "(not a git repository)"`
+`git status --short 2>&1 || echo "(not a git repository)"`
 
 ### CLAUDE.md status:
-!`python3 -c "from pathlib import Path; p=Path('CLAUDE.md'); print(f'Exists ({len(p.read_text().splitlines())} lines)') if p.exists() else print('Not found')"`
+`python3 -c "from pathlib import Path; p=Path('CLAUDE.md'); print(f'Exists ({len(p.read_text().splitlines())} lines)') if p.exists() else print('Not found')"`
 
 ## Arguments
 
