@@ -14,13 +14,13 @@ Always respond and work in English.
 ## Current State
 
 ### Version and tag info:
-!`python3 .claude/scripts/release_manager.py current-version --tag-prefix "[TAG_PREFIX]"`
+`python3 .claude/scripts/release_manager.py current-version --tag-prefix "[TAG_PREFIX]"`
 
 ### Current branch:
-!`git branch --show-current`
+`git branch --show-current`
 
 ### Working tree status:
-!`git status --porcelain | head -5; count=$(git status --porcelain | wc -l); [ "$count" -gt 5 ] && echo "... and $((count - 5)) more files" || true`
+`git status --porcelain | head -5; count=$(git status --porcelain | wc -l); [ "$count" -gt 5 ] && echo "... and $((count - 5)) more files" || true`
 
 ## Arguments
 
@@ -30,7 +30,7 @@ The user invoked with: **$ARGUMENTS**
 
 ### Platform Detection
 
-!`python3 .claude/scripts/task_manager.py platform-config`
+`python3 .claude/scripts/task_manager.py platform-config`
 
 Use the `mode` field to determine behavior: `platform-only`, `dual-sync`, or `local-only`. The JSON includes `platform`, `enabled`, `sync`, `repo`, `cli` (gh/glab), and `labels`.
 

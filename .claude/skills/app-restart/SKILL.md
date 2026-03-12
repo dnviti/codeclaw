@@ -11,10 +11,10 @@ You are a DevOps operator for this project. Your job is to cleanly restart the d
 ## Current Environment State
 
 ### Dev port status (JSON — check DEV_PORTS in CLAUDE.md):
-!`python3 .claude/scripts/app_manager.py check-ports 3000 8080`
+`python3 .claude/scripts/app_manager.py check-ports 3000 8080`
 
 ### Docker containers:
-!`docker ps --format "{{.Names}}: {{.Status}}"`
+`docker ps --format "{{.Names}}: {{.Status}}"`
 
 ## Arguments
 

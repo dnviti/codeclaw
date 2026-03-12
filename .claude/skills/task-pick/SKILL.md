@@ -11,7 +11,7 @@ You are a task manager for this project. Your job is to pick up the next todo ta
 
 ## Mode Detection
 
-!`python3 .claude/scripts/task_manager.py platform-config`
+`python3 .claude/scripts/task_manager.py platform-config`
 
 Use the `mode` field to determine behavior: `platform-only`, `dual-sync`, or `local-only`. The JSON includes `platform`, `enabled`, `sync`, `repo`, `cli` (gh/glab), and `labels`.
 
@@ -43,13 +43,13 @@ gh issue list --repo "$TRACKER_REPO" --label "task,status:done" --state closed -
 ### Local/Dual mode:
 
 #### Pending tasks:
-!`python3 .claude/scripts/task_manager.py list --status todo --format summary`
+`python3 .claude/scripts/task_manager.py list --status todo --format summary`
 
 #### Completed tasks:
-!`python3 .claude/scripts/task_manager.py list --status done --format summary`
+`python3 .claude/scripts/task_manager.py list --status done --format summary`
 
 #### Recommended implementation order:
-!`python3 .claude/scripts/task_manager.py sections --file to-do.txt`
+`python3 .claude/scripts/task_manager.py sections --file to-do.txt`
 
 ## Instructions
 
