@@ -87,6 +87,16 @@ Present the report following the same format as below (Instructions section).
 
 ---
 
+## Platform Sync Check (Dual-Sync Mode Only)
+
+If mode is `dual-sync`, run a reconciliation check to detect discrepancies between local files and platform issues:
+
+!`python3 .claude/scripts/task_manager.py sync-from-platform --dry-run --format text 2>/dev/null || echo "(sync check not available)"`
+
+If discrepancies are found, include them in section 5 of the report below.
+
+---
+
 ## Local/Dual Mode Data
 
 These sections are used in local-only or dual-sync mode:
@@ -132,5 +142,10 @@ Present the information above as a structured English-language report with these
    - Brief scope description
 
 4. **Blocked Tasks** — If any, list them with the blocking reason.
+
+5. **Sync Discrepancies** — (Dual-sync mode only) If the sync check found discrepancies between local files and platform issue states, list them with:
+   - Task code and issue number
+   - Local status vs. platform status
+   - Suggested action (e.g., "run `python3 .claude/scripts/task_manager.py move CODE --to STATUS`")
 
 Do NOT modify any files. This is a read-only status report.

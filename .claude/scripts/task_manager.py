@@ -1185,6 +1185,170 @@ def cmd_platform_cmd(args):
     print(cmd)
 
 
+# ── Subcommand: sync-from-platform ────────────────────────────────────────
+
+def cmd_sync_from_platform(args):
+    """Reconcile local task files with platform issue state.
+
+    Queries GitHub/GitLab for issues with status labels and compares
+    against local files. Reports discrepancies and optionally fixes them.
+    """
+    cfg = _load_platform_config()
+
+    if cfg["mode"] == "local-only":
+        result = {"status": "skipped", "reason": "Platform integration not enabled (local-only mode)"}
+        if args.format == "json":
+            print(json.dumps(result, indent=2))
+        else:
+            print("Sync skipped: platform integration not enabled (local-only mode)")
+        return
+
+    cli = cfg["cli"]
+    repo = cfg["repo"]
+    labels = cfg.get("labels") or {}
+    source_label = labels.get("source", "claude-code")
+    task_label = labels.get("task", "task")
+    status_labels = labels.get("status", {})
+
+    # Map platform status labels to local status
+    platform_to_local = {}
+    for local_status, label_name in status_labels.items():
+        platform_to_local[label_name] = local_status
+
+    # ── Fetch issues from platform ───────────────────────────────────
+    discrepancies = []
+
+    if cli == "gh":
+        result = subprocess.run(
+            ["gh", "issue", "list", "--repo", repo,
+             "--label", f"{task_label},{source_label}",
+             "--state", "all", "--limit", "200",
+             "--json", "number,title,state,labels"],
+            capture_output=True, text=True,
+        )
+    else:
+        result = subprocess.run(
+            ["glab", "issue", "list", "-R", repo,
+             "-l", f"{task_label},{source_label}",
+             "--state", "all", "--per-page", "200",
+             "--output", "json"],
+            capture_output=True, text=True,
+        )
+
+    if result.returncode != 0:
+        err = {"error": f"Failed to fetch issues: {result.stderr.strip()}"}
+        print(json.dumps(err, indent=2) if args.format == "json" else err["error"])
+        sys.exit(1)
+
+    try:
+        issues = json.loads(result.stdout) if result.stdout.strip() else []
+    except json.JSONDecodeError:
+        err = {"error": "Failed to parse platform response as JSON"}
+        print(json.dumps(err, indent=2) if args.format == "json" else err["error"])
+        sys.exit(1)
+
+    # ── Parse local tasks ────────────────────────────────────────────
+    root = find_project_root()
+    local_tasks = {}
+    for tf in TASK_FILES:
+        fp = root / tf
+        if fp.exists():
+            blocks = _parse_blocks(fp)
+            for b in blocks:
+                local_tasks[b["code"]] = {
+                    "status": b["status"],
+                    "title": b["title"],
+                    "file": tf,
+                }
+
+    # ── Compare ──────────────────────────────────────────────────────
+    for issue in issues:
+        issue_labels = []
+        if cli == "gh":
+            issue_labels = [l["name"] for l in issue.get("labels", [])]
+            issue_state = issue.get("state", "OPEN")
+            issue_num = issue.get("number")
+            issue_title = issue.get("title", "")
+        else:
+            issue_labels = [l.get("name", "") if isinstance(l, dict) else str(l)
+                           for l in issue.get("labels", [])]
+            issue_state = issue.get("state", "opened")
+            issue_num = issue.get("iid", issue.get("number"))
+            issue_title = issue.get("title", "")
+
+        # Determine platform status from labels
+        platform_status = None
+        for label in issue_labels:
+            if label in platform_to_local:
+                platform_status = platform_to_local[label]
+                break
+
+        # Check if issue is closed on platform
+        is_closed = issue_state in ("CLOSED", "closed")
+        if is_closed:
+            platform_status = "done"
+
+        # Try to find matching local task by title keywords
+        # (issues may not contain the task code directly)
+        matched_code = None
+        for code, info in local_tasks.items():
+            if code in issue_title or info["title"] in issue_title:
+                matched_code = code
+                break
+
+        if matched_code and platform_status:
+            local_status = local_tasks[matched_code]["status"]
+            # Normalize local status name
+            local_status_name = local_status
+            if local_status_name == "progressing":
+                local_status_name = "in-progress"
+
+            platform_status_name = platform_status
+            if platform_status_name == "progressing":
+                platform_status_name = "in-progress"
+
+            if local_status_name != platform_status_name:
+                discrepancies.append({
+                    "task_code": matched_code,
+                    "issue_number": issue_num,
+                    "title": issue_title,
+                    "local_status": local_status_name,
+                    "platform_status": platform_status_name,
+                    "local_file": local_tasks[matched_code]["file"],
+                })
+
+    # ── Output results ───────────────────────────────────────────────
+    output = {
+        "platform_issues_checked": len(issues),
+        "local_tasks_checked": len(local_tasks),
+        "discrepancies": discrepancies,
+    }
+
+    if args.format == "json":
+        print(json.dumps(output, indent=2))
+    else:
+        print(f"Checked {len(issues)} platform issues against {len(local_tasks)} local tasks")
+        if not discrepancies:
+            print("No discrepancies found — local and platform are in sync.")
+        else:
+            print(f"\n{len(discrepancies)} discrepancy(ies) found:\n")
+            for d in discrepancies:
+                print(f"  {d['task_code']} (issue #{d['issue_number']}): "
+                      f"local={d['local_status']}, platform={d['platform_status']}")
+                if not args.dry_run:
+                    # Map platform status back to local move target
+                    target = d["platform_status"]
+                    if target == "in-progress":
+                        target = "progressing"
+                    if target in FILE_FOR_STATUS:
+                        print(f"    → Would move to {FILE_FOR_STATUS[target]} "
+                              f"(run without --dry-run to apply)")
+            if args.dry_run:
+                print("\n  (dry-run mode — no changes made)")
+            else:
+                print("\n  To apply changes, use task_manager.py move <code> --to <status>")
+
+
 # ── Subcommand: pr-body ───────────────────────────────────────────────────
 
 PR_BODY_TEMPLATES = {
@@ -1341,6 +1505,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("operation", help="Operation name (e.g., create-issue, list-issues)")
     p.add_argument("params", nargs="*", help="Key=value parameters (e.g., title=T labels=L)")
     p.set_defaults(func=cmd_platform_cmd)
+
+    # sync-from-platform
+    p = sub.add_parser("sync-from-platform", help="Reconcile local files with platform issue state")
+    p.add_argument("--dry-run", action="store_true", help="Show discrepancies without making changes")
+    p.add_argument("--format", choices=["json", "text"], default="text")
+    p.set_defaults(func=cmd_sync_from_platform)
 
     # pr-body
     p = sub.add_parser("pr-body", help="Generate PR body from template")

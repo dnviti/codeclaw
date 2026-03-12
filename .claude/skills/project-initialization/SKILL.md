@@ -310,7 +310,7 @@ Present a comprehensive report to the user:
 - **Add authentication:** [brief guidance]
 - **Add an API layer:** [brief guidance]
 - **Add tests:** Use the `/test-engineer` skill
-- **Add CI/CD:** Use the `/test-engineer` skill with CI focus
+- **Add CI/CD:** CI/CD templates are available in `.claude/templates/` (see Step 9)
 
 ### Git Repository
 - Branches: `main` (initial commit), `develop` (current working branch)
@@ -330,6 +330,7 @@ The following skills are now configured for your project:
 - `/release` — semantic versioning, changelog generation, and git tagging
 - `/code-optimize` — code quality analysis and optimization
 - `/git-publish` — push develop and open auto-merging PR into main
+- `/security-audit` — comprehensive security audit with remediation steps
 ```
 
 ### Step 8: Issues Tracker Integration (Optional)
@@ -381,6 +382,53 @@ STOP HERE after calling `AskUserQuestion`. Do NOT proceed until the user respond
    > - Mode: [Platform-only / Dual sync]
    > - Labels: created on [platform]
    > - All task/idea skills will now use [platform] issues"
+
+### Step 9: CI/CD & Branch Protection Setup (Optional)
+
+After the issues tracker step, ask the user if they want to set up CI/CD pipelines and branch protection.
+
+Use `AskUserQuestion` with these options:
+- **"Yes, set up CI/CD and branch protection"** — proceed with setup
+- **"CI/CD only (no branch protection)"** — only copy workflow templates
+- **"No, skip CI/CD setup"** — skip this step
+
+STOP HERE after calling `AskUserQuestion`. Do NOT proceed until the user responds.
+
+**If the user chose to set up CI/CD (either option):**
+
+1. **Detect the platform** from the issues tracker config (default: GitHub).
+
+2. **Copy CI/CD templates** to the project:
+   - **GitHub:** Copy `.claude/templates/github/workflows/*.yml` to `.github/workflows/`
+   - **GitLab:** Copy `.claude/templates/gitlab/.gitlab-ci.yml` to the project root
+
+3. **Customize the templates** based on the detected stack from Steps 1-2:
+   - Replace `[CI_RUNTIME_SETUP]` with the actual setup action (e.g., `actions/setup-node@v4`)
+   - Replace `[INSTALL_COMMAND]`, `[LINT_COMMAND]`, `[TEST_COMMAND]`, `[BUILD_COMMAND]` with actual commands
+   - Replace `[CI_IMAGE]` in GitLab templates with the appropriate Docker image
+   - Uncomment the relevant sections and remove placeholder comments
+
+4. **Copy additional templates:**
+   - Copy `.claude/templates/github/workflows/issue-triage.yml` for auto-labeling (if issues tracker is enabled)
+   - Copy `.claude/templates/github/workflows/status-guard.yml` for status transition enforcement (if issues tracker is enabled)
+   - Copy `.claude/templates/github/CODEOWNERS` to `.github/CODEOWNERS` and remind the user to replace `@your-org/platform-team`
+
+**If the user also chose branch protection:**
+
+5. **Run the branch protection setup script:**
+   ```bash
+   python3 .claude/scripts/setup_protection.py --branch main --required-reviews 1 --status-checks "Lint, Test & Build"
+   ```
+
+6. **Report the CI/CD setup:**
+   > "CI/CD and branch protection configured:
+   > - CI pipeline: runs lint, test, build on every PR
+   > - Security scanning: dependency review + secret scanning on PRs, weekly SAST
+   > - Release pipeline: auto-creates releases on version tags
+   > - Issue triage: auto-labels new issues with type and priority
+   > - Status guard: enforces status:todo → in-progress → to-test → done transitions
+   > - Branch protection: PRs required, status checks enforced, force-push blocked
+   > - CODEOWNERS: protects workflow files (update team names in .github/CODEOWNERS)"
 
 ## Important Rules
 
