@@ -16,6 +16,5 @@
     "release",
     "ci-cd"
   ],
-  "skills": "./skills/",
-  "hooks": "./hooks/hooks.json"
+  "skills": "./skills/"
 }
