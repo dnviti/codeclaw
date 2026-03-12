@@ -1,6 +1,0 @@
-================================================================================
-  PROJECT NAME — DISAPPROVED IDEAS
-  Format: IDEA-NNN — Title
-  Notes: Archive of rejected ideas with rejection reason.
-         Moved here from ideas.txt via /idea-disapprove
-================================================================================

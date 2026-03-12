@@ -1,0 +1,21 @@
+{
+  "dev_ports": "",
+  "start_command": "",
+  "predev_command": "",
+  "verify_command": "",
+  "test_framework": "",
+  "test_command": "",
+  "test_file_pattern": "",
+  "ci_runtime_setup": "",
+  "tech_detail_layers": "",
+  "idea_categories": "",
+  "doc_categories": "",
+  "project_context": "",
+  "scout_categories": "",
+  "package_json_paths": "",
+  "changelog_file": "",
+  "tag_prefix": "",
+  "github_repo_url": "",
+  "release_branch": "",
+  "publish_skill": ""
+}

@@ -1,16 +1,17 @@
-# claude-task-development-framework
+# CTDF — Claude Task Development Framework
 
-A project-agnostic task and idea management framework for [Claude Code](https://docs.anthropic.com/en/docs/claude-code).
+A project-agnostic task and idea management plugin for [Claude Code](https://docs.anthropic.com/en/docs/claude-code).
 
-claude-task-development-framework gives your AI-assisted development workflow a structured backbone: ideas are captured, evaluated, promoted to tasks, implemented with quality gates, and tracked to completion — all through plain-text files and Claude Code slash commands.
+CTDF gives your AI-assisted development workflow a structured backbone: ideas are captured, evaluated, promoted to tasks, implemented with quality gates, and tracked to completion — all through plain-text files and Claude Code slash commands.
 
 ## Features
 
 - **Two-pipeline workflow** — separate idea evaluation from task execution
-- **20 built-in skills** — slash commands for every stage of the development lifecycle
-- **Adaptive project initialization** — `/project-initialization` scaffolds your project and tailors all skills to your chosen stack, domain, and architecture
+- **21 built-in skills** — slash commands for every stage of the development lifecycle
+- **Claude Code plugin** — install via marketplace, uninstall cleanly, update easily
+- **Adaptive project initialization** — `/ctdf:project-initialization` scaffolds your project and tailors all skills to your chosen stack, domain, and architecture
 - **Plain-text tracking** — tasks and ideas live in simple `.txt` files, fully version-controllable
-- **GitHub Issues integration** — optional tri-modal sync with GitHub Issues for task and idea tracking
+- **GitHub/GitLab Issues integration** — optional tri-modal sync with GitHub or GitLab Issues
 - **Automated hooks** — file edits automatically surface related tasks and progress summaries
 - **Quality gates** — verification, linting, and smoke tests run before tasks can be closed
 - **Cross-platform** — works on Linux, macOS, and Windows with automatic OS detection
@@ -22,35 +23,49 @@ claude-task-development-framework gives your AI-assisted development workflow a 
 - [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) installed and configured
 - Python 3 (used by the bundled scripts)
 
+## Installation
+
+### From Marketplace
+
+```
+/plugin marketplace add dnviti/claude-task-development-framework
+/plugin install ctdf@dnviti-claude-task-development-framework
+```
+
+### Local Development
+
+```bash
+git clone https://github.com/dnviti/claude-task-development-framework.git
+claude --plugin-dir ./claude-task-development-framework
+```
+
 ## Getting Started
 
-1. **Clone or copy claude-task-development-framework into your project root:**
+1. **Install the plugin** using one of the methods above.
 
-   ```bash
-   git clone https://github.com/dnviti/claude-task-development-framework.git my-project
-   cd my-project
-   ```
-
-   Or copy the claude-task-development-framework files into an existing project:
-
-   ```bash
-   cp -r claude-task-development-framework/.claude your-project/
-   cp claude-task-development-framework/to-do.txt claude-task-development-framework/progressing.txt claude-task-development-framework/done.txt your-project/
-   cp claude-task-development-framework/ideas.txt claude-task-development-framework/idea-disapproved.txt your-project/
-   cp -r claude-task-development-framework/scripts your-project/
-   cp claude-task-development-framework/CLAUDE.md your-project/
-   ```
-
-2. **Initialize your project** — run `/project-initialization` to interactively choose a tech stack, scaffold the project, set up git with `main`/`develop` branches, and auto-configure all skills to match your project. Or manually customize `CLAUDE.md` — fill in the TODO sections with your project's development commands, environment setup, architecture, and file naming conventions.
-
-3. **Customize `to-do.txt`** — update the project name in the header and define your section structure (e.g., SECTION A — Core Features, SECTION B — Enhancements).
-
-4. **(Optional) Enable GitHub Issues integration** — see [GitHub Issues Integration](#github-issues-integration-optional) for setup instructions.
-
-5. **Start Claude Code** in your project directory and use the slash commands:
+2. **Set up task tracking** in your project:
 
    ```
-   /idea-create Add user authentication with JWT
+   /ctdf:setup My Project Name
+   ```
+
+   This creates the task/idea files (`to-do.txt`, `progressing.txt`, `done.txt`, `ideas.txt`, `idea-disapproved.txt`) and adds framework guidance to your `CLAUDE.md`.
+
+3. **(Optional) Full project initialization** — if starting a new project from scratch:
+
+   ```
+   /ctdf:project-initialization [project purpose or stack]
+   ```
+
+   This scaffolds your project, sets up git, and configures all skills for your specific tech stack.
+
+4. **Start using skills:**
+
+   ```
+   /ctdf:idea-create Add user authentication with JWT
+   /ctdf:idea-approve IDEA-001
+   /ctdf:task-pick
+   /ctdf:task-status
    ```
 
 ## Core Concepts
@@ -60,9 +75,9 @@ claude-task-development-framework gives your AI-assisted development workflow a 
 Ideas are lightweight proposals — high-level descriptions without implementation details. They go through evaluation before entering the task pipeline.
 
 ```
-ideas.txt  ──→  /idea-approve  ──→  to-do.txt (becomes a task)
+ideas.txt  ──→  /ctdf:idea-approve  ──→  to-do.txt (becomes a task)
     │
-    └──→  /idea-disapprove  ──→  idea-disapproved.txt (archived)
+    └──→  /ctdf:idea-disapprove  ──→  idea-disapproved.txt (archived)
 ```
 
 ### Task Pipeline
@@ -82,73 +97,92 @@ to-do.txt [ ]  ──→  progressing.txt [~]  ──→  done.txt [x]
 
 ## Skills Reference
 
+All skills are namespaced under `ctdf:`. Use `/ctdf:skill-name` to invoke.
+
+### Setup & Project
+
+| Skill | Usage | Description |
+|-------|-------|-------------|
+| `/ctdf:setup` | `/ctdf:setup [project name]` | Initialize task/idea tracking files in an existing project |
+| `/ctdf:project-initialization` | `/ctdf:project-initialization [purpose]` | Full project scaffold: choose stack, configure git, adapt all skills |
+
 ### Task Management
 
 | Skill | Usage | Description |
 |-------|-------|-------------|
-| `/task-create` | `/task-create [description]` | Create a new task with auto-assigned ID and codebase-informed technical details |
-| `/task-pick` | `/task-pick [TASK-CODE]` | Pick up the next task — verifies in-progress work first, runs quality gates |
-| `/task-continue` | `/task-continue [TASK-CODE]` | Resume work on a specific in-progress task |
-| `/task-status` | `/task-status` | Show current task summary and recommend next tasks |
-| `/task-scout` | `/task-scout [focus-area]` | Research industry trends and suggest new features |
+| `/ctdf:task-create` | `/ctdf:task-create [description]` | Create a new task with auto-assigned ID and codebase-informed technical details |
+| `/ctdf:task-pick` | `/ctdf:task-pick [TASK-CODE]` | Pick up the next task — verifies in-progress work first, runs quality gates |
+| `/ctdf:task-continue` | `/ctdf:task-continue [TASK-CODE]` | Resume work on a specific in-progress task |
+| `/ctdf:task-status` | `/ctdf:task-status` | Show current task summary and recommend next tasks |
+| `/ctdf:task-scout` | `/ctdf:task-scout [focus-area]` | Research industry trends and suggest new features |
 
 ### Idea Management
 
 | Skill | Usage | Description |
 |-------|-------|-------------|
-| `/idea-create` | `/idea-create [description]` | Add a lightweight idea to the backlog for future evaluation |
-| `/idea-approve` | `/idea-approve [IDEA-NNN]` | Promote an idea to a full task with technical details |
-| `/idea-disapprove` | `/idea-disapprove [IDEA-NNN]` | Reject an idea and archive it |
-| `/idea-refactor` | `/idea-refactor [IDEA-NNN]` | Update an idea to reflect codebase changes |
-
-### Project Setup
-
-| Skill | Usage | Description |
-|-------|-------|-------------|
-| `/project-initialization` | `/project-initialization [purpose]` | Initialize a new project: choose stack, scaffold, configure git, and adapt all skills to your project |
+| `/ctdf:idea-create` | `/ctdf:idea-create [description]` | Add a lightweight idea to the backlog for future evaluation |
+| `/ctdf:idea-approve` | `/ctdf:idea-approve [IDEA-NNN]` | Promote an idea to a full task with technical details |
+| `/ctdf:idea-disapprove` | `/ctdf:idea-disapprove [IDEA-NNN]` | Reject an idea and archive it |
+| `/ctdf:idea-refactor` | `/ctdf:idea-refactor [IDEA-NNN]` | Update an idea to reflect codebase changes |
 
 ### Development Operations
 
 | Skill | Usage | Description |
 |-------|-------|-------------|
-| `/app-start` | `/app-start` | Start the development environment with error monitoring |
-| `/app-stop` | `/app-stop` | Stop running development processes |
-| `/app-restart` | `/app-restart` | Restart the development environment |
+| `/ctdf:app-start` | `/ctdf:app-start` | Start the development environment with error monitoring |
+| `/ctdf:app-stop` | `/ctdf:app-stop` | Stop running development processes |
+| `/ctdf:app-restart` | `/ctdf:app-restart` | Restart the development environment |
 
 ### Quality & Documentation
 
 | Skill | Usage | Description |
 |-------|-------|-------------|
-| `/docs` | `/docs <operation> [category]` | Manage documentation (create, update, verify, sync, claude-md) |
-| `/test-engineer` | `/test-engineer [scope] [target]` | Create, update, or optimize tests and CI/CD pipelines |
-| `/security-audit` | `/security-audit [scope]` | Perform security audits and generate detailed reports |
-| `/github-pages-updater` | `/github-pages-updater` | Create or update a GitHub Pages landing site for the project |
+| `/ctdf:docs` | `/ctdf:docs <operation> [category]` | Manage documentation (create, update, verify, sync, claude-md) |
+| `/ctdf:test-engineer` | `/ctdf:test-engineer [scope] [target]` | Create, update, or optimize tests and CI/CD pipelines |
+| `/ctdf:security-audit` | `/ctdf:security-audit [scope]` | Perform security audits and generate detailed reports |
+| `/ctdf:github-pages-updater` | `/ctdf:github-pages-updater` | Create or update a GitHub Pages landing site for the project |
 
 ### Release & Publishing
 
 | Skill | Usage | Description |
 |-------|-------|-------------|
-| `/code-optimize` | `/code-optimize` | Analyze codebase for optimization opportunities across 7 categories and apply selected fixes |
-| `/git-publish` | `/git-publish` | Push development branch and open an auto-merging PR into main |
-| `/release` | `/release [major\|minor\|patch\|stable]` | Bump version, update changelog, tag, and optionally publish with GitHub Release |
+| `/ctdf:code-optimize` | `/ctdf:code-optimize` | Analyze codebase for optimization opportunities across 7 categories and apply selected fixes |
+| `/ctdf:git-publish` | `/ctdf:git-publish` | Push development branch and open an auto-merging PR into main |
+| `/ctdf:release` | `/ctdf:release [major\|minor\|patch\|stable]` | Bump version, update changelog, tag, and optionally publish with GitHub Release |
 
-## Adaptive Skill Configuration
+## Typical Workflow
 
-When you run `/project-initialization`, it doesn't just scaffold your project — it personalizes the entire skill ecosystem to match your chosen stack and domain. The following skills are adapted with project-specific values:
+```
+0.  /ctdf:setup "My Project"                     → Create task/idea tracking files
+1.  /ctdf:idea-create "Add email notifications"   → Idea added to ideas.txt
+2.  /ctdf:idea-approve IDEA-001                   → Idea promoted to task in to-do.txt
+3.  /ctdf:task-pick                               → Task moved to progressing.txt, briefing presented
+4.  (implement the task)                           → Write code based on the briefing
+5.  /ctdf:task-pick                               → Verifies implementation, runs quality gates
+6.  (confirm completion)                           → Task moved to done.txt
+7.  (optional: commit)                             → Changes committed with task code reference
+```
 
-| Skill | What gets configured |
-|-------|---------------------|
-| **app-start / stop / restart** | Dev ports, start command, pre-dev setup command |
-| **test-engineer** | Test framework, test command, file patterns, CI/CD runtime setup |
-| **task-create / idea-approve** | Architecture layer names for task templates |
-| **idea-create** | Domain-specific idea categories |
-| **docs** | Project-specific documentation categories |
-| **task-scout** | Project context (domain, stack, audience) and research categories |
-| **release** | Tag prefix, release branch name, changelog path, package.json paths |
-| **git-publish** | Development branch name, main branch name |
-| **code-optimize** | Verify command reference |
+You can also create tasks directly with `/ctdf:task-create` if you don't need the idea evaluation step.
 
-Skills that are already dynamic (task-pick, task-continue, task-status, idea-refactor, idea-disapprove, github-pages-updater, security-audit) read from CLAUDE.md and the codebase at runtime, so they adapt automatically without needing placeholders.
+Use `/ctdf:task-status` at any time to see your current progress and what to work on next.
+
+## Issues Tracker Integration (Optional)
+
+The plugin supports optional GitHub/GitLab Issues integration that can operate in three modes:
+
+| `enabled` | `sync` | Mode | Data Source |
+|-----------|--------|------|-------------|
+| `true` | `false` | **Platform-only** | GitHub/GitLab Issues only — no local text files |
+| `true` | `true` | **Dual sync** | Local files first, then synced to platform issues |
+| `false` | — | **Local only** | Local `.txt` files only (default) |
+
+To enable, run `/ctdf:project-initialization` and choose "Yes, enable issues tracker" when prompted, or manually copy and configure the example config:
+
+```bash
+cp <plugin-dir>/config/issues-tracker.example.json .claude/issues-tracker.json
+# Edit .claude/issues-tracker.json with your repo and settings
+```
 
 ## Task Format
 
@@ -207,143 +241,77 @@ IDEA-001 — Dark Mode Support
   environments. It is a widely expected feature in modern apps.
 ```
 
-Ideas are intentionally **high-level** — no technical details, no file lists. Those are added during `/idea-approve` when the idea becomes a task.
+Ideas are intentionally **high-level** — no technical details, no file lists. Those are added during `/ctdf:idea-approve` when the idea becomes a task.
 
-## Typical Workflow
-
-```
-0.  /project-initialization                    → Set up project, git, and all skills
-1.  /idea-create "Add email notifications"     → Idea added to ideas.txt
-2.  /idea-approve IDEA-001                     → Idea promoted to task in to-do.txt
-3.  /task-pick                                 → Task moved to progressing.txt, briefing presented
-4.  (implement the task)                       → Write code based on the briefing
-5.  /task-pick                                 → Verifies implementation, runs quality gates
-6.  (confirm completion)                       → Task moved to done.txt
-7.  (optional: commit)                         → Changes committed with task code reference
-```
-
-You can also create tasks directly with `/task-create` if you don't need the idea evaluation step.
-
-Use `/task-status` at any time to see your current progress and what to work on next.
-
-## GitHub Issues Integration (Optional)
-
-The framework supports an optional GitHub Issues integration that can operate in three modes:
-
-| `enabled` | `sync` | Mode | Data Source |
-|-----------|--------|------|-------------|
-| `true` | `false` | **GitHub-only** | GitHub Issues only — no local text files |
-| `true` | `true` | **Dual sync** | Local files first, then synced to GitHub Issues |
-| `false` | — | **Local only** | Local `.txt` files only (default) |
-
-### Setup
-
-1. Copy the example config:
-   ```bash
-   cp .claude/github-issues.example.json .claude/github-issues.json
-   ```
-
-2. Edit `.claude/github-issues.json` — set `"enabled": true`, configure your `"repo"`, and choose `"sync"` mode.
-
-3. Create the required labels on your GitHub repo:
-   ```bash
-   python3 .claude/scripts/setup_labels.py
-   ```
-
-4. Ensure `gh` CLI is authenticated: `gh auth status`
-
-When GitHub Issues is enabled, all task and idea skills (`/task-create`, `/task-pick`, `/idea-create`, `/idea-approve`, etc.) automatically detect the mode and use the appropriate data source. In GitHub-only mode, tasks are managed entirely through GitHub Issues with status labels. In dual sync mode, local files are the source of truth with GitHub Issues kept in sync.
-
-The framework works fully without GitHub Issues — local-only mode is the default and requires no additional setup.
-
-## Scripts
-
-The framework includes two Python scripts (zero external dependencies, stdlib only):
-
-| Script | Purpose |
-|--------|---------|
-| `.claude/scripts/task_manager.py` | Task/idea file parsing, ID generation, duplicate checking, block movement, file-to-task correlation (used by the post-edit hook) |
-| `.claude/scripts/app_manager.py` | Cross-platform port checking, process management for dev server lifecycle |
-
-The post-edit hook in `.claude/settings.json` automatically runs `task_manager.py` whenever a file is edited, surfacing related in-progress tasks and a progress summary.
-
-## Customization
-
-### CLAUDE.md
-
-Fill in the TODO sections to match your project (or let `/project-initialization` do it automatically):
-
-- **Development Commands** — your `dev`, `build`, `test`, and `verify` commands, plus `DEV_PORTS`, `START_COMMAND`, `PREDEV_COMMAND`, `VERIFY_COMMAND`
-- **Environment Setup** — how to install dependencies and configure env vars
-- **Architecture** — your project's structure and key patterns
-- **File Naming Conventions** — your naming rules by layer
-
-### Adding New Skills
-
-Create a new directory under `.claude/skills/` with a `SKILL.md` file:
-
-```
-.claude/skills/my-skill/SKILL.md
-```
-
-The SKILL.md frontmatter defines the skill metadata:
-
-```yaml
----
-name: my-skill
-description: What this skill does
-argument-hint: "[arguments]"
----
-```
-
-Then invoke it with `/my-skill` in Claude Code.
-
-## Cross-Platform Notes
-
-- **Python command:** All scripts and skills reference `python3`. On Windows where only `python` is available, substitute `python` for `python3` in all commands and update the reference in `.claude/settings.json`.
-- **Port management:** `.claude/scripts/app_manager.py` automatically uses the correct OS tools — `lsof`/`ss` on Unix, `netstat`/`taskkill` on Windows.
-- **File search:** `.claude/scripts/task_manager.py find-files` provides cross-platform file discovery.
-
-## Project Structure
+## Plugin Structure
 
 ```
 claude-task-development-framework/
-├── CLAUDE.md                    # Project guidance for Claude Code (customize this)
-├── README.md                    # This file
-├── to-do.txt                    # Pending tasks [ ] and blocked tasks [!]
-├── progressing.txt              # In-progress tasks [~]
-├── done.txt                     # Completed tasks [x]
-├── ideas.txt                    # Ideas awaiting evaluation
-├── idea-disapproved.txt         # Rejected ideas archive
-└── .claude/
-    ├── settings.json            # Hook configuration
-    ├── github-issues.example.json # GitHub Issues integration config template
-    ├── scripts/                 # Python automation scripts (stdlib only)
-    │   ├── task_manager.py      # Task/idea management CLI and post-edit hook
-    │   ├── release_manager.py   # Release automation CLI (version, changelog)
-    │   ├── app_manager.py       # Cross-platform port and process management
-    │   └── setup_labels.py      # Create platform labels for Issues integration
-    └── skills/                  # 20 Claude Code skills
-        ├── task-create/         # Create tasks
-        ├── task-pick/           # Pick up and close tasks
-        ├── task-continue/       # Resume in-progress tasks
-        ├── task-status/         # View task summary
-        ├── task-scout/          # Research new features
-        ├── idea-create/         # Add ideas
-        ├── idea-approve/        # Promote ideas to tasks
-        ├── idea-disapprove/     # Reject ideas
-        ├── idea-refactor/       # Update ideas
-        ├── project-initialization/ # Initialize and configure projects
-        ├── app-start/           # Start dev environment
-        ├── app-stop/            # Stop dev processes
-        ├── app-restart/         # Restart dev environment
-        ├── docs/                # Manage documentation
-        ├── test-engineer/       # Manage tests and CI/CD
-        ├── security-audit/      # Security audits
-        ├── github-pages-updater/# GitHub Pages site management
-        ├── code-optimize/       # Codebase optimization analysis
-        ├── git-publish/         # PR-based publishing to main
-        └── release/             # Version bumping and release management
+├── .claude-plugin/
+│   ├── plugin.json              # Plugin manifest
+│   └── marketplace.json         # Marketplace definition
+├── skills/                      # 21 Claude Code skills
+│   ├── setup/                   # Initialize task tracking in a project
+│   ├── task-create/             # Create tasks
+│   ├── task-pick/               # Pick up and close tasks
+│   ├── task-continue/           # Resume in-progress tasks
+│   ├── task-status/             # View task summary
+│   ├── task-scout/              # Research new features
+│   ├── idea-create/             # Add ideas
+│   ├── idea-approve/            # Promote ideas to tasks
+│   ├── idea-disapprove/         # Reject ideas
+│   ├── idea-refactor/           # Update ideas
+│   ├── project-initialization/  # Full project scaffolding
+│   ├── app-start/               # Start dev environment
+│   ├── app-stop/                # Stop dev processes
+│   ├── app-restart/             # Restart dev environment
+│   ├── docs/                    # Manage documentation
+│   ├── test-engineer/           # Manage tests and CI/CD
+│   ├── security-audit/          # Security audits
+│   ├── github-pages-updater/    # GitHub Pages site management
+│   ├── code-optimize/           # Codebase optimization analysis
+│   ├── git-publish/             # PR-based publishing to main
+│   └── release/                 # Version bumping and release management
+├── scripts/                     # Python automation scripts (stdlib only)
+│   ├── task_manager.py          # Task/idea management CLI and post-edit hook
+│   ├── release_manager.py       # Release automation CLI (version, changelog)
+│   ├── app_manager.py           # Cross-platform port and process management
+│   ├── setup_labels.py          # Create platform labels for Issues integration
+│   └── setup_protection.py      # Branch protection setup
+├── templates/                   # CI/CD workflow templates
+│   ├── github/workflows/        # GitHub Actions workflows
+│   └── gitlab/                  # GitLab CI templates
+├── config/                      # Example configuration files
+│   ├── issues-tracker.example.json
+│   ├── github-issues.example.json
+│   └── project-config.example.json
+├── hooks/
+│   └── hooks.json               # Plugin hooks (PostToolUse for task tracking)
+├── CLAUDE.md                    # Framework guidance
+├── VERSION                      # Plugin version
+└── README.md                    # This file
+```
+
+## Cross-Platform Notes
+
+- **Python command:** All scripts reference `python3`. On Windows where only `python` is available, substitute `python` for `python3`.
+- **Port management:** `app_manager.py` automatically uses the correct OS tools — `lsof`/`ss` on Unix, `netstat`/`taskkill` on Windows.
+- **File search:** `task_manager.py find-files` provides cross-platform file discovery.
+
+## Managing the Plugin
+
+```bash
+# Update the plugin
+/plugin update ctdf@dnviti-claude-task-development-framework
+
+# Disable temporarily
+/plugin disable ctdf@dnviti-claude-task-development-framework
+
+# Re-enable
+/plugin enable ctdf@dnviti-claude-task-development-framework
+
+# Uninstall
+/plugin uninstall ctdf@dnviti-claude-task-development-framework
 ```
 
 ## License

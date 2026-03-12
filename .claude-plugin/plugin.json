@@ -1,0 +1,21 @@
+{
+  "name": "ctdf",
+  "version": "1.0.0",
+  "description": "Project-agnostic task and idea management framework with 20+ built-in skills for the full development lifecycle.",
+  "author": {
+    "name": "dnviti"
+  },
+  "repository": "https://github.com/dnviti/claude-task-development-framework",
+  "license": "MIT",
+  "keywords": [
+    "task-management",
+    "project-management",
+    "ideas",
+    "workflow",
+    "devops",
+    "release",
+    "ci-cd"
+  ],
+  "skills": "./skills/",
+  "hooks": "./hooks/hooks.json"
+}

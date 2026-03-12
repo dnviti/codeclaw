@@ -42,6 +42,7 @@ Always respond and work in English, even if the user's prompt is written in anot
 - Key file paths and patterns
 -->
 
+<!-- CTDF:START -->
 ## Key Patterns
 
 ### Task Files
@@ -67,7 +68,7 @@ Ideas are stored separately from tasks and must be explicitly approved before en
 | `ideas.txt` | Ideas awaiting evaluation |
 | `idea-disapproved.txt` | Rejected ideas archive |
 
-Use `/idea-create` to add ideas, `/idea-approve` to promote an idea to a task, `/idea-refactor` to update ideas based on codebase changes, and `/idea-disapprove` to reject an idea. Ideas must never be picked up directly by `/task-pick`.
+Use `/ctdf:idea-create` to add ideas, `/ctdf:idea-approve` to promote an idea to a task, `/ctdf:idea-refactor` to update ideas based on codebase changes, and `/ctdf:idea-disapprove` to reject an idea. Ideas must never be picked up directly by `/ctdf:task-pick`.
 
 ### Task & Idea Management Modes
 
@@ -81,15 +82,14 @@ Tasks and ideas support three operating modes, controlled by `.claude/issues-tra
 
 The `platform` field (`"github"` or `"gitlab"`) determines which CLI tool (`gh` or `glab`) is used. If omitted, defaults to `"github"`.
 
-**Setup:** Copy `.claude/issues-tracker.example.json` to `.claude/issues-tracker.json`, set the `platform` and `repo` fields, and run `python3 .claude/scripts/setup_labels.py` to create the required labels. Or use `/project-initialization` which offers this setup interactively. Legacy `.claude/github-issues.json` is still supported as a fallback.
-
 ## Cross-Platform Notes
 
 This framework supports **Windows, macOS, and Linux** with automatic OS detection.
 
-- **Python command:** All scripts and skills reference `python3`. On Windows where only `python` is available, substitute `python` for `python3` in all commands. Windows users should also update the `python3` reference in `.claude/settings.json` to `python`.
-- **Port management:** `.claude/scripts/app_manager.py` automatically uses the correct OS tools — `lsof`/`ss` on Unix, `netstat`/`taskkill` on Windows.
-- **File search:** `.claude/scripts/task_manager.py find-files` provides cross-platform file discovery (replaces Unix `find`).
+- **Python command:** All scripts and skills reference `python3`. On Windows where only `python` is available, substitute `python` for `python3` in all commands.
+- **Port management:** `app_manager.py` automatically uses the correct OS tools — `lsof`/`ss` on Unix, `netstat`/`taskkill` on Windows.
+- **File search:** `task_manager.py find-files` provides cross-platform file discovery (replaces Unix `find`).
+<!-- CTDF:END -->
 
 ### File Naming Conventions
 
