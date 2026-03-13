@@ -92,7 +92,7 @@ Use `WebSearch` to find the best scaffolding tools and templates for the chosen 
 Use `WebFetch` on the most promising results to extract the actual scaffolding commands and options.
 
 Present your findings to the user as a numbered list:
-1. **Official CLI / tool** — The framework's own scaffolding (e.g., `create-next-app`, `cargo init`). Show the exact command, pros and cons.
+1. **Official CLI / tool** — The framework's own scaffolding. Show the exact command, pros and cons.
 2. **Community template** — A popular starter with extras. Show the exact command, pros and cons.
 3. **Manual setup** — For full control over every dependency.
 
@@ -115,7 +115,7 @@ STOP HERE after calling `AskUserQuestion`. Do NOT proceed to Step 4 until the us
 
   STOP HERE after calling `AskUserQuestion` if the directory is not empty. Do NOT proceed until the user responds.
 
-- Prefer **non-interactive flags** when available (e.g., `npx create-next-app@latest . --typescript --yes`, `cargo init --name myapp`).
+- Prefer **non-interactive flags** when available.
 
 **Execute** the chosen scaffolding command via `Bash`.
 
@@ -142,7 +142,7 @@ STOP HERE after calling `AskUserQuestion`. Do NOT proceed until the user respond
 1. **Get the `.gitignore`:**
    - Use `WebSearch` to find the official `.gitignore` template for the chosen stack/framework (e.g., search for `"gitignore [language/framework] github"` — GitHub maintains templates at `github/gitignore`).
    - Use `WebFetch` to download the appropriate `.gitignore` content.
-   - If no suitable template is found online, generate a comprehensive `.gitignore` yourself based on the stack (e.g., `node_modules/`, `__pycache__/`, `target/`, `.env`, IDE files, OS files, build output).
+   - If no suitable template is found online, generate a comprehensive `.gitignore` yourself based on the stack (e.g., `.env`, IDE files, OS files, build output).
    - If the scaffolding tool already created a `.gitignore`, merge the downloaded/generated one with it — do not overwrite useful entries already present.
 
 2. **Initialize the repository:**
@@ -181,20 +181,20 @@ Read the scaffolded project's configuration files to detect:
 
 | What to detect | Where to look |
 |----------------|---------------|
-| Dev server start command | `package.json` (scripts.dev/start), `Makefile`, `Cargo.toml`, `pyproject.toml`, `go.mod`, `Procfile` |
-| Dev server port(s) | Framework config files, default port for the framework, `docker-compose.yml` |
-| Pre-dev command | Docker setup, database migrations, codegen steps |
-| Verify/build command | `package.json` (scripts.build/lint/test), `Makefile`, `Cargo.toml` |
-| Test framework | `package.json` devDependencies (vitest, jest), `pyproject.toml` (pytest), built-in (go test, cargo test) |
-| Test command | `package.json` scripts (test), `pytest`, `cargo test`, `go test ./...` |
-| Test file pattern | Framework conventions: `*.test.ts`, `test_*.py`, `*_test.go` |
-| CI runtime setup | Detect runtime version, map to GitHub Actions setup step |
-| Release branch | `develop` if exists, otherwise `main` |
-| Manifest paths | `package.json`, `Cargo.toml`, `pyproject.toml` with version fields |
+| Dev server start command | Project manifest scripts section, task runner configs, process managers |
+| Dev server port(s) | Project/framework config files, environment variables, container orchestration files |
+| Pre-dev command | Container setup, database migrations, code generation steps, dependency installation |
+| Verify/build command | Manifest-defined build/lint/test scripts, task runner targets |
+| Test framework | Dev dependencies in project manifest, language-native test tooling |
+| Test command | Manifest-defined test scripts, language-native test runners |
+| Test file pattern | Existing test files in the repo (glob for common `test`/`spec` naming patterns) |
+| CI runtime setup | Detect language runtime and version, map to CI provider setup step |
+| Release branch | `develop` if exists, otherwise default branch |
+| Manifest paths | Language-specific project manifests containing a version field |
 | Changelog file | Default `CHANGELOG.md` |
-| Tag prefix | Existing tags or default `v` |
-| Repo URL | `git remote get-url origin`, convert SSH to HTTPS |
-| File naming conventions | Scaffolded directory structure and framework conventions |
+| Tag prefix | Existing git tags or default `v` |
+| Repo URL | `git remote get-url origin`, normalize to HTTPS |
+| File naming conventions | Existing directory structure and naming patterns in the repo |
 
 #### 6b. Update CLAUDE.md
 
@@ -205,28 +205,29 @@ Update CLAUDE.md with all detected values:
 ## Development Commands
 
 ```bash
-DEV_PORTS=[detected ports]                    # Port(s) the dev server listens on
-START_COMMAND="[detected start command]"       # Command to start dev server
-PREDEV_COMMAND="[detected predev or empty]"    # Optional pre-start setup
-VERIFY_COMMAND="[detected verify command]"     # Quality gate (lint + test + build)
+# Development
+DEV_PORTS=[detected ports]                     # Port(s) the dev server listens on
+START_COMMAND="[detected start command]"        # Command to start dev server
+PREDEV_COMMAND="[detected predev or empty]"     # Optional pre-start setup (migrations, codegen, etc.)
+VERIFY_COMMAND="[detected verify command]"      # Quality gate (lint + test + build)
 
 # Testing
-TEST_FRAMEWORK="[detected test framework]"    # e.g., Vitest, pytest, go test
-TEST_COMMAND="[detected test command]"         # e.g., npm run test, pytest
-TEST_FILE_PATTERN="[detected pattern]"         # e.g., *.test.ts, test_*.py
+TEST_FRAMEWORK="[detected test framework]"     # e.g., Vitest, Jest, pytest, go test, RSpec, PHPUnit
+TEST_COMMAND="[detected test command]"          # e.g., npm run test, pytest, go test ./..., bundle exec rspec
+TEST_FILE_PATTERN="[detected pattern]"          # e.g., *.test.ts, test_*.py, *_test.go, *_spec.rb
 
 # CI
-CI_RUNTIME_SETUP="[detected CI setup step]"   # GitHub Actions setup step YAML
+CI_RUNTIME_SETUP="[detected CI setup step]"    # GitHub Actions setup step YAML (setup-node, setup-python, setup-go, etc.)
 
 # Release
-RELEASE_BRANCH="[detected release branch]"    # e.g., develop, main
-PACKAGE_JSON_PATHS="[detected manifest paths]" # Space-separated manifest paths
-CHANGELOG_FILE="[detected or CHANGELOG.md]"   # Changelog file path
-TAG_PREFIX="[detected or v]"                   # Git tag prefix
-GITHUB_REPO_URL="[detected HTTPS URL]"        # HTTPS repo URL
+RELEASE_BRANCH="[detected release branch]"     # e.g., main, develop, master
+MANIFEST_PATHS="[detected manifest paths]"      # Space-separated package manifests (package.json, pyproject.toml, Cargo.toml, go.mod, etc.)
+CHANGELOG_FILE="[detected or CHANGELOG.md]"    # Changelog file path
+TAG_PREFIX="[detected or v]"                    # Git tag prefix
+GITHUB_REPO_URL="[detected HTTPS URL]"         # HTTPS repo URL
 
 # Common commands:
-# [actual install command]    — Install dependencies
+# [actual install command]    — Install dependencies (npm ci, pip install, go mod download, bundle install, etc.)
 # [actual dev command]        — Start development server
 # [actual build command]      — Build for production
 # [actual test command]       — Run tests
