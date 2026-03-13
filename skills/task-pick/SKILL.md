@@ -64,7 +64,7 @@ The user wants to pick up a task. The argument provided is: **$ARGUMENTS**
 ### Step 1: Determine which task to pick
 
 **In platform-only mode:**
-- **If a task code was provided** (e.g., `AUTH-001`): Search for it: `gh issue list --repo "$TRACKER_REPO" --search "[TASK-CODE] in:title" --label "task,status:todo" --state open --json number,title`
+- **If a task code was provided** (e.g., `AUTH-0001`): Search for it: `gh issue list --repo "$TRACKER_REPO" --search "[TASK-CODE] in:title" --label "task,status:todo" --state open --json number,title`
   <!-- GitLab: glab issue list -R "$TRACKER_REPO" --search "[TASK-CODE]" -l "task,status:todo" --state opened --output json -->
   - If not found in todo, check if already done: `gh issue list --repo "$TRACKER_REPO" --search "[TASK-CODE] in:title" --label "task,status:done" --state closed --json number,title`
     <!-- GitLab: glab issue list -R "$TRACKER_REPO" --search "[TASK-CODE]" -l "task,status:done" --state closed --output json -->

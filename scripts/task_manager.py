@@ -40,10 +40,10 @@ CRYPTO_PREFIXES = {"AES", "SHA", "RSA", "MD5", "RC4", "DES", "DSA", "ECC", "CBC"
 
 # ── Regexes ─────────────────────────────────────────────────────────────────
 
-TASK_HEADER_RE = re.compile(r"^\[(.)\]\s+([A-Z][A-Z0-9]{1,5}-\d{3})\s+—\s+(.+)$")
-IDEA_HEADER_RE = re.compile(r"^(IDEA-\d{3})\s+—\s+(.+)$")
-TASK_CODE_RE = re.compile(r"[A-Z][A-Z0-9]{1,5}-(\d{3})")
-IDEA_CODE_RE = re.compile(r"IDEA-(\d{3})")
+TASK_HEADER_RE = re.compile(r"^\[(.)\]\s+([A-Z]{3,5}-\d{4})\s+—\s+(.+)$")
+IDEA_HEADER_RE = re.compile(r"^(IDEA-[A-Z]{3,5}-\d{4})\s+—\s+(.+)$")
+TASK_CODE_RE = re.compile(r"[A-Z]{3,5}-(\d{4})")
+IDEA_CODE_RE = re.compile(r"IDEA-[A-Z]{3,5}-(\d{4})")
 SECTION_HEADER_RE = re.compile(r"^\s+SECTION\s+([A-Z])\s+—\s+(.+)$")
 
 
@@ -432,38 +432,35 @@ def cmd_next_id(args):
     if args.source == "platform-titles":
         code_re = TASK_CODE_RE if args.type == "task" else IDEA_CODE_RE
         max_num, prefixes = _next_id_from_stdin(code_re, filter_crypto=True)
-    elif args.type == "task":
-        files = [root / f for f in TASK_FILES]
-        for fp in files:
-            if not fp.exists():
-                continue
-            for block in parse_blocks(fp):
-                if block["block_type"] != "task":
-                    continue
-                code = block["code"]
-                prefix = code.rsplit("-", 1)[0]
-                num = int(code.rsplit("-", 1)[1])
-                if num > max_num:
-                    max_num = num
-                prefixes.add(prefix)
     else:
-        files = [root / f for f in IDEA_FILES]
-        for fp in files:
+        # Shared numbering: scan ALL files (tasks + ideas) regardless of type
+        all_files = [root / f for f in TASK_FILES + IDEA_FILES]
+        for fp in all_files:
             if not fp.exists():
                 continue
             for block in parse_blocks(fp):
-                if block["block_type"] != "idea":
-                    continue
-                num = int(block["code"].split("-")[1])
-                if num > max_num:
-                    max_num = num
+                if block["block_type"] == "task":
+                    code = block["code"]
+                    prefix = code.rsplit("-", 1)[0]
+                    num = int(code.rsplit("-", 1)[1])
+                    if num > max_num:
+                        max_num = num
+                    prefixes.add(prefix)
+                elif block["block_type"] == "idea":
+                    code = block["code"]
+                    num = int(code.rsplit("-", 1)[1])
+                    if num > max_num:
+                        max_num = num
+                    # Extract domain prefix from idea code (e.g., IDEA-AUTH-0001 -> AUTH)
+                    parts = code.split("-")
+                    if len(parts) >= 3:
+                        prefixes.add(parts[1])
 
     result = {
-        "next_number": f"{max_num + 1:03d}",
+        "next_number": f"{max_num + 1:04d}",
         "max_found": max_num,
     }
-    if args.type == "task":
-        result["prefixes"] = sorted(prefixes)
+    result["prefixes"] = sorted(prefixes)
 
     print(json.dumps(result))
 
@@ -1494,7 +1491,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     # parse
     p = sub.add_parser("parse", help="Parse a task/idea block to JSON")
-    p.add_argument("code", help="Task or idea code (e.g., AUTH-001, IDEA-003)")
+    p.add_argument("code", help="Task or idea code (e.g., AUTH-0001, IDEA-SEC-0003)")
     p.set_defaults(func=cmd_parse)
 
     # summary
@@ -1519,12 +1516,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     # verify-files
     p = sub.add_parser("verify-files", help="Check file existence for a task")
-    p.add_argument("code", help="Task code (e.g., AUTH-001)")
+    p.add_argument("code", help="Task code (e.g., AUTH-0001)")
     p.set_defaults(func=cmd_verify_files)
 
     # move
     p = sub.add_parser("move", help="Move a task between files")
-    p.add_argument("code", help="Task code (e.g., AUTH-001)")
+    p.add_argument("code", help="Task code (e.g., AUTH-0001)")
     p.add_argument("--to", required=True, choices=["todo", "progressing", "done"])
     p.add_argument("--completed-summary", default=None, help="Summary for COMPLETED field (when moving to done)")
     p.set_defaults(func=cmd_move)
@@ -1537,7 +1534,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     # set-release
     p = sub.add_parser("set-release", help="Set or clear the Release field on a task")
-    p.add_argument("code", help="Task code (e.g., AUTH-001)")
+    p.add_argument("code", help="Task code (e.g., AUTH-0001)")
     p.add_argument("--version", required=True, help="Release version (e.g., 1.1.0) or 'None' to clear")
     p.set_defaults(func=cmd_set_release)
 
@@ -1568,7 +1565,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     # pr-body
     p = sub.add_parser("pr-body", help="Generate PR body from template")
-    p.add_argument("--task-code", default=None, help="Task code (e.g., AUTH-001)")
+    p.add_argument("--task-code", default=None, help="Task code (e.g., AUTH-0001)")
     p.add_argument("--title", default=None, help="Task or PR title")
     p.add_argument("--summary", default=None, help="Summary of changes")
     p.add_argument("--issue-num", default=None, help="Related issue number")

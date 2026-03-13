@@ -63,7 +63,7 @@ claude --plugin-dir ./claude-task-development-framework
 
    ```
    /ctdf:idea-create Add user authentication with JWT
-   /ctdf:idea-approve IDEA-001
+   /ctdf:idea-approve IDEA-AUTH-0001
    /ctdf:task-pick
    /ctdf:task-status
    ```
@@ -114,16 +114,16 @@ All skills are namespaced under `ctdf:`. Use `/ctdf:skill-name` to invoke.
 | `/ctdf:task-pick` | `/ctdf:task-pick [TASK-CODE]` | Pick up the next task — verifies in-progress work first, runs quality gates |
 | `/ctdf:task-continue` | `/ctdf:task-continue [TASK-CODE]` | Resume work on a specific in-progress task |
 | `/ctdf:task-status` | `/ctdf:task-status` | Show current task summary and recommend next tasks |
-| `/ctdf:task-scout` | `/ctdf:task-scout [focus-area]` | Research industry trends and suggest new features |
+| `/ctdf:idea-scout` | `/ctdf:idea-scout [focus area or @local-file]` | Research trends and online sources to suggest new ideas for evaluation |
 
 ### Idea Management
 
 | Skill | Usage | Description |
 |-------|-------|-------------|
 | `/ctdf:idea-create` | `/ctdf:idea-create [description]` | Add a lightweight idea to the backlog for future evaluation |
-| `/ctdf:idea-approve` | `/ctdf:idea-approve [IDEA-NNN]` | Promote an idea to a full task with technical details |
-| `/ctdf:idea-disapprove` | `/ctdf:idea-disapprove [IDEA-NNN]` | Reject an idea and archive it |
-| `/ctdf:idea-refactor` | `/ctdf:idea-refactor [IDEA-NNN]` | Update an idea to reflect codebase changes |
+| `/ctdf:idea-approve` | `/ctdf:idea-approve [IDEA-PREFIX-XXXX]` | Promote an idea to a full task with technical details |
+| `/ctdf:idea-disapprove` | `/ctdf:idea-disapprove [IDEA-PREFIX-XXXX]` | Reject an idea and archive it |
+| `/ctdf:idea-refactor` | `/ctdf:idea-refactor [IDEA-PREFIX-XXXX]` | Update an idea to reflect codebase changes |
 
 ### Development Operations
 
@@ -155,7 +155,7 @@ All skills are namespaced under `ctdf:`. Use `/ctdf:skill-name` to invoke.
 ```
 0.  /ctdf:setup "My Project"                     → Create task/idea tracking files
 1.  /ctdf:idea-create "Add email notifications"   → Idea added to ideas.txt
-2.  /ctdf:idea-approve IDEA-001                   → Idea promoted to task in to-do.txt
+2.  /ctdf:idea-approve IDEA-AUTH-0001              → Idea promoted to task in to-do.txt
 3.  /ctdf:task-pick                               → Task moved to progressing.txt, briefing presented
 4.  (implement the task)                           → Write code based on the briefing
 5.  /ctdf:task-pick                               → Verifies implementation, runs quality gates
@@ -190,7 +190,7 @@ Each task in `to-do.txt` (or `progressing.txt` / `done.txt`) follows this struct
 
 ```
 ------------------------------------------------------------------------------
-[ ] AUTH-001 — User Authentication System
+[ ] AUTH-0001 — User Authentication System
 ------------------------------------------------------------------------------
   Priority: HIGH
   Dependencies: None
@@ -227,7 +227,7 @@ Each idea in `ideas.txt` follows this structure:
 
 ```
 ------------------------------------------------------------------------------
-IDEA-001 — Dark Mode Support
+IDEA-UIX-0001 — Dark Mode Support
 ------------------------------------------------------------------------------
   Category: User Interface
   Date: 2026-03-04
@@ -256,7 +256,7 @@ claude-task-development-framework/
 │   ├── task-pick/               # Pick up and close tasks
 │   ├── task-continue/           # Resume in-progress tasks
 │   ├── task-status/             # View task summary
-│   ├── task-scout/              # Research new features
+│   ├── idea-scout/              # Research and suggest new ideas
 │   ├── idea-create/             # Add ideas
 │   ├── idea-approve/            # Promote ideas to tasks
 │   ├── idea-disapprove/         # Reject ideas

@@ -2,7 +2,7 @@
 name: idea-refactor
 description: Review all ideas in ideas.txt or platform issues (GitHub/GitLab) against the current codebase state and update them to reflect changes in architecture, completed features, or new technical context.
 disable-model-invocation: true
-argument-hint: "[IDEA-NNN or blank for all]"
+argument-hint: "[IDEA-PREFIX-XXXX or blank for all]"
 ---
 
 # Refactor Ideas
@@ -63,13 +63,13 @@ The user wants to refactor: **$ARGUMENTS**
 ### Step 1: Load Ideas
 
 **In Platform-only mode:**
-- If an IDEA-NNN code was provided: `gh issue view $(gh issue list --repo "$TRACKER_REPO" --search "[IDEA-NNN] in:title" --label idea --json number --jq '.[0].number') --repo "$TRACKER_REPO" --json number,title,body`
-  <!-- # GitLab: glab issue view $(glab issue list -R "$TRACKER_REPO" --search "[IDEA-NNN]" -l idea --output json | jq '.[0].iid') -R "$TRACKER_REPO" --output json -->
+- If an IDEA-PREFIX-XXXX code was provided: `gh issue view $(gh issue list --repo "$TRACKER_REPO" --search "[IDEA-PREFIX-XXXX] in:title" --label idea --json number --jq '.[0].number') --repo "$TRACKER_REPO" --json number,title,body`
+  <!-- # GitLab: glab issue view $(glab issue list -R "$TRACKER_REPO" --search "[IDEA-PREFIX-XXXX]" -l idea --output json | jq '.[0].iid') -R "$TRACKER_REPO" --output json -->
 - If no argument: `gh issue list --repo "$TRACKER_REPO" --label idea --state open --json number,title,body`
   <!-- # GitLab: glab issue list -R "$TRACKER_REPO" -l idea --state opened --output json | jq '.' -->
 
 **In local/dual mode:**
-- If an IDEA-NNN code was provided: Read only that specific idea from `ideas.txt`.
+- If an IDEA-PREFIX-XXXX code was provided: Read only that specific idea from `ideas.txt`.
 - If no argument: Read ALL ideas from `ideas.txt`.
 
 If no ideas exist, inform the user: "No ideas to refactor. Use `/idea-create` to add ideas first."
@@ -134,21 +134,21 @@ Present a structured report to the user:
 ## Idea Refactoring Report
 
 ### REDUNDANT (already implemented)
-- **IDEA-NNN — Title**: [explanation of what's already implemented and where]
+- **IDEA-PREFIX-XXXX — Title**: [explanation of what's already implemented and where]
 
 ### DUPLICATE (already a task)
-- **IDEA-NNN — Title**: Overlaps with [TASK-CODE — Task Title]
+- **IDEA-PREFIX-XXXX — Title**: Overlaps with [TASK-CODE — Task Title]
 
 ### NEEDS UPDATE (technical context changed)
-- **IDEA-NNN — Title**: [what changed and proposed updates]
+- **IDEA-PREFIX-XXXX — Title**: [what changed and proposed updates]
   - Current text: "..."
   - Proposed text: "..."
 
 ### OBSOLETE (no longer relevant)
-- **IDEA-NNN — Title**: [why it's no longer relevant]
+- **IDEA-PREFIX-XXXX — Title**: [why it's no longer relevant]
 
 ### UNCHANGED (still valid)
-- **IDEA-NNN — Title**: No changes needed
+- **IDEA-PREFIX-XXXX — Title**: No changes needed
 ```
 
 ### Step 5: Ask for Confirmation
@@ -174,7 +174,7 @@ For ideas marked **NEEDS UPDATE** (and confirmed by user):
 For ideas marked **REDUNDANT**, **DUPLICATE**, or **OBSOLETE** (if user confirms):
 - Add a comment: `gh issue comment $ISSUE_NUM --repo "$TRACKER_REPO" --body "Flagged as [status] by /idea-refactor. Recommended for disapproval."`
   <!-- # GitLab: glab issue note $ISSUE_NUM -R "$TRACKER_REPO" -m "Flagged as [status] by /idea-refactor. Recommended for disapproval." -->
-- Suggest using `/idea-disapprove IDEA-NNN` for each one
+- Suggest using `/idea-disapprove IDEA-PREFIX-XXXX` for each one
 
 **In dual sync mode:**
 
@@ -185,7 +185,7 @@ For ideas marked **NEEDS UPDATE** (and confirmed by user):
 4. Sync to platform (update issue body + add comment)
 
 For ideas marked **REDUNDANT**, **DUPLICATE**, or **OBSOLETE** (if user confirms):
-- Suggest using `/idea-disapprove IDEA-NNN` for each one — do NOT remove them directly
+- Suggest using `/idea-disapprove IDEA-PREFIX-XXXX` for each one — do NOT remove them directly
 
 **In local only mode:**
 
@@ -195,7 +195,7 @@ For ideas marked **NEEDS UPDATE** (and confirmed by user):
 3. Add or update a `Last updated: YYYY-MM-DD` line after the `Date:` field
 
 For ideas marked **REDUNDANT**, **DUPLICATE**, or **OBSOLETE** (if user confirms):
-- Suggest using `/idea-disapprove IDEA-NNN` for each one
+- Suggest using `/idea-disapprove IDEA-PREFIX-XXXX` for each one
 - Do NOT remove them directly — always go through the proper disapproval flow
 
 ### Step 7: Report

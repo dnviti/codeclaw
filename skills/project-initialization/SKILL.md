@@ -346,7 +346,7 @@ The following CTDF skills are ready (they read configuration from CLAUDE.md):
 - `/ctdf:release` — semantic versioning, changelog, and tagging
 - `/ctdf:release plan` — release planning and task grouping
 - `/ctdf:docs` — documentation management
-- `/ctdf:task-scout` — feature research
+- `/ctdf:idea-scout` — idea research and scouting
 - `/ctdf:code-optimize` — code quality analysis
 ```
 

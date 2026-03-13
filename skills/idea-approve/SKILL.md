@@ -2,7 +2,7 @@
 name: idea-approve
 description: Approve an idea, convert it into a full task with technical details, and promote it to the task pipeline. This is the ONLY bridge from ideas to tasks.
 disable-model-invocation: true
-argument-hint: "[IDEA-NNN]"
+argument-hint: "[IDEA-PREFIX-XXXX]"
 ---
 
 # Approve an Idea
@@ -60,13 +60,13 @@ The user wants to approve: **$ARGUMENTS**
 ### Step 1: Select the Idea
 
 **Platform-only mode:**
-- **If an IDEA-NNN code was provided**: Search platform issues: `gh issue list --repo "$TRACKER_REPO" --search "[IDEA-NNN] in:title" --label idea --state open --json number,title`. If not found, inform the user and list available idea issues.
-  <!-- GitLab: glab issue list -R "$TRACKER_REPO" --search "[IDEA-NNN]" -l idea --output json -->
+- **If an IDEA-PREFIX-XXXX code was provided**: Search platform issues: `gh issue list --repo "$TRACKER_REPO" --search "[IDEA-PREFIX-XXXX] in:title" --label idea --state open --json number,title`. If not found, inform the user and list available idea issues.
+  <!-- GitLab: glab issue list -R "$TRACKER_REPO" --search "[IDEA-PREFIX-XXXX]" -l idea --output json -->
 - **If no argument was provided**: List all open idea issues from the Current State data above. Use `AskUserQuestion` to ask the user which idea to approve.
 - If there are no open idea issues, inform the user: "No ideas available for approval. Use `/idea-create` to add ideas first."
 
 **Local / dual sync mode:**
-- **If an IDEA-NNN code was provided**: Find that idea in `ideas.txt`. If not found, inform the user and list available ideas.
+- **If an IDEA-PREFIX-XXXX code was provided**: Find that idea in `ideas.txt`. If not found, inform the user and list available ideas.
 - **If no argument was provided**: List all ideas from `ideas.txt` with their codes, titles, and categories. Use `AskUserQuestion` to ask the user which idea to approve.
 - If `ideas.txt` has no ideas, inform the user: "No ideas available for approval. Use `/idea-create` to add ideas first."
 
@@ -80,29 +80,17 @@ The user wants to approve: **$ARGUMENTS**
 **Local / dual sync mode:**
 Get the full parsed idea data:
 ```bash
-python3 ${CLAUDE_PLUGIN_ROOT}/scripts/task_manager.py parse IDEA-NNN
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/task_manager.py parse IDEA-PREFIX-XXXX
 ```
 This returns all fields as JSON: title, category, date, description, motivation.
 
 Present the idea to the user as context for what will be converted.
 
-### Step 3: Determine the Task Code Prefix
+### Step 3: Derive the Task Code
 
-Analyze the idea's description and category to select an appropriate task prefix.
+The task code is derived directly from the idea code by stripping the `IDEA-` prefix. For example, `IDEA-AUTH-0001` becomes `AUTH-0001`. No separate prefix determination or number computation is needed — the idea already carries both.
 
-**Check the existing prefixes** from the data above. Each prefix represents a feature domain.
-
-**Rules:**
-1. Reuse an existing prefix if the idea clearly falls within that domain.
-2. If no existing prefix fits, create a new one: 2-6 uppercase letters that clearly abbreviate the feature area.
-
-### Step 4: Compute the Next Task Number
-
-Task numbering is **globally sequential** across all prefixes.
-
-**All modes:** Use the `next_number` field from the next-id JSON (from the "Current State" section above, or from the `platform-titles` pipe command for platform-only mode). The script handles global sequencing and crypto false-positive filtering automatically.
-
-### Step 5: Explore the Codebase
+### Step 4: Explore the Codebase
 
 Before writing the task, explore the codebase to generate accurate technical details:
 
@@ -110,16 +98,16 @@ Before writing the task, explore the codebase to generate accurate technical det
 2. **Look at similar completed tasks** — in local/dual mode check `done.txt`, in platform-only mode search closed task issues.
 3. **Identify files to create and modify** — be specific about file paths. Use `Glob` to verify paths exist before listing them.
 
-### Step 6: Draft the Full Task
+### Step 5: Draft the Full Task
 
 **Platform-only mode — draft as a platform issue in English:**
 
-Title: `[PREFIX-NNN] Task Title`
+Title: `[PREFIX-XXXX] Task Title`
 
 Body:
 ```
-**Code:** PREFIX-NNN | **Priority:** HIGH/MEDIUM/LOW | **Section:** SECTION_NAME | **Dependencies:** DEPS | **Release:** VERSION
-**Promoted from:** [IDEA-NNN] #IDEA_ISSUE_NUMBER
+**Code:** PREFIX-XXXX | **Priority:** HIGH/MEDIUM/LOW | **Section:** SECTION_NAME | **Dependencies:** DEPS | **Release:** VERSION
+**Promoted from:** [IDEA-PREFIX-XXXX] #IDEA_ISSUE_NUMBER
 
 ## Description
 Expanded description in English based on the original idea. More detailed than
@@ -142,7 +130,7 @@ Include specific code snippets, function signatures, endpoint paths.
 
 ```
 ------------------------------------------------------------------------------
-[ ] PREFIX-NNN — Task title (concise)
+[ ] PREFIX-XXXX — Task title (concise)
 ------------------------------------------------------------------------------
   Priority: [HIGH/MEDIUM/LOW]
   Dependencies: [TASK-CODE, TASK-CODE or None]
@@ -168,28 +156,28 @@ Include specific code snippets, function signatures, endpoint paths.
 **Formatting rules (local / dual sync mode only):**
 - Header separator lines are exactly 78 dashes
 - Status prefix is `[ ] ` (pending)
-- Title line format: `[ ] PREFIX-NNN — Task Title` (use `—` em dash)
+- Title line format: `[ ] PREFIX-XXXX — Task Title` (use `—` em dash)
 - Indent all content with 2 spaces
 - Dependencies: use task codes or `None`
 - Section labels: `DESCRIPTION:`, `TECHNICAL DETAILS:`, `Files involved:`
 - File action labels: `CREATE:` and `MODIFY:`, indented 4 spaces
 - End with two blank lines
 
-### Step 7: Present the Draft and Ask for Confirmation
+### Step 6: Present the Draft and Ask for Confirmation
 
 Present the complete task (issue draft or task block) to the user, along with:
 
-1. **Original idea:** IDEA-NNN and its title
-2. **New task code:** PREFIX-NNN
+1. **Original idea:** IDEA-PREFIX-XXXX and its title
+2. **New task code:** PREFIX-XXXX
 3. **Suggested section:** Which section and why
 4. **Suggested priority:** HIGH / MEDIUM / LOW and why
 
 Then use `AskUserQuestion` with these options:
-- **"Looks good, approve it"** — proceed to Step 8
+- **"Looks good, approve it"** — proceed to Step 7
 - **"Needs changes"** — let the user specify adjustments
 - **"Cancel"** — abort without approving
 
-### Step 8: Check for Duplicates
+### Step 7: Check for Duplicates
 
 **Platform-only mode:**
 Search platform issues for similar tasks:
@@ -205,12 +193,12 @@ Run: `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/task_manager.py duplicates --keyword
 
 Use 2-3 key terms from the task title and description. If the JSON output contains matches that look like a similar task, warn the user and ask whether to proceed or abort.
 
-### Step 9: Insert the Task and Remove the Idea
+### Step 8: Insert the Task and Remove the Idea
 
 This step varies by mode:
 
 **Platform-only mode:**
-Skip local file operations entirely. The task issue creation and idea issue closure happen in Step 9.5.
+Skip local file operations entirely. The task issue creation and idea issue closure happen in Step 8.5.
 
 **Local / dual sync mode — two operations:**
 
@@ -221,23 +209,23 @@ Skip local file operations entirely. The task issue creation and idea issue clos
 4. Maintain whitespace conventions: two blank lines between tasks.
 
 **9b. Remove the idea from `ideas.txt`:**
-Run: `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/task_manager.py remove IDEA-NNN --file ideas.txt`
+Run: `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/task_manager.py remove IDEA-PREFIX-XXXX --file ideas.txt`
 This cleanly removes the idea block and handles whitespace cleanup automatically.
 
-### Step 9.5: Sync to GitHub Issues
+### Step 8.5: Sync to GitHub Issues
 
 **Platform-only mode** — this IS the primary operation:
 
 1. **Close the idea issue:**
    ```bash
-   IDEA_ISSUE=$(gh issue list --repo "$TRACKER_REPO" --search "[IDEA-NNN] in:title" --label idea --state open --json number --jq '.[0].number' 2>/dev/null)
-   # GitLab: IDEA_ISSUE=$(glab issue list -R "$TRACKER_REPO" --search "[IDEA-NNN]" -l idea --output json | jq '.[0].iid')
+   IDEA_ISSUE=$(gh issue list --repo "$TRACKER_REPO" --search "[IDEA-PREFIX-XXXX] in:title" --label idea --state open --json number --jq '.[0].number' 2>/dev/null)
+   # GitLab: IDEA_ISSUE=$(glab issue list -R "$TRACKER_REPO" --search "[IDEA-PREFIX-XXXX]" -l idea --output json | jq '.[0].iid')
    ```
    If found:
    ```bash
-   gh issue close "$IDEA_ISSUE" --repo "$TRACKER_REPO" --comment "Approved and promoted to task [PREFIX-NNN]." 2>/dev/null || true
+   gh issue close "$IDEA_ISSUE" --repo "$TRACKER_REPO" --comment "Approved and promoted to task [PREFIX-XXXX]." 2>/dev/null || true
    # GitLab: glab issue close "$IDEA_ISSUE" -R "$TRACKER_REPO"
-   # GitLab: glab issue note "$IDEA_ISSUE" -R "$TRACKER_REPO" -m "Approved and promoted to task [PREFIX-NNN]."
+   # GitLab: glab issue note "$IDEA_ISSUE" -R "$TRACKER_REPO" -m "Approved and promoted to task [PREFIX-XXXX]."
    ```
 
 2. **Create the task issue:**
@@ -245,10 +233,10 @@ This cleanly removes the idea block and handles whitespace cleanup automatically
    PRIORITY_LABEL="$(jq -r ".labels.priority.\"$PRIORITY\"" "$TRACKER_CFG")"
    SECTION_LABEL="$(jq -r ".labels.sections.\"$SECTION_LETTER\"" "$TRACKER_CFG")"
    TASK_ISSUE_URL=$(gh issue create --repo "$TRACKER_REPO" \
-     --title "[PREFIX-NNN] Task Title" \
+     --title "[PREFIX-XXXX] Task Title" \
      --body "$(cat <<'EOF'
-   **Code:** PREFIX-NNN | **Priority:** HIGH/MEDIUM/LOW | **Section:** SECTION_NAME | **Dependencies:** DEPS | **Release:** VERSION
-   **Promoted from:** [IDEA-NNN] #IDEA_ISSUE
+   **Code:** PREFIX-XXXX | **Priority:** HIGH/MEDIUM/LOW | **Section:** SECTION_NAME | **Dependencies:** DEPS | **Release:** VERSION
+   **Promoted from:** [IDEA-PREFIX-XXXX] #IDEA_ISSUE
 
    ## Description
    [Description content in English]
@@ -265,7 +253,7 @@ This cleanly removes the idea block and handles whitespace cleanup automatically
    EOF
    )" \
      --label "claude-code,task,$PRIORITY_LABEL,status:todo,$SECTION_LABEL")
-   # GitLab: glab issue create -R "$TRACKER_REPO" --title "[PREFIX-NNN] Task Title" --description "BODY" -l "claude-code,task,$PRIORITY_LABEL,status:todo,$SECTION_LABEL"
+   # GitLab: glab issue create -R "$TRACKER_REPO" --title "[PREFIX-XXXX] Task Title" --description "BODY" -l "claude-code,task,$PRIORITY_LABEL,status:todo,$SECTION_LABEL"
    ```
 
 3. **Cross-reference** between the idea and task issues:
@@ -279,14 +267,14 @@ This cleanly removes the idea block and handles whitespace cleanup automatically
 
 1. **Close the idea issue:**
    ```bash
-   IDEA_ISSUE=$(gh issue list --repo "$TRACKER_REPO" --search "[IDEA-NNN] in:title" --label idea --state open --json number --jq '.[0].number' 2>/dev/null)
-   # GitLab: IDEA_ISSUE=$(glab issue list -R "$TRACKER_REPO" --search "[IDEA-NNN]" -l idea --output json | jq '.[0].iid')
+   IDEA_ISSUE=$(gh issue list --repo "$TRACKER_REPO" --search "[IDEA-PREFIX-XXXX] in:title" --label idea --state open --json number --jq '.[0].number' 2>/dev/null)
+   # GitLab: IDEA_ISSUE=$(glab issue list -R "$TRACKER_REPO" --search "[IDEA-PREFIX-XXXX]" -l idea --output json | jq '.[0].iid')
    ```
    If found:
    ```bash
-   gh issue close "$IDEA_ISSUE" --repo "$TRACKER_REPO" --comment "Approved and promoted to task [PREFIX-NNN]." 2>/dev/null || true
+   gh issue close "$IDEA_ISSUE" --repo "$TRACKER_REPO" --comment "Approved and promoted to task [PREFIX-XXXX]." 2>/dev/null || true
    # GitLab: glab issue close "$IDEA_ISSUE" -R "$TRACKER_REPO"
-   # GitLab: glab issue note "$IDEA_ISSUE" -R "$TRACKER_REPO" -m "Approved and promoted to task [PREFIX-NNN]."
+   # GitLab: glab issue note "$IDEA_ISSUE" -R "$TRACKER_REPO" -m "Approved and promoted to task [PREFIX-XXXX]."
    ```
 
 2. **Create the task issue:**
@@ -294,10 +282,10 @@ This cleanly removes the idea block and handles whitespace cleanup automatically
    PRIORITY_LABEL="$(jq -r ".labels.priority.\"$PRIORITY\"" "$TRACKER_CFG")"
    SECTION_LABEL="$(jq -r ".labels.sections.\"$SECTION_LETTER\"" "$TRACKER_CFG")"
    TASK_ISSUE_URL=$(gh issue create --repo "$TRACKER_REPO" \
-     --title "[PREFIX-NNN] Task Title" \
+     --title "[PREFIX-XXXX] Task Title" \
      --body "$(cat <<'EOF'
-   **Code:** PREFIX-NNN | **Priority:** PRIORITY | **Section:** SECTION_NAME | **Dependencies:** DEPS | **Release:** VERSION
-   **Promoted from:** [IDEA-NNN] #IDEA_ISSUE
+   **Code:** PREFIX-XXXX | **Priority:** PRIORITY | **Section:** SECTION_NAME | **Dependencies:** DEPS | **Release:** VERSION
+   **Promoted from:** [IDEA-PREFIX-XXXX] #IDEA_ISSUE
 
    ## Description
    [DESCRIPTION content from the task block]
@@ -314,7 +302,7 @@ This cleanly removes the idea block and handles whitespace cleanup automatically
    EOF
    )" \
      --label "claude-code,task,$PRIORITY_LABEL,status:todo,$SECTION_LABEL")
-   # GitLab: glab issue create -R "$TRACKER_REPO" --title "[PREFIX-NNN] Task Title" --description "BODY" -l "claude-code,task,$PRIORITY_LABEL,status:todo,$SECTION_LABEL"
+   # GitLab: glab issue create -R "$TRACKER_REPO" --title "[PREFIX-XXXX] Task Title" --description "BODY" -l "claude-code,task,$PRIORITY_LABEL,status:todo,$SECTION_LABEL"
    ```
 
 3. Extract the task issue number and write `GitHub: #NNN` to the new task block in `to-do.txt`.
@@ -356,9 +344,9 @@ After the task is created and the idea removed, check if release planning is act
 
 After successfully completing all operations, report:
 
-> "Idea **IDEA-NNN** has been approved and promoted to task **PREFIX-NNN — Task Title**.
+> "Idea **IDEA-PREFIX-XXXX** has been approved and promoted to task **PREFIX-XXXX — Task Title**.
 >
-> - **Task code:** PREFIX-NNN
+> - **Task code:** PREFIX-XXXX
 > - **Priority:** HIGH/MEDIUM/LOW
 > - **Dependencies:** list or None
 > - **Section:** SECTION X — Section Name
@@ -367,11 +355,11 @@ After successfully completing all operations, report:
 >
 > *(mode-specific details below)*
 
-**Platform-only mode:** "The idea issue has been closed and the task issue has been created on the platform. Pick it up with `/task-pick PREFIX-NNN`."
+**Platform-only mode:** "The idea issue has been closed and the task issue has been created on the platform. Pick it up with `/task-pick PREFIX-XXXX`."
 
-**Dual sync mode:** "The idea has been removed from `ideas.txt`. The task is now in `to-do.txt` and synced to the platform. Pick it up with `/task-pick PREFIX-NNN`."
+**Dual sync mode:** "The idea has been removed from `ideas.txt`. The task is now in `to-do.txt` and synced to the platform. Pick it up with `/task-pick PREFIX-XXXX`."
 
-**Local only mode:** "The idea has been removed from `ideas.txt`. The task is now in `to-do.txt` and can be picked up with `/task-pick PREFIX-NNN`."
+**Local only mode:** "The idea has been removed from `ideas.txt`. The task is now in `to-do.txt` and can be picked up with `/task-pick PREFIX-XXXX`."
 
 ## Section Selection Guide
 

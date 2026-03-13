@@ -3,6 +3,7 @@ name: idea-create
 description: Create a new idea in the idea backlog (ideas.txt or platform issues) for future evaluation. Ideas are lightweight proposals that must be approved before becoming tasks.
 disable-model-invocation: true
 argument-hint: "[idea description]"
+# Idea IDs use IDEA-PREFIX-XXXX format (e.g., IDEA-AUTH-0001)
 ---
 
 # Create a New Idea
@@ -71,25 +72,35 @@ Add 2-3 project-domain categories based on the project's architecture and purpos
 
 If no existing category fits well, create a concise new one.
 
+### Step 2.5: Determine the Idea Code Prefix
+
+Analyze the idea description and category to select an appropriate code prefix.
+
+**Check the existing prefixes** from the next-id JSON output (`prefixes` array). Each prefix represents a feature domain in this project.
+
+**Rules:**
+1. Reuse an existing prefix if the idea clearly falls within that domain.
+2. If no existing prefix fits, create a new one: 3-5 uppercase letters forming a meaningful English word or common acronym that categorizes the idea's domain (e.g., AUTH, FEAT, DOCS, PERF, SEC, API, DATA, CFG).
+
+The idea code will be `IDEA-PREFIX-XXXX` (e.g., `IDEA-AUTH-0001`). When this idea is later approved via `/idea-approve`, the `IDEA-` prefix is simply dropped, so `IDEA-AUTH-0001` becomes task `AUTH-0001`.
+
 ### Step 3: Compute the Next Idea Number
 
-Idea numbering is **globally sequential**.
+Idea and task numbering share a **single global sequence** — an idea's number IS its future task number.
 
 **In Platform-only mode:**
-1. Query all idea IDs: `gh issue list --repo "$TRACKER_REPO" --label idea --state all --limit 500 --json title --jq '.[].title' | grep -oE 'IDEA-[0-9]{3}' | sort -t'-' -k2 -n | tail -5`
-   <!-- GitLab: glab issue list -R "$TRACKER_REPO" -l idea --state all --output json | jq '.[].title' | grep -oE 'IDEA-[0-9]{3}' | sort -t'-' -k2 -n | tail -5 -->
-2. Find the maximum number.
-3. The new idea number = `max + 1`, zero-padded to 3 digits.
-4. If no ideas exist yet, start at `IDEA-001`.
+1. Pipe platform issue titles into the next-id command (see "Current Idea State" above).
+2. Use the `next_number` from the JSON output.
+3. If no ideas or tasks exist yet, start at `IDEA-PREFIX-0001`.
 
 **In local/dual mode:**
-Use the `next_number` field from the "Next available idea ID" JSON above. No manual computation needed — the script handles global sequencing across both idea files.
+Use the `next_number` field from the "Next available idea ID" JSON above. The script scans both task and idea files to compute the global max, ensuring no number collisions.
 
 ### Step 4: Draft the Idea
 
 **In Platform-only mode**, draft the idea as a platform issue:
 
-**Title:** `[IDEA-NNN] Idea Title (concise)`
+**Title:** `[IDEA-PREFIX-XXXX] Idea Title (concise)`
 
 **Body:**
 ```
@@ -112,7 +123,7 @@ adds to the project. Approximately 2-4 lines.
 
 ```
 ------------------------------------------------------------------------------
-IDEA-NNN — Idea title (concise)
+IDEA-PREFIX-XXXX — Idea title (concise)
 ------------------------------------------------------------------------------
   Category: [from Step 2]
   Date: YYYY-MM-DD
@@ -129,7 +140,7 @@ IDEA-NNN — Idea title (concise)
 
 **Formatting rules for local/dual mode:**
 - Header separator lines are exactly 78 dashes: `------------------------------------------------------------------------------`
-- Title line format: `IDEA-NNN — Title` (use `—` em dash, not `-` hyphen)
+- Title line format: `IDEA-PREFIX-XXXX — Title` (use `—` em dash, not `-` hyphen)
 - Indent all content with 2 spaces
 - Date format: `YYYY-MM-DD` (today's date)
 - Section labels in order: `DESCRIPTION:`, `MOTIVATION:`
@@ -139,7 +150,7 @@ IDEA-NNN — Idea title (concise)
 
 Present the complete idea to the user, along with:
 
-1. **Idea code:** The generated IDEA-NNN
+1. **Idea code:** The generated IDEA-PREFIX-XXXX
 2. **Category:** The selected category
 
 Then use `AskUserQuestion` with these options:
@@ -172,10 +183,10 @@ gh issue list --repo "$TRACKER_REPO" --search "keyword2" --label task --json num
 Create the platform issue directly:
 ```bash
 ISSUE_URL=$(gh issue create --repo "$TRACKER_REPO" \
-  --title "[IDEA-NNN] Idea Title" \
+  --title "[IDEA-PREFIX-XXXX] Idea Title" \
   --body "$IDEA_BODY" \
   --label "claude-code,idea")
-# GitLab: glab issue create -R "$TRACKER_REPO" --title "[IDEA-NNN] Idea Title" --description "$IDEA_BODY" -l "claude-code,idea"
+# GitLab: glab issue create -R "$TRACKER_REPO" --title "[IDEA-PREFIX-XXXX] Idea Title" --description "$IDEA_BODY" -l "claude-code,idea"
 ```
 
 **In dual sync mode:**
@@ -194,14 +205,14 @@ Append the idea block to `ideas.txt` using the `Edit` tool.
 
 After successfully creating the idea, report:
 
-> "Idea **IDEA-NNN — Idea Title** has been created.
+> "Idea **IDEA-PREFIX-XXXX — Idea Title** has been created.
 >
-> - **Code:** IDEA-NNN
+> - **Code:** IDEA-PREFIX-XXXX
 > - **Category:** Category
 > - **Date:** YYYY-MM-DD
 > - **GitHub Issue:** #NNN (URL) *(only if GitHub issue was created)*
 >
-> Use `/idea-approve IDEA-NNN` to promote this idea to a task, or `/idea-disapprove IDEA-NNN` to reject it."
+> Use `/idea-approve IDEA-PREFIX-XXXX` to promote this idea to a task, or `/idea-disapprove IDEA-PREFIX-XXXX` to reject it."
 
 ## Important Rules
 

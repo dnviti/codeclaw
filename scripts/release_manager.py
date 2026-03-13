@@ -21,7 +21,7 @@ from pathlib import Path
 
 # ── Constants ───────────────────────────────────────────────────────────────
 
-TASK_CODE_RE = re.compile(r"\(([A-Z][A-Z0-9]{1,5}-\d{3})\)\s*$")
+TASK_CODE_RE = re.compile(r"\(([A-Z]{3,5}-\d{4})\)\s*$")
 
 CONVENTIONAL_RE = re.compile(
     r"^(?P<prefix>feat|fix|chore|docs|refactor|perf|test|ci|style|build|revert)"
@@ -473,7 +473,7 @@ def cmd_release_plan_list(args):
             # Simple regex to find task codes and their status
             for line in content.splitlines():
                 line_stripped = line.strip()
-                task_match = re.match(r"^\[(.)\]\s+([A-Z][A-Z0-9]{1,5}-\d{3})\s+—", line_stripped)
+                task_match = re.match(r"^\[(.)\]\s+([A-Z]{3,5}-\d{4})\s+—", line_stripped)
                 if task_match:
                     task_statuses[task_match.group(2)] = status
         except OSError:
@@ -679,13 +679,13 @@ def build_parser() -> argparse.ArgumentParser:
     # release-plan-add-task
     p = sub.add_parser("release-plan-add-task", help="Add a task to a release")
     p.add_argument("--version", required=True, help="Release version")
-    p.add_argument("--task", required=True, help="Task code (e.g., AUTH-001)")
+    p.add_argument("--task", required=True, help="Task code (e.g., AUTH-0001)")
     p.set_defaults(func=cmd_release_plan_add_task)
 
     # release-plan-remove-task
     p = sub.add_parser("release-plan-remove-task", help="Remove a task from a release")
     p.add_argument("--version", required=True, help="Release version")
-    p.add_argument("--task", required=True, help="Task code (e.g., AUTH-001)")
+    p.add_argument("--task", required=True, help="Task code (e.g., AUTH-0001)")
     p.set_defaults(func=cmd_release_plan_remove_task)
 
     # release-plan-next

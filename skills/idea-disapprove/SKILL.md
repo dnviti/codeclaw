@@ -2,7 +2,7 @@
 name: idea-disapprove
 description: Disapprove an idea by moving it from ideas.txt to idea-disapproved.txt (local mode) or closing the GitHub/GitLab Issue with a rejection reason (Platform-only mode).
 disable-model-invocation: true
-argument-hint: "[IDEA-NNN]"
+argument-hint: "[IDEA-PREFIX-XXXX]"
 ---
 
 # Disapprove an Idea
@@ -49,11 +49,11 @@ The user wants to disapprove: **$ARGUMENTS**
 ### Step 1: Select the Idea
 
 **In Platform-only mode:**
-- If an IDEA-NNN code was provided: `gh issue list --repo "$TRACKER_REPO" --search "[IDEA-NNN] in:title" --label idea --state open --json number,title,body` (GitLab: `glab issue list -R "$TRACKER_REPO" --search "[IDEA-NNN]" -l idea --state opened --output json`)
+- If an IDEA-PREFIX-XXXX code was provided: `gh issue list --repo "$TRACKER_REPO" --search "[IDEA-PREFIX-XXXX] in:title" --label idea --state open --json number,title,body` (GitLab: `glab issue list -R "$TRACKER_REPO" --search "[IDEA-PREFIX-XXXX]" -l idea --state opened --output json`)
 - If no argument: list all open ideas from GitHub and use `AskUserQuestion` to ask which to disapprove.
 
 **In local/dual mode:**
-- If an IDEA-NNN code was provided: Find that idea in `ideas.txt`. If not found, inform the user and list available ideas.
+- If an IDEA-PREFIX-XXXX code was provided: Find that idea in `ideas.txt`. If not found, inform the user and list available ideas.
 - If no argument: List all ideas from `ideas.txt` and use `AskUserQuestion`.
 
 If no ideas are available, inform the user: "No ideas available for disapproval."
@@ -66,7 +66,7 @@ If no ideas are available, inform the user: "No ideas available for disapproval.
 **In local/dual mode:**
 Get the full parsed idea data:
 ```bash
-python3 ${CLAUDE_PLUGIN_ROOT}/scripts/task_manager.py parse IDEA-NNN
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/task_manager.py parse IDEA-PREFIX-XXXX
 ```
 Present the idea fields (title, category, description, motivation) to the user so they can review what they are disapproving.
 
@@ -88,7 +88,7 @@ The user can also provide a custom reason via "Other".
 
 Present a summary and use `AskUserQuestion`:
 
-> "About to disapprove **IDEA-NNN — Title**.
+> "About to disapprove **IDEA-PREFIX-XXXX — Title**.
 > Reason: [selected reason]"
 
 Options:
@@ -101,8 +101,8 @@ Options:
 
 Close the GitHub/GitLab Issue with the rejection reason:
 ```bash
-IDEA_ISSUE=$(gh issue list --repo "$TRACKER_REPO" --search "[IDEA-NNN] in:title" --label idea --state open --json number --jq '.[0].number' 2>/dev/null)
-# GitLab: IDEA_ISSUE=$(glab issue list -R "$TRACKER_REPO" --search "[IDEA-NNN]" -l idea --state opened --output json | jq '.[0].iid' 2>/dev/null)
+IDEA_ISSUE=$(gh issue list --repo "$TRACKER_REPO" --search "[IDEA-PREFIX-XXXX] in:title" --label idea --state open --json number --jq '.[0].number' 2>/dev/null)
+# GitLab: IDEA_ISSUE=$(glab issue list -R "$TRACKER_REPO" --search "[IDEA-PREFIX-XXXX]" -l idea --state opened --output json | jq '.[0].iid' 2>/dev/null)
 gh issue close "$IDEA_ISSUE" --repo "$TRACKER_REPO" --reason "not planned" --comment "Idea disapproved. Reason: $REASON" 2>/dev/null || true
 # GitLab: glab issue close "$IDEA_ISSUE" -R "$TRACKER_REPO" 2>/dev/null || true
 # GitLab: glab issue note "$IDEA_ISSUE" -R "$TRACKER_REPO" -m "Idea disapproved. Reason: $REASON" 2>/dev/null || true
@@ -119,7 +119,7 @@ gh issue close "$IDEA_ISSUE" --repo "$TRACKER_REPO" --reason "not planned" --com
 3. **Append the modified block to `idea-disapproved.txt`:**
    Use `Edit` to append the block (with `REJECTION REASON:` added) at the end of `idea-disapproved.txt`.
 4. **Remove the idea from `ideas.txt`:**
-   Run: `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/task_manager.py remove IDEA-NNN --file ideas.txt`
+   Run: `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/task_manager.py remove IDEA-PREFIX-XXXX --file ideas.txt`
    This cleanly removes the block and handles whitespace cleanup automatically.
 5. **Close the GitHub/GitLab Issue** (same as Platform-only mode above). If the command fails, warn but do NOT fail — the local operations are already complete.
 
@@ -131,7 +131,7 @@ Same as dual sync steps 1-4, but skip the GitHub/GitLab Issue close.
 
 After successfully disapproving the idea, report:
 
-> "Idea **IDEA-NNN — Title** has been disapproved.
+> "Idea **IDEA-PREFIX-XXXX — Title** has been disapproved.
 >
 > - **Reason:** [reason]
 > - **Date:** YYYY-MM-DD

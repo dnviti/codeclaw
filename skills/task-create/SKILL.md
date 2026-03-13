@@ -70,7 +70,7 @@ Analyze the task description and select an appropriate code prefix.
 
 **Rules:**
 1. Reuse an existing prefix if the task clearly falls within that domain.
-2. If no existing prefix fits, create a new one: 2-6 uppercase letters that clearly abbreviate the feature area.
+2. If no existing prefix fits, create a new one: 3-5 uppercase letters forming a meaningful English word or common acronym that categorizes the task's domain (e.g., AUTH, FEAT, DOCS, PERF, SEC, API, DATA, CFG).
 3. Document the new prefix's domain when presenting the draft.
 
 ### Step 3: Compute the Next Task Number
@@ -94,11 +94,11 @@ Before writing the task block, explore the codebase to generate accurate technic
 **In Platform-only mode:** Draft the task as a platform issue in **English**.
 
 Platform issue format:
-- **Title:** `[PREFIX-NNN] Task Title`
+- **Title:** `[PREFIX-XXXX] Task Title`
 - **Body:**
 
 ```markdown
-**Code:** PREFIX-NNN | **Priority:** PRIORITY | **Section:** SECTION_NAME | **Dependencies:** DEPS | **Release:** VERSION
+**Code:** PREFIX-XXXX | **Priority:** PRIORITY | **Section:** SECTION_NAME | **Dependencies:** DEPS | **Release:** VERSION
 
 ## Description
 Multi-line description in English. Explain WHAT the task does, WHY it is
@@ -126,7 +126,7 @@ Template:
 
 ```
 ------------------------------------------------------------------------------
-[ ] PREFIX-NNN — Task title (concise)
+[ ] PREFIX-XXXX — Task title (concise)
 ------------------------------------------------------------------------------
   Priority: [HIGH/MEDIUM/LOW]
   Dependencies: [TASK-CODE, TASK-CODE or None]
@@ -152,9 +152,9 @@ Template:
 **Formatting rules (local only and dual sync):**
 - Header separator lines are exactly 78 dashes: `------------------------------------------------------------------------------`
 - Status prefix is `[ ] ` (pending)
-- Title line format: `[ ] PREFIX-NNN — Task Title` (use `—` em dash, not `-` hyphen)
+- Title line format: `[ ] PREFIX-XXXX — Task Title` (use `—` em dash, not `-` hyphen)
 - Indent all content with 2 spaces
-- Dependencies: use task codes like `AUTH-001, DB-002` or `None` if none
+- Dependencies: use task codes like `AUTH-0001, DATA-0002` or `None` if none
 - Section labels in order: `DESCRIPTION:`, `TECHNICAL DETAILS:`, `Files involved:`
 - File action labels: `CREATE:` (new files) and `MODIFY:` (existing files), indented 4 spaces
 - End with two blank lines after the last file entry
@@ -163,7 +163,7 @@ Template:
 
 Present the complete task block (or platform issue draft) to the user, along with:
 
-1. **Task code:** The generated PREFIX-NNN
+1. **Task code:** The generated PREFIX-XXXX
 2. **Suggested section:** Which section it should be placed in, with reasoning
 3. **Suggested priority:** HIGH / MEDIUM / LOW, with reasoning
 
@@ -220,9 +220,9 @@ Use the `Edit` tool to insert the task block at the correct position.
 2. Create the platform issue:
    ```bash
    ISSUE_URL=$(gh issue create --repo "$TRACKER_REPO" \
-     --title "[PREFIX-NNN] Task Title" \
+     --title "[PREFIX-XXXX] Task Title" \
      --body "$(cat <<'EOF'
-   **Code:** PREFIX-NNN | **Priority:** PRIORITY | **Section:** SECTION_NAME | **Dependencies:** DEPS | **Release:** VERSION
+   **Code:** PREFIX-XXXX | **Priority:** PRIORITY | **Section:** SECTION_NAME | **Dependencies:** DEPS | **Release:** VERSION
 
    ## Description
    [Description content in English]
@@ -239,7 +239,7 @@ Use the `Edit` tool to insert the task block at the correct position.
    EOF
    )" \
      --label "claude-code,task,$PRIORITY_LABEL,status:todo,$SECTION_LABEL")
-   # GitLab: glab issue create -R "$TRACKER_REPO" --title "[PREFIX-NNN] Task Title" --description "BODY" -l "claude-code,task,$PRIORITY_LABEL,status:todo,$SECTION_LABEL"
+   # GitLab: glab issue create -R "$TRACKER_REPO" --title "[PREFIX-XXXX] Task Title" --description "BODY" -l "claude-code,task,$PRIORITY_LABEL,status:todo,$SECTION_LABEL"
    ```
 
 3. If the platform CLI command fails, report the error to the user. In Platform-only mode this is a hard failure since there is no local fallback.
@@ -255,9 +255,9 @@ Use the `Edit` tool to insert the task block at the correct position.
 2. Create the platform issue:
    ```bash
    ISSUE_URL=$(gh issue create --repo "$TRACKER_REPO" \
-     --title "[PREFIX-NNN] Task Title" \
+     --title "[PREFIX-XXXX] Task Title" \
      --body "$(cat <<'EOF'
-   **Code:** PREFIX-NNN | **Priority:** PRIORITY | **Section:** SECTION_NAME | **Dependencies:** DEPS | **Release:** VERSION
+   **Code:** PREFIX-XXXX | **Priority:** PRIORITY | **Section:** SECTION_NAME | **Dependencies:** DEPS | **Release:** VERSION
 
    ## Description
    [DESCRIPTION content from the task block]
@@ -274,7 +274,7 @@ Use the `Edit` tool to insert the task block at the correct position.
    EOF
    )" \
      --label "claude-code,task,$PRIORITY_LABEL,status:todo,$SECTION_LABEL")
-   # GitLab: glab issue create -R "$TRACKER_REPO" --title "[PREFIX-NNN] Task Title" --description "BODY" -l "claude-code,task,$PRIORITY_LABEL,status:todo,$SECTION_LABEL"
+   # GitLab: glab issue create -R "$TRACKER_REPO" --title "[PREFIX-XXXX] Task Title" --description "BODY" -l "claude-code,task,$PRIORITY_LABEL,status:todo,$SECTION_LABEL"
    ```
 
 3. Extract the issue number from the URL:
@@ -316,9 +316,9 @@ After successfully creating the task, report:
 
 **In Platform-only mode:**
 
-> "Task **PREFIX-NNN — Task Title** has been created as platform issue.
+> "Task **PREFIX-XXXX — Task Title** has been created as platform issue.
 >
-> - **Code:** PREFIX-NNN
+> - **Code:** PREFIX-XXXX
 > - **Priority:** HIGH/MEDIUM/LOW
 > - **Dependencies:** list or None
 > - **Section:** SECTION_NAME
@@ -328,9 +328,9 @@ After successfully creating the task, report:
 
 **In dual sync mode:**
 
-> "Task **PREFIX-NNN — Task Title** has been created in `to-do.txt`, SECTION X.
+> "Task **PREFIX-XXXX — Task Title** has been created in `to-do.txt`, SECTION X.
 >
-> - **Code:** PREFIX-NNN
+> - **Code:** PREFIX-XXXX
 > - **Priority:** HIGH/MEDIUM/LOW
 > - **Dependencies:** list or None
 > - **Section:** SECTION X — Section Name
@@ -340,9 +340,9 @@ After successfully creating the task, report:
 
 **In local only mode:**
 
-> "Task **PREFIX-NNN — Task Title** has been created in `to-do.txt`, SECTION X.
+> "Task **PREFIX-XXXX — Task Title** has been created in `to-do.txt`, SECTION X.
 >
-> - **Code:** PREFIX-NNN
+> - **Code:** PREFIX-XXXX
 > - **Priority:** HIGH/MEDIUM/LOW
 > - **Dependencies:** list or None
 > - **Section:** SECTION X — Section Name
