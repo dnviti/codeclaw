@@ -1,13 +1,15 @@
 ---
 name: env-setup
-description: "Scan the project to detect tech stack, dependencies, commands, and environment configuration, then update CLAUDE.md sections, skill file placeholders, and project-config.json accordingly."
+description: "Scan the project to detect tech stack, dependencies, commands, and environment configuration, then update CLAUDE.md sections and optionally project-config.json accordingly."
 disable-model-invocation: true
 argument-hint: "[section to update: all | commands | setup | architecture | config]"
 ---
 
 # Environment Setup Updater
 
-You are an environment setup assistant. Your job is to scan the current project, detect its tech stack, dependencies, commands, services, and environment configuration, and then update CLAUDE.md, skill file placeholders, and optionally `.claude/project-config.json` so that all CTDF skills work correctly with the project.
+You are an environment setup assistant. Your job is to scan the current project, detect its tech stack, dependencies, commands, services, and environment configuration, and then update CLAUDE.md and optionally `.claude/project-config.json` so that all CTDF skills work correctly with the project.
+
+Skills are generic and read their configuration from CLAUDE.md at runtime — no skill files need to be edited.
 
 This skill fills the gap left by `/ctdf:project-initialization` — it re-detects and updates everything that project-initialization would have set, for projects that have already been scaffolded or have evolved since initial setup.
 
@@ -57,10 +59,10 @@ Extract the **section** from `$ARGUMENTS`:
 | Section | What it updates |
 |---------|-----------------|
 | `all` | Everything below (default) |
-| `commands` | Development Commands in CLAUDE.md + app lifecycle skills + test-engineer skill |
+| `commands` | Development Commands in CLAUDE.md |
 | `setup` | Environment Setup in CLAUDE.md |
-| `architecture` | Architecture in CLAUDE.md + task-create, idea-approve, idea-create, docs, task-scout skills |
-| `config` | `.claude/project-config.json` + release, git-publish, task-pick skills |
+| `architecture` | Architecture in CLAUDE.md |
+| `config` | `.claude/project-config.json` (optional structured backup) |
 
 ### Step 2: Deep Scan the Project
 
@@ -236,10 +238,26 @@ Replace the `## Development Commands` section in CLAUDE.md with the detected val
 ## Development Commands
 
 ```bash
+# Dev server
 DEV_PORTS=[detected ports]                    # Port(s) the dev server listens on
-START_COMMAND="[detected start command]"       # Command to start the dev server
-PREDEV_COMMAND="[detected predev or empty]"    # Optional pre-start setup (migrations, docker, codegen)
-VERIFY_COMMAND="[detected verify command]"     # Quality gate command (lint + test + build)
+START_COMMAND="[detected start command]"       # Command to start dev server
+PREDEV_COMMAND="[detected predev or empty]"    # Optional pre-start setup
+VERIFY_COMMAND="[detected verify command]"     # Quality gate (lint + test + build)
+
+# Testing
+TEST_FRAMEWORK="[detected test framework]"    # e.g., Vitest, pytest, go test
+TEST_COMMAND="[detected test command]"         # e.g., npm run test, pytest
+TEST_FILE_PATTERN="[detected pattern]"         # e.g., *.test.ts, test_*.py
+
+# CI
+CI_RUNTIME_SETUP="[detected CI setup]"        # GitHub Actions setup step YAML
+
+# Release
+RELEASE_BRANCH="[detected release branch]"    # e.g., develop, main
+PACKAGE_JSON_PATHS="[detected manifest paths]" # Space-separated manifest paths
+CHANGELOG_FILE="[detected or CHANGELOG.md]"   # Changelog file path
+TAG_PREFIX="[detected or v]"                   # Git tag prefix
+GITHUB_REPO_URL="[detected HTTPS URL]"        # HTTPS repo URL
 
 # Common commands:
 # [install command]              — Install dependencies
@@ -309,64 +327,7 @@ Replace the `## Architecture` section in CLAUDE.md with the detected project str
 
 Keep this section concise — only include what helps Claude Code navigate and understand the codebase.
 
-#### 4b. Update Skill Files with Project-Specific Values
-
-This mirrors project-initialization Step 6 (sections 5c-5d). Read each skill file, then replace the placeholders with detected values. **Only update skills relevant to the requested section.**
-
-##### App Lifecycle Skills (section: `commands` or `all`)
-
-Read and update these skill files in `${CLAUDE_PLUGIN_ROOT}/skills/`:
-
-| Skill file | Placeholders to replace |
-|-----------|------------------------|
-| `app-start/SKILL.md` | `[DEV_PORTS]` → detected ports, `[START_COMMAND]` → detected start command, `[PREDEV_COMMAND]` → detected pre-dev command |
-| `app-stop/SKILL.md` | `[DEV_PORTS]` → detected ports |
-| `app-restart/SKILL.md` | `[DEV_PORTS]` → detected ports, `[START_COMMAND]` → detected start command, `[PREDEV_COMMAND]` → detected pre-dev command |
-
-##### Test & CI Skill (section: `commands` or `all`)
-
-| Skill file | Placeholders to replace |
-|-----------|------------------------|
-| `test-engineer/SKILL.md` | `[TEST_FRAMEWORK]` → detected test framework, `[TEST_COMMAND]` → detected test command, `[TEST_FILE_PATTERN]` → detected test file pattern, `[CI_RUNTIME_SETUP]` → detected GitHub Actions setup YAML block, `[RELEASE_BRANCH]` → detected release branch |
-
-##### Architecture-Aware Skills (section: `architecture` or `all`)
-
-| Skill file | Placeholders to replace |
-|-----------|------------------------|
-| `task-create/SKILL.md` | `[TECH_DETAIL_LAYERS]` → indented list of architectural layers with directories (e.g., `- App Router pages and layouts (app/)`) |
-| `idea-approve/SKILL.md` | `[TECH_DETAIL_LAYERS]` → same as task-create |
-| `idea-create/SKILL.md` | `[IDEA_CATEGORIES]` → markdown table of 3-4 universal categories (Core Features, Security, Performance, Infrastructure) + 2-3 project-domain categories derived from the detected framework and project structure |
-| `docs/SKILL.md` | `[DOC_CATEGORIES]` → list of documentation categories derived from architectural layers (e.g., `api`, `database`, `components`, `architecture`, `deployment`) |
-| `task-scout/SKILL.md` | `[PROJECT_CONTEXT]` → 3-line summary block with domain, tech stack, and target audience. `[SCOUT_CATEGORIES]` → category list combining universal + project-domain categories |
-
-For `[PROJECT_CONTEXT]`, format as:
-```
-> - **Domain**: [detected project domain]
-> - **Tech Stack**: [detected framework, database, key libraries]
-> - **Target Audience**: [inferred from project type, or "General users"]
-```
-
-For `[IDEA_CATEGORIES]` and `[SCOUT_CATEGORIES]`, derive domain-specific categories from the project's purpose, framework, and directory structure. Always include universal categories alongside domain-specific ones.
-
-##### Release & Git Skills (section: `config` or `all`)
-
-| Skill file | Placeholders to replace |
-|-----------|------------------------|
-| `release/SKILL.md` | `[PACKAGE_JSON_PATHS]` → space-separated manifest paths, `[CHANGELOG_FILE]` → changelog path (default: `CHANGELOG.md`), `[TAG_PREFIX]` → tag prefix (default: `v`), `[GITHUB_REPO_URL]` → HTTPS repo URL, `[RELEASE_BRANCH]` → release branch |
-| `git-publish/SKILL.md` | `[RELEASE_BRANCH]` → detected release branch |
-| `task-pick/SKILL.md` | `[RELEASE_BRANCH]` → detected release branch |
-
-When replacing `[GITHUB_REPO_URL]`, convert SSH URLs (`git@github.com:user/repo.git`) to HTTPS format (`https://github.com/user/repo`).
-
-When replacing `[PACKAGE_JSON_PATHS]`, search for manifest files containing a `version` field in the project root and workspace directories, excluding `node_modules`, `target`, `.venv`, and other dependency directories.
-
-**Important:** When replacing placeholders in skill files:
-- Use the Edit tool to make targeted replacements
-- Only replace `[PLACEHOLDER]` patterns — do not modify surrounding text
-- If a placeholder has already been replaced with a real value, present the existing value alongside the new detected value and let the user choose (in Step 3)
-- If a value could not be detected, leave the placeholder as-is and note it in the report
-
-#### 4c. Update Project Config (section: `config` or `all`)
+#### 4b. Update Project Config (section: `config` or `all`)
 
 If `.claude/project-config.json` exists, update it with detected values. If it does not exist, create it by copying from `${CLAUDE_PLUGIN_ROOT}/config/project-config.example.json` and filling in detected values.
 
@@ -392,7 +353,6 @@ Map detected values to config fields:
 | `tag_prefix` | Detected or default `v` |
 | `github_repo_url` | Detected HTTPS repo URL |
 | `release_branch` | `develop` if exists, else `main` |
-| `publish_skill` | Always `/git-publish` |
 
 Leave fields empty if no value was detected — do not guess.
 
@@ -404,7 +364,6 @@ After applying all changes:
 2. **Verify `.claude/project-config.json`** is valid JSON (if it was created or updated):
    `python3 -c "import json; json.load(open('.claude/project-config.json')); print('Valid JSON')"`
 3. **Check for CTDF marker integrity** — verify that no content inside `<!-- CTDF:START -->` / `<!-- CTDF:END -->` markers was modified.
-4. **Spot-check skill files** — re-read 2-3 of the updated skill files and verify they still have valid markdown structure and the placeholders were replaced correctly.
 
 ### Step 6: Report
 
@@ -422,26 +381,16 @@ Present a summary of all changes made:
 | Environment Setup | [Updated / Skipped / No changes needed] |
 | Architecture | [Updated / Skipped / No changes needed] |
 
-#### Skill Files Updated
-| Skill | Placeholders Replaced |
-|-------|----------------------|
-| app-start | [DEV_PORTS], [START_COMMAND], [PREDEV_COMMAND] |
-| app-stop | [DEV_PORTS] |
-| app-restart | [DEV_PORTS], [START_COMMAND], [PREDEV_COMMAND] |
-| test-engineer | [TEST_FRAMEWORK], [TEST_COMMAND], ... |
-| task-create | [TECH_DETAIL_LAYERS] |
-| ... | ... |
-
 #### Project Config
 - `.claude/project-config.json`: [Created / Updated / Skipped]
 
-### Unreplaced Placeholders
-[List any placeholders that could not be replaced because values were not detected]
+### Undetected Values
+[List any configuration values that could not be auto-detected — the user should fill these in CLAUDE.md manually]
 
 ### Next Steps
 1. Review the updated CLAUDE.md to verify accuracy
-2. Fill in any remaining `[TODO]` or `[PLACEHOLDER]` values that could not be auto-detected
-3. Run `/ctdf:app-start` to verify the dev server configuration works
+2. Fill in any remaining empty values in the Development Commands section
+3. Run `make dev` or the detected start command to verify the dev server works
 4. (Optional) Run `/ctdf:env-setup [section]` again to update specific sections
 ```
 
@@ -455,5 +404,4 @@ Present a summary of all changes made:
 6. **Preserve existing CLAUDE.md structure** — only update the specific sections being targeted. Do not reorder, remove, or add unrelated sections.
 7. **All output must be in English.**
 8. **Idempotent operation** — running this skill multiple times should produce the same result if the project hasn't changed. Already-replaced placeholders should be detected and handled gracefully.
-9. **Section-scoped updates** — only update skills and files relevant to the requested section. Do not touch unrelated skills when a specific section is requested.
-10. **Skill files live in `${CLAUDE_PLUGIN_ROOT}/skills/`** — use the `${CLAUDE_PLUGIN_ROOT}` variable to locate them, not a hardcoded path.
+9. **Section-scoped updates** — only update files relevant to the requested section.

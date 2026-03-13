@@ -272,7 +272,7 @@ If confirmed:
    > "Changes committed on branch `refactor/code-optimize-...`.
    > Merge into your working branch with:
    > `git checkout [base-branch] && git merge refactor/code-optimize-...`
-   > Or create a PR with `/git-publish`."
+   > Or create a PR with `gh pr create`."
 
 If declined, inform them changes are unstaged on the branch for manual review.
 

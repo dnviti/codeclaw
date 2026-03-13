@@ -133,7 +133,7 @@ Present the information above as a structured English-language report with these
    - What remains to be done
    - Files involved
 
-2.5. **To-Test Tasks** — (Platform-only mode) For each task with `status:to-test` label, show the task code, title, and note that testing is pending. Suggest running `/test-engineer TASK-CODE` to complete testing.
+2.5. **To-Test Tasks** — (Platform-only mode) For each task with `status:to-test` label, show the task code, title, and note that testing is pending. Suggest running `/ctdf:test-review TASK-CODE` to complete testing.
 
 3. **Next Recommended Tasks** — Based on the recommended implementation order (local mode) or priority labels (platform-only mode), identify the next 2-3 tasks that should be picked up. For each show:
    - Task code and title

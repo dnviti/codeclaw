@@ -9,38 +9,40 @@ Always respond and work in English, even if the user's prompt is written in anot
 ## Development Commands
 
 ```bash
-# [TODO: Add your project's development commands here]
-# Example:
-# npm run dev          # Start development server
-# npm run build        # Build for production
-# npm run test         # Run tests
+# Dev server
+DEV_PORTS=                               # Port(s) the dev server listens on
+START_COMMAND=""                          # Command to start dev server
+PREDEV_COMMAND=""                         # Optional pre-start setup
+VERIFY_COMMAND=""                         # Quality gate (lint + test + build)
 
-# Code quality & verification
-# [TODO: Define your verify command — e.g., npm run verify, make check, etc.]
-# This command should run typecheck, lint, audit, and build in sequence.
+# Testing
+TEST_FRAMEWORK=""                        # e.g., Vitest, pytest, go test
+TEST_COMMAND=""                           # e.g., npm run test, pytest
+TEST_FILE_PATTERN=""                      # e.g., *.test.ts, test_*.py
+
+# CI
+CI_RUNTIME_SETUP=""                      # GitHub Actions setup step YAML
+
+# Release
+RELEASE_BRANCH=""                        # e.g., develop, main
+PACKAGE_JSON_PATHS=""                    # Space-separated manifest paths
+CHANGELOG_FILE=""                        # e.g., CHANGELOG.md
+TAG_PREFIX=""                            # e.g., v
+GITHUB_REPO_URL=""                       # HTTPS repo URL
+
+# Common commands:
+# [install command]
+# [dev command]
+# [build command]
+# [test command]
+# [lint command]
 ```
 
 **Important:** Your project's verify command must pass before closing any task. Define it above and reference it throughout the skills.
 
 ## Environment Setup
 
-<!-- [TODO: Describe how to set up the development environment] -->
-<!-- Example: Copy `.env.example` to `.env`. Install dependencies with `npm install`. -->
-
 ## Architecture
-
-<!-- [TODO: Describe your project's architecture here] -->
-<!-- Example:
-**Monorepo** with workspaces: `backend/` and `frontend/`.
-
-### Backend
-- Entry point, framework, ORM, middleware, etc.
-- Key file paths and patterns
-
-### Frontend
-- Framework, state management, routing, etc.
-- Key file paths and patterns
--->
 
 <!-- CTDF:START -->
 ## Key Patterns
@@ -87,7 +89,7 @@ The `platform` field (`"github"` or `"gitlab"`) determines which CLI tool (`gh` 
 This framework supports **Windows, macOS, and Linux** with automatic OS detection.
 
 - **Python command:** All scripts and skills reference `python3`. On Windows where only `python` is available, substitute `python` for `python3` in all commands.
-- **Port management:** `app_manager.py` automatically uses the correct OS tools — `lsof`/`ss` on Unix, `netstat`/`taskkill` on Windows.
+- **Port management:** `app_manager.py` provides cross-platform port management — `lsof`/`ss` on Unix, `netstat`/`taskkill` on Windows. Used by generated Makefile/scripts.
 - **File search:** `task_manager.py find-files` provides cross-platform file discovery (replaces Unix `find`).
 <!-- CTDF:END -->
 

@@ -53,9 +53,7 @@ Focus area requested: **$ARGUMENTS**
 
 ## Project Context
 
-[PROJECT_CONTEXT]
-
-*The context above is configured by `/project-initialization`. If not yet configured, analyze the codebase and CLAUDE.md to understand the project domain, stack, and audience.*
+Read CLAUDE.md's `## Architecture` section to understand the project's domain, tech stack, and target audience. Use this context to guide feature research and suggestions.
 
 ## Your Mission
 
@@ -118,11 +116,18 @@ Every time you are invoked, you must:
 
 ## Research Categories to Explore
 
-Rotate through these categories across invocations to maintain diversity:
+Rotate through these categories across invocations to maintain diversity.
 
-[SCOUT_CATEGORIES]
+Read CLAUDE.md's `## Architecture` section to derive project-specific categories. Combine them with universal categories:
+- **Core Features**: Primary functionality improvements and extensions
+- **Security**: Authentication, authorization, encryption, audit logging
+- **UX/Productivity**: Keyboard shortcuts, search, themes, accessibility
+- **Performance**: Caching, optimization, lazy loading, compression
+- **Integration**: Third-party services, APIs, webhooks
+- **Monitoring & Ops**: Logging, metrics, alerting, deployment
+- **Developer Experience**: Testing, documentation, CI/CD, debugging tools
 
-*The categories above are configured by `/project-initialization`. If not yet configured, use generic categories: Core Features, Security, UX/Productivity, Integration, Performance, Monitoring & Ops, Developer Experience.*
+Add 2-3 project-domain-specific categories based on the project's architecture and purpose.
 
 ## Output Format
 

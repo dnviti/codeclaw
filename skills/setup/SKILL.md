@@ -98,12 +98,36 @@ Always respond and work in English, even if the user's prompt is written in anot
 ## Development Commands
 
 ```bash
-# [TODO: Add your project's development commands here]
-# Example:
-# npm run dev          # Start development server
-# npm run build        # Build for production
-# npm run test         # Run tests
+# Dev server
+DEV_PORTS=                               # Port(s) the dev server listens on
+START_COMMAND=""                          # Command to start dev server
+PREDEV_COMMAND=""                         # Optional pre-start setup
+VERIFY_COMMAND=""                         # Quality gate (lint + test + build)
+
+# Testing
+TEST_FRAMEWORK=""                        # e.g., Vitest, pytest, go test
+TEST_COMMAND=""                           # e.g., npm run test, pytest
+TEST_FILE_PATTERN=""                      # e.g., *.test.ts, test_*.py
+
+# CI
+CI_RUNTIME_SETUP=""                      # GitHub Actions setup step YAML
+
+# Release
+RELEASE_BRANCH=""                        # e.g., develop, main
+PACKAGE_JSON_PATHS=""                    # Space-separated manifest paths
+CHANGELOG_FILE=""                        # e.g., CHANGELOG.md
+TAG_PREFIX=""                            # e.g., v
+GITHUB_REPO_URL=""                       # HTTPS repo URL
+
+# Common commands:
+# [install command]
+# [dev command]
+# [build command]
+# [test command]
+# [lint command]
 ```
+
+**Important:** Your project's verify command must pass before closing any task. Define it above and reference it throughout the skills.
 
 ## Environment Setup
 

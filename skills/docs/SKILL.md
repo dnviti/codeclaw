@@ -52,7 +52,9 @@ Operations:
   claude-md  — Update CLAUDE.md to reflect current codebase state
 
 Categories (for create/update/verify):
-  [DOC_CATEGORIES]
+  Read CLAUDE.md's `## Architecture` section to derive documentation categories
+  from the project's architectural layers (e.g., api, database, components,
+  architecture, deployment, security).
   all        — All categories (default)
 
 Examples:

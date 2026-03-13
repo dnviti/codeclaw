@@ -126,8 +126,8 @@ Expanded description in English based on the original idea. More detailed than
 the idea, explaining what, why, and the scope. Approximately 4-10 lines.
 
 ## Technical Details
-Detailed technical implementation plan in English, structured by layer/file.
-[TECH_DETAIL_LAYERS]
+Detailed technical implementation plan in English, structured by architectural layer/file.
+Read CLAUDE.md's `## Architecture` section to understand the project's layers and structure them accordingly.
 Include specific code snippets, function signatures, endpoint paths.
 
 ## Files Involved
@@ -154,8 +154,9 @@ Include specific code snippets, function signatures, endpoint paths.
   and the scope. Approximately 4-10 lines.
 
   TECHNICAL DETAILS:
-  Detailed technical implementation plan. Structure by layer/file:
-[TECH_DETAIL_LAYERS]
+  Detailed technical implementation plan. Structure by architectural layer/file.
+  Read CLAUDE.md's `## Architecture` section to understand the project's layers
+  and structure the details accordingly.
   This section is NEW — the original idea did not have this.
   Include specific code snippets, function signatures, endpoint paths.
 

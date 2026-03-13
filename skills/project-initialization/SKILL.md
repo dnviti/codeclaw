@@ -7,7 +7,7 @@ argument-hint: "[project purpose or stack]"
 
 # Initialize a New Project
 
-You are a project initialization assistant. Your job is to guide the user through setting up a new project from scratch — from understanding their needs to scaffolding the project and configuring the entire skills ecosystem so that `/app-start`, `/app-stop`, and `/app-restart` work out of the box.
+You are a project initialization assistant. Your job is to guide the user through setting up a new project from scratch — from understanding their needs to scaffolding the project and configuring the entire skills ecosystem so that all CTDF skills work correctly with the project.
 
 ## CRITICAL: User Interaction Rules
 
@@ -122,6 +122,11 @@ STOP HERE after calling `AskUserQuestion`. Do NOT proceed to Step 4 until the us
 **After scaffolding:**
 1. Verify the project structure was created: list key files and directories.
 2. If dependencies were not installed by the scaffold, install them.
+3. **Generate `.gitignore`:** Always generate a `.gitignore` for the chosen stack, even if the user skips git init:
+   - Use `WebSearch` to find the official GitHub `.gitignore` template for the stack/framework (e.g., search for `"gitignore [language/framework] github"`)
+   - Use `WebFetch` to download the template
+   - If the scaffolding tool already created a `.gitignore`, merge the downloaded template with it — do not overwrite useful entries
+   - If no suitable template is found online, generate a comprehensive `.gitignore` based on the stack
 
 ### Step 5: Initialize Git Repository
 
@@ -166,11 +171,11 @@ STOP HERE after calling `AskUserQuestion`. Do NOT proceed until the user respond
 - Skip this step entirely. Do not initialize git.
 - If the scaffolding tool already initialized a git repo, inform the user that the scaffold created one and ask if they want to keep it or remove it.
 
-### Step 6: Configure the Skills Ecosystem
+### Step 6: Configure the Project
 
-This is the **critical integration step**. You must configure CLAUDE.md and the app lifecycle skills so the entire system works for this specific project.
+This is the **critical integration step**. You must detect the project's configuration and write it to CLAUDE.md. Skills are generic and read their configuration from CLAUDE.md at runtime — no skill files need to be edited.
 
-#### 5a. Detect Project Configuration
+#### 6a. Detect Project Configuration
 
 Read the scaffolded project's configuration files to detect:
 
@@ -180,107 +185,115 @@ Read the scaffolded project's configuration files to detect:
 | Dev server port(s) | Framework config files, default port for the framework, `docker-compose.yml` |
 | Pre-dev command | Docker setup, database migrations, codegen steps |
 | Verify/build command | `package.json` (scripts.build/lint/test), `Makefile`, `Cargo.toml` |
+| Test framework | `package.json` devDependencies (vitest, jest), `pyproject.toml` (pytest), built-in (go test, cargo test) |
+| Test command | `package.json` scripts (test), `pytest`, `cargo test`, `go test ./...` |
+| Test file pattern | Framework conventions: `*.test.ts`, `test_*.py`, `*_test.go` |
+| CI runtime setup | Detect runtime version, map to GitHub Actions setup step |
+| Release branch | `develop` if exists, otherwise `main` |
+| Manifest paths | `package.json`, `Cargo.toml`, `pyproject.toml` with version fields |
+| Changelog file | Default `CHANGELOG.md` |
+| Tag prefix | Existing tags or default `v` |
+| Repo URL | `git remote get-url origin`, convert SSH to HTTPS |
 | File naming conventions | Scaffolded directory structure and framework conventions |
 
-#### 5b. Update CLAUDE.md
+#### 6b. Update CLAUDE.md
 
-Update the Development Commands section with the actual detected values:
+Update CLAUDE.md with all detected values:
 
-```markdown
+**Development Commands section:**
+````markdown
 ## Development Commands
 
 ```bash
 DEV_PORTS=[detected ports]                    # Port(s) the dev server listens on
-START_COMMAND="[detected start command]"       # Command to start the dev server
+START_COMMAND="[detected start command]"       # Command to start dev server
 PREDEV_COMMAND="[detected predev or empty]"    # Optional pre-start setup
-VERIFY_COMMAND="[detected verify command]"     # Quality gate command
+VERIFY_COMMAND="[detected verify command]"     # Quality gate (lint + test + build)
+
+# Testing
+TEST_FRAMEWORK="[detected test framework]"    # e.g., Vitest, pytest, go test
+TEST_COMMAND="[detected test command]"         # e.g., npm run test, pytest
+TEST_FILE_PATTERN="[detected pattern]"         # e.g., *.test.ts, test_*.py
+
+# CI
+CI_RUNTIME_SETUP="[detected CI setup step]"   # GitHub Actions setup step YAML
+
+# Release
+RELEASE_BRANCH="[detected release branch]"    # e.g., develop, main
+PACKAGE_JSON_PATHS="[detected manifest paths]" # Space-separated manifest paths
+CHANGELOG_FILE="[detected or CHANGELOG.md]"   # Changelog file path
+TAG_PREFIX="[detected or v]"                   # Git tag prefix
+GITHUB_REPO_URL="[detected HTTPS URL]"        # HTTPS repo URL
 
 # Common commands:
 # [actual install command]    — Install dependencies
 # [actual dev command]        — Start development server
 # [actual build command]      — Build for production
 # [actual test command]       — Run tests
+# [actual lint command]       — Run linter
 ```
+````
+
+**Environment Setup section:**
+Update with prerequisites and setup instructions for the chosen stack.
+
+**Architecture section:**
+Update with the scaffolded project's structure overview, key entry points, and framework details.
+
+**File Naming Conventions:**
+Update with conventions from the framework if applicable.
+
+#### 6c. Generate Makefile and Scripts
+
+Generate a `Makefile` with targets based on detected commands:
+
+```makefile
+.PHONY: dev stop restart install build test lint verify
+
+dev:
+	[START_COMMAND]
+
+stop:
+	python3 <plugin-path>/scripts/app_manager.py stop --ports [DEV_PORTS]
+
+restart: stop dev
+
+install:
+	[INSTALL_COMMAND]
+
+build:
+	[BUILD_COMMAND]
+
+test:
+	[TEST_COMMAND]
+
+lint:
+	[LINT_COMMAND]
+
+verify:
+	[VERIFY_COMMAND]
 ```
 
-Also update:
-- **Environment Setup** section with instructions for the chosen stack
-- **Architecture** section with the scaffolded project's structure overview
-- **File Naming Conventions** table if the framework has established conventions
+Also generate cross-platform scripts:
+- `scripts/dev.sh` (Bash) — starts dev server with port management
+- `scripts/dev.ps1` (PowerShell) — Windows equivalent
 
-#### 5c. Update App Lifecycle Skills
+These scripts use `app_manager.py` from the plugin for cross-platform port management.
 
-Edit the following skill files to configure them for this specific project:
+#### 6d. Create Changelog (if not exists)
 
-- `.claude/skills/app-start/SKILL.md` — Update the configuration note with the actual DEV_PORTS, START_COMMAND, and PREDEV_COMMAND values
-- `.claude/skills/app-stop/SKILL.md` — Update with the actual DEV_PORTS
-- `.claude/skills/app-restart/SKILL.md` — Update with the actual DEV_PORTS, START_COMMAND, and PREDEV_COMMAND values
+If `CHANGELOG.md` does not exist, create it with the Keep a Changelog boilerplate:
 
-In each skill, replace the generic `[DEV_PORTS]`, `[START_COMMAND]`, and `[PREDEV_COMMAND]` placeholders in the bash code blocks with the actual project values, so the skills work without any manual configuration.
+```markdown
+# Changelog
 
-#### 5d. Update Workflow Skills
+All notable changes to this project will be documented in this file.
 
-Based on the detected project configuration, update the following skill files by replacing their placeholders with project-specific values:
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-**`.claude/skills/test-engineer/SKILL.md`:**
-- `[TEST_FRAMEWORK]` — The test framework for the stack (e.g., Vitest for Vite/React, pytest for Python, `go test` for Go). If the scaffold did not include a test framework, choose the most popular one for the stack and note it in the orientation report.
-- `[TEST_COMMAND]` — The command to run tests (e.g., `npx vitest run`, `pytest`, `cargo test`).
-- `[TEST_FILE_PATTERN]` — The naming convention for test files (e.g., `*.test.ts`, `test_*.py`).
-- `[CI_RUNTIME_SETUP]` — The GitHub Actions setup step for the project's runtime. Replace with the actual YAML steps block (e.g., `- uses: actions/setup-node@v4` with the detected Node version, or `- uses: actions/setup-python@v5` with detected Python version).
-
-**`.claude/skills/task-create/SKILL.md` and `.claude/skills/idea-approve/SKILL.md`:**
-- `[TECH_DETAIL_LAYERS]` — Replace with an indented list of the project's architectural layers, derived from the scaffolded directory structure and framework conventions. Each line should name the layer and its directory. Example for Next.js:
-  ```
-      - App Router pages and layouts (app/)
-      - API routes (app/api/)
-      - React components (components/)
-      - Database schema and queries (prisma/)
-      - Shared utilities and types (lib/)
-      - Configuration and environment
-  ```
-
-**`.claude/skills/idea-create/SKILL.md`:**
-- `[IDEA_CATEGORIES]` — Replace with a markdown table combining 3-4 universal categories (Core Features, Security, Performance, Infrastructure) with 2-3 project-domain categories derived from the project purpose. Example for an e-commerce app:
-  ```
-  | Category | Domain |
-  |----------|--------|
-  | `Product Catalog` | Product listings, search, filtering |
-  | `Checkout` | Cart, payment, order processing |
-  | `User Accounts` | Registration, profiles, preferences |
-  | `Core Features` | Primary functionality, core workflows |
-  | `Security` | Authentication, authorization, encryption |
-  | `Performance` | Optimization, caching, scaling |
-  | `Infrastructure` | DevOps, CI/CD, deployment, Docker |
-  ```
-
-**`.claude/skills/docs/SKILL.md`:**
-- `[DOC_CATEGORIES]` — Replace with a list of documentation categories derived from the project's architecture layers. Example: `api`, `database`, `components`, `architecture`, `deployment`.
-
-**`.claude/skills/task-scout/SKILL.md`:**
-- `[PROJECT_CONTEXT]` — Replace with a 3-line summary block describing the project's domain, tech stack, and target audience (gathered in Steps 1-2). Example:
-  ```
-  > - **Domain**: E-commerce platform for artisan goods
-  > - **Tech Stack**: Next.js 15, PostgreSQL, Prisma, Tailwind CSS
-  > - **Target Audience**: Small business owners selling handmade products
-  ```
-- `[SCOUT_CATEGORIES]` — Replace with a category list that combines universal categories with 2-3 project-domain-specific categories (use the same domain categories as idea-create). Example:
-  ```
-  - **Product Catalog**: Product discovery, search, filtering, recommendations
-  - **Checkout & Payments**: Cart, payment methods, order management
-  - **Core Features**: Primary functionality improvements and extensions
-  - **Security**: Authentication, authorization, encryption, audit logging
-  - **UX/Productivity**: Keyboard shortcuts, search, themes, accessibility
-  - **Performance**: Caching, optimization, lazy loading, compression
-  - **Developer Experience**: Testing, documentation, CI/CD, debugging tools
-  ```
-
-**`.claude/skills/release/SKILL.md`:**
-- `[PACKAGE_JSON_PATHS]` — Space-separated list of all manifest files that contain a version to bump. Detect by searching for `package.json`, `Cargo.toml`, `pyproject.toml` in the project root and workspace directories (excluding `node_modules`, `target`, `.venv`). Example for npm monorepo: `package.json server/package.json client/package.json`. Example for Python: `pyproject.toml`.
-- `[CHANGELOG_FILE]` — Path to the changelog file. Default: `CHANGELOG.md`. If it does not exist, create it with the [Keep a Changelog](https://keepachangelog.com/) boilerplate template.
-- `[TAG_PREFIX]` — Git tag prefix for version tags. Default: `v`. Check existing tags (`git tag -l`) and use the detected prefix if tags already exist.
-- `[GITHUB_REPO_URL]` — Base repository URL for changelog comparison links. Detect from `git remote get-url origin` or `package.json` `repository.url`. Convert SSH URLs (`git@github.com:user/repo.git`) to HTTPS (`https://github.com/user/repo`).
-- `[RELEASE_BRANCH]` — Branch from which releases are cut. Use `develop` if that branch exists, otherwise `main`.
-- `[PUBLISH_SKILL]` — Always `/git-publish`.
+## [Unreleased]
+```
 
 ### Step 7: Orientation Report
 
@@ -294,7 +307,7 @@ Present a comprehensive report to the user:
 
 ### How to Get Started
 1. [install command] — install dependencies (if not done already)
-2. [start command] — start the dev server
+2. `make dev` or `[start command]` — start the dev server
 3. Open http://localhost:[port] in your browser
 
 ### Project Structure
@@ -309,7 +322,9 @@ Present a comprehensive report to the user:
 - **Add a database:** [brief guidance for the chosen stack]
 - **Add authentication:** [brief guidance]
 - **Add an API layer:** [brief guidance]
-- **Add tests:** Use the `/test-engineer` skill
+- **Add tests:** Use `/ctdf:test-create` to generate tests
+- **Run tests:** Use `/ctdf:test-run` to execute tests
+- **Security audit:** Use `/ctdf:vulnerability-scout` to scan for vulnerabilities
 - **Add CI/CD:** CI/CD templates are available in `${CLAUDE_PLUGIN_ROOT}/templates/` (see Step 9)
 
 ### Git Repository
@@ -317,20 +332,22 @@ Present a comprehensive report to the user:
 - `.gitignore`: configured for [stack]
 - Workflow: develop on `develop`, merge to `main` for releases
 
-### Skills Ecosystem Status
-The following skills are now configured for your project:
-- `/app-start` — starts your dev server on port [port]
-- `/app-stop` — stops your dev server
-- `/app-restart` — restarts your dev server
-- `/test-engineer` — configured for [test framework] with CI pipeline template
-- `/task-create`, `/task-pick` — architecture-aware task templates with platform-agnostic issues tracker support (GitHub and GitLab)
-- `/idea-create` — project-relevant idea categories
-- `/docs` — documentation with project-specific categories
-- `/task-scout` — feature scouting tuned to your project domain
-- `/release` — semantic versioning, changelog generation, and git tagging
-- `/code-optimize` — code quality analysis and optimization
-- `/git-publish` — push develop and open auto-merging PR into main
-- `/security-audit` — comprehensive security audit with remediation steps
+### Makefile & Scripts
+- `make dev` / `make stop` / `make restart` — dev server lifecycle
+- `make test` / `make lint` / `make verify` — quality commands
+- `scripts/dev.sh` / `scripts/dev.ps1` — cross-platform dev scripts
+
+### Skills Available
+The following CTDF skills are ready (they read configuration from CLAUDE.md):
+- `/ctdf:task-create`, `/ctdf:task-pick` — task management with platform-agnostic issues tracker
+- `/ctdf:idea-create`, `/ctdf:idea-approve` — idea pipeline
+- `/ctdf:test-scout`, `/ctdf:test-create`, `/ctdf:test-run`, `/ctdf:test-review` — test lifecycle
+- `/ctdf:vulnerability-scout`, `/ctdf:vulnerability-create`, `/ctdf:vulnerability-report` — security auditing
+- `/ctdf:release` — semantic versioning, changelog, and tagging
+- `/ctdf:release plan` — release planning and task grouping
+- `/ctdf:docs` — documentation management
+- `/ctdf:task-scout` — feature research
+- `/ctdf:code-optimize` — code quality analysis
 ```
 
 ### Step 8: Issues Tracker Integration (Optional)
@@ -434,8 +451,8 @@ STOP HERE after calling `AskUserQuestion`. Do NOT proceed until the user respond
 
 1. **NEVER scaffold without explicit user confirmation** of both the stack and the scaffolding tool.
 2. **NEVER overwrite existing project files** — if the directory is not empty, warn the user and ask how to proceed.
-3. **ALWAYS update CLAUDE.md** with DEV_PORTS, START_COMMAND, PREDEV_COMMAND, and VERIFY_COMMAND after scaffolding.
-4. **ALWAYS update the app lifecycle skills** (app-start, app-stop, app-restart) **AND workflow skills** (test-engineer, task-create, idea-approve, idea-create, docs, task-scout, release) with project-specific values.
+3. **ALWAYS update CLAUDE.md** with all detected configuration values after scaffolding.
+4. **ALWAYS generate a Makefile and dev scripts** for the project's detected commands.
 5. **ALWAYS verify the scaffold succeeded** by checking that key files exist before reporting success.
 6. **Use the project root directory** (current working directory) for scaffolding unless the user specifies otherwise.
 7. **Respect user choice** — if the user wants a specific stack or tool, use it even if you would recommend differently.

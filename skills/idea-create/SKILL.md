@@ -62,13 +62,14 @@ Do NOT proceed without a clear idea description.
 
 Analyze the idea description and select an appropriate category.
 
-**Suggested categories** (tailored to this project):
+**Suggested categories:**
 
-[IDEA_CATEGORIES]
+Read CLAUDE.md's `## Architecture` section to understand the project's domain and derive appropriate categories. Combine universal categories with project-specific ones.
+
+Universal categories: Core Features, Security, Performance, Infrastructure.
+Add 2-3 project-domain categories based on the project's architecture and purpose (e.g., for an e-commerce app: Product Catalog, Checkout, User Accounts).
 
 If no existing category fits well, create a concise new one.
-
-*The category table above is configured by `/project-initialization`. If not yet configured, use generic categories: Core Features, User Interface, Security, Integration, Performance, Infrastructure.*
 
 ### Step 3: Compute the Next Idea Number
 

@@ -1,20 +1,36 @@
 ---
 name: release
-description: Manage semantic versioning, changelog generation, and git tagging.
+description: "Manage semantic versioning, changelog generation, git tagging, and release planning."
 disable-model-invocation: true
-argument-hint: "[major|minor|patch|stable] or empty for auto-detection"
+argument-hint: "[major|minor|patch|stable|plan [list|create|assign|unassign|suggest|timeline]] or empty for auto-detection"
 ---
 
-# Release a New Version
+# Release Manager
 
-You are a release manager. Your job is to automate semantic versioning, changelog generation from git history, and git tagging.
+You are a release manager. Your job is to automate semantic versioning, changelog generation from git history, git tagging, and release planning.
 
 Always respond and work in English.
+
+## Release Configuration
+
+Read CLAUDE.md's `## Development Commands` section to extract release configuration:
+- **RELEASE_BRANCH** — the branch from which releases are cut (e.g., `develop`, `main`)
+- **PACKAGE_JSON_PATHS** — space-separated list of manifest files containing a version field
+- **CHANGELOG_FILE** — path to the changelog file (e.g., `CHANGELOG.md`)
+- **TAG_PREFIX** — git tag prefix (e.g., `v`)
+- **GITHUB_REPO_URL** — HTTPS repository URL for changelog comparison links
+
+If these values are not configured in CLAUDE.md, detect them:
+- **RELEASE_BRANCH**: `develop` if that branch exists, otherwise `main`
+- **PACKAGE_JSON_PATHS**: search for `package.json`, `Cargo.toml`, `pyproject.toml` with version fields (exclude `node_modules`, `target`, `.venv`)
+- **CHANGELOG_FILE**: default `CHANGELOG.md`
+- **TAG_PREFIX**: detect from existing tags (`git tag -l`), default `v`
+- **GITHUB_REPO_URL**: from `git remote get-url origin`, convert SSH to HTTPS
 
 ## Current State
 
 ### Version and tag info:
-`python3 ${CLAUDE_PLUGIN_ROOT}/scripts/release_manager.py current-version --tag-prefix "[TAG_PREFIX]"`
+`python3 ${CLAUDE_PLUGIN_ROOT}/scripts/release_manager.py current-version --tag-prefix "$(grep -oP 'TAG_PREFIX="\K[^"]*' CLAUDE.md 2>/dev/null || echo 'v')"`
 
 ### Current branch:
 `git branch --show-current`
@@ -26,7 +42,16 @@ Always respond and work in English.
 
 The user invoked with: **$ARGUMENTS**
 
-## Instructions
+## Argument Dispatcher
+
+Parse `$ARGUMENTS` to determine the operation:
+
+- **If `$ARGUMENTS` starts with `plan`**: Route to the **Release Planning** section below. Strip the `plan` prefix and pass the remainder as the plan subcommand.
+- **Otherwise**: Proceed with the **Release Workflow** below (version bump, changelog, tagging).
+
+---
+
+## Release Workflow
 
 ### Platform Detection
 
@@ -39,8 +64,6 @@ Use the `mode` field to determine behavior: `platform-only`, `dual-sync`, or `lo
 Use `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/task_manager.py platform-cmd <operation> [key=value ...]` to generate the correct CLI command for the detected platform (GitHub/GitLab).
 
 Supported operations: `list-issues`, `search-issues`, `view-issue`, `edit-issue`, `close-issue`, `comment-issue`, `create-issue`, `create-pr`, `list-pr`, `merge-pr`, `create-release`, `edit-release`.
-
-Example: `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/task_manager.py platform-cmd create-issue title="[CODE] Title" body="Description" labels="task,status:todo"`
 
 ### Step 1: Pre-flight Checks
 
@@ -59,7 +82,7 @@ If any to-test tasks are found, warn the user:
 > "**Warning:** The following tasks are still awaiting testing:
 > - [list of to-test tasks]
 >
-> Their changes may be on the release branch. Consider running `/test-engineer` to complete testing before releasing."
+> Their changes may be on the release branch. Consider running `/ctdf:test-review` to complete testing before releasing."
 
 Use `AskUserQuestion` with options:
 - **"Continue release anyway"** — proceed to the next check
@@ -104,18 +127,18 @@ Use `AskUserQuestion` with these options:
 
 STOP HERE after calling `AskUserQuestion`. Do NOT proceed until the user responds.
 
-**If the current branch is NOT `[RELEASE_BRANCH]`:**
+**If the current branch is NOT the release branch** (read RELEASE_BRANCH from CLAUDE.md):
 
-Warn the user: "You are on branch `<branch>`, not `[RELEASE_BRANCH]`. Releases are typically cut from `[RELEASE_BRANCH]`."
+Warn the user: "You are on branch `<branch>`, not `<RELEASE_BRANCH>`. Releases are typically cut from `<RELEASE_BRANCH>`."
 
 Use `AskUserQuestion` with these options:
 - **"Continue on this branch"** — proceed anyway
-- **"Switch to [RELEASE_BRANCH]"** — run `git checkout [RELEASE_BRANCH]`
+- **"Switch to <RELEASE_BRANCH>"** — run `git checkout <RELEASE_BRANCH>`
 - **"Abort release"** — stop here
 
 STOP HERE after calling `AskUserQuestion`. Do NOT proceed until the user responds.
 
-**If the working tree is clean and on `[RELEASE_BRANCH]`:** proceed to Step 2.
+**If the working tree is clean and on the release branch:** proceed to Step 2.
 
 ### Step 2: Determine Last Release
 
@@ -246,44 +269,44 @@ Use `AskUserQuestion` with these options:
 
 STOP HERE after calling `AskUserQuestion`. Do NOT proceed until the user responds.
 
-### Step 7: Update [CHANGELOG_FILE]
+### Step 7: Update Changelog
 
-Read the current `[CHANGELOG_FILE]` file.
+Read the changelog file (path from CLAUDE.md `CHANGELOG_FILE`, default `CHANGELOG.md`). Read GITHUB_REPO_URL and TAG_PREFIX from CLAUDE.md.
 
 1. **Insert the new version section** between `## [Unreleased]` and the previous version section. The `## [Unreleased]` line should remain, with an empty line after it, followed by the new version section.
 
 2. **Update the comparison links** at the bottom of the file:
    - Change the `[Unreleased]` link to compare from the new tag:
      ```
-     [Unreleased]: [GITHUB_REPO_URL]/compare/[TAG_PREFIX]X.Y.Z...HEAD
+     [Unreleased]: <GITHUB_REPO_URL>/compare/<TAG_PREFIX>X.Y.Z...HEAD
      ```
-   - Add the new version link comparing to the previous tag (or the initial release tag):
+   - Add the new version link comparing to the previous tag:
      ```
-     [X.Y.Z]: [GITHUB_REPO_URL]/compare/[TAG_PREFIX]PREVIOUS...[TAG_PREFIX]X.Y.Z
+     [X.Y.Z]: <GITHUB_REPO_URL>/compare/<TAG_PREFIX>PREVIOUS...<TAG_PREFIX>X.Y.Z
      ```
    - If this is the first tagged release and no previous tag exists:
      ```
-     [X.Y.Z]: [GITHUB_REPO_URL]/releases/tag/[TAG_PREFIX]X.Y.Z
+     [X.Y.Z]: <GITHUB_REPO_URL>/releases/tag/<TAG_PREFIX>X.Y.Z
      ```
 
 Use the `Edit` tool to make these changes.
 
 ### Step 8: Bump Version in All Manifest Files
 
-Update the version field in all project manifest files:
+Update the version field in all project manifest files.
 
-**Files to update:** [PACKAGE_JSON_PATHS]
+Read PACKAGE_JSON_PATHS from CLAUDE.md. If not configured, detect manifest files with version fields.
 
 For each file, use the `Edit` tool to replace the old version string with the new one. Target the version field specifically (e.g., `"version": "X.Y.Z"` in package.json, or `version = "X.Y.Z"` in pyproject.toml).
 
 ### Step 9: Confirm Before Commit
 
-Present a summary of all changes:
+Present a summary of all changes (using TAG_PREFIX and CHANGELOG_FILE from CLAUDE.md):
 
-> **Release summary for [TAG_PREFIX]X.Y.Z:**
-> - [CHANGELOG_FILE] updated with N entries across M categories
+> **Release summary for <TAG_PREFIX>X.Y.Z:**
+> - Changelog updated with N entries across M categories
 > - Version bumped in N manifest files
-> - Will commit as: `chore(release): [TAG_PREFIX]X.Y.Z`
+> - Will commit as: `chore(release): <TAG_PREFIX>X.Y.Z`
 
 Use `AskUserQuestion` with these options:
 - **"Commit"** — proceed to Step 10
@@ -294,11 +317,11 @@ STOP HERE after calling `AskUserQuestion`. Do NOT proceed until the user respond
 
 ### Step 10: Commit
 
-Stage and commit the version bump:
+Stage and commit the version bump (using paths from CLAUDE.md):
 
 ```bash
-git add [PACKAGE_JSON_PATHS] [CHANGELOG_FILE]
-git commit -m "chore(release): [TAG_PREFIX]X.Y.Z"
+git add <PACKAGE_JSON_PATHS> <CHANGELOG_FILE>
+git commit -m "chore(release): <TAG_PREFIX>X.Y.Z"
 ```
 
 ### Step 11: Publish
@@ -315,70 +338,80 @@ STOP HERE after calling `AskUserQuestion`. Do NOT proceed until the user respond
 
 **If the release is a beta** (version ends with `-beta`):
 
-> **Beta release [TAG_PREFIX]X.Y.Z-beta committed.**
+> **Beta release <TAG_PREFIX>X.Y.Z-beta committed.**
 >
 > **Manual steps:**
-> 1. Run `/git-publish` to push `[RELEASE_BRANCH]` and create a PR to `main`.
+> 1. Push the release branch and create a PR to `main`:
+>    ```
+>    git push origin <RELEASE_BRANCH>
+>    gh pr create --base main --head <RELEASE_BRANCH> --title "Release <TAG_PREFIX>X.Y.Z-beta"
+>    ```
 > 2. After the PR merges, tag the release on `main`:
 >    ```
 >    git fetch origin main
->    git tag -a [TAG_PREFIX]X.Y.Z-beta origin/main -m "Release [TAG_PREFIX]X.Y.Z-beta"
->    git push origin [TAG_PREFIX]X.Y.Z-beta
+>    git tag -a <TAG_PREFIX>X.Y.Z-beta origin/main -m "Release <TAG_PREFIX>X.Y.Z-beta"
+>    git push origin <TAG_PREFIX>X.Y.Z-beta
 >    ```
-> 3. To promote to stable later, run `/release stable`.
+> 3. To promote to stable later, run `/ctdf:release stable`.
 
 **If the release is a promotion from beta:**
 
-> **Release [TAG_PREFIX]X.Y.Z promoted from beta.**
+> **Release <TAG_PREFIX>X.Y.Z promoted from beta.**
 >
 > **Manual steps:**
-> 1. Run `/git-publish` to push `[RELEASE_BRANCH]` and create a PR to `main`.
+> 1. Push the release branch and create a PR to `main`:
+>    ```
+>    git push origin <RELEASE_BRANCH>
+>    gh pr create --base main --head <RELEASE_BRANCH> --title "Release <TAG_PREFIX>X.Y.Z"
+>    ```
 > 2. After the PR merges, tag the stable release on `main`:
 >    ```
 >    git fetch origin main
->    git tag -a [TAG_PREFIX]X.Y.Z origin/main -m "Release [TAG_PREFIX]X.Y.Z"
->    git push origin [TAG_PREFIX]X.Y.Z
+>    git tag -a <TAG_PREFIX>X.Y.Z origin/main -m "Release <TAG_PREFIX>X.Y.Z"
+>    git push origin <TAG_PREFIX>X.Y.Z
 >    ```
 
 **Otherwise (minor/patch release):**
 
-> **Release [TAG_PREFIX]X.Y.Z committed.**
+> **Release <TAG_PREFIX>X.Y.Z committed.**
 >
 > **Manual steps:**
-> 1. Run `/git-publish` to push `[RELEASE_BRANCH]` and create a PR to `main`.
+> 1. Push the release branch and create a PR to `main`:
+>    ```
+>    git push origin <RELEASE_BRANCH>
+>    gh pr create --base main --head <RELEASE_BRANCH> --title "Release <TAG_PREFIX>X.Y.Z"
+>    ```
 > 2. After the PR merges, tag the release on `main`:
 >    ```
 >    git fetch origin main
->    git tag -a [TAG_PREFIX]X.Y.Z origin/main -m "Release [TAG_PREFIX]X.Y.Z"
->    git push origin [TAG_PREFIX]X.Y.Z
+>    git tag -a <TAG_PREFIX>X.Y.Z origin/main -m "Release <TAG_PREFIX>X.Y.Z"
+>    git push origin <TAG_PREFIX>X.Y.Z
 >    ```
 
 **If the user chooses "Publish and tag automatically"**, proceed to Step 11a.
 
-### Step 11a: Push develop
+### Step 11a: Push release branch
 
 Push the release commit and any tags to origin:
 
 ```bash
-git push origin [RELEASE_BRANCH] --tags
+git push origin <RELEASE_BRANCH> --tags
 ```
 
 If this fails, show the error to the user, provide manual instructions, and stop automation.
 
 ### Step 11b: Create or reuse Pull Request
 
-Check whether an open PR/MR from `[RELEASE_BRANCH]` into `main` already exists:
+Check whether an open PR/MR from the release branch into `main` already exists:
 
 ```bash
 # GitHub:
-gh pr list --base main --head [RELEASE_BRANCH] --state open --json number,url --jq '.[0]'
-# GitLab: glab mr list --target-branch main --source-branch [RELEASE_BRANCH] --state opened --output json | jq '.[0]'
+gh pr list --base main --head <RELEASE_BRANCH> --state open --json number,url --jq '.[0]'
+# GitLab: glab mr list --target-branch main --source-branch <RELEASE_BRANCH> --state opened --output json | jq '.[0]'
 ```
 
 - If a PR/MR already exists, reuse it. Store its URL.
 - If no PR/MR exists, create one.
-
-**Check if issues tracker integration is enabled** (uses variables from Platform Detection):
 
 **If a release plan is active** (the version matches a release in `releases.json`), enrich the PR body with release plan details:
 
@@ -393,22 +426,18 @@ gh pr list --base main --head [RELEASE_BRANCH] --state open --json number,url --
 [standard changelog content from Step 5]
 
 ---
-*Generated by Claude Code via `/release`*
+*Generated by Claude Code via `/ctdf:release`*
 ```
-
-Use the task list from `releases.json` and cross-reference with issue numbers if platform integration is enabled.
 
 **If `TRACKER_ENABLED` is `true`:**
 
-1. Collect task codes from commits between main and develop:
+1. Collect task codes from commits between main and the release branch:
    ```bash
-   TASK_CODES=$(git log main..[RELEASE_BRANCH] --oneline --no-merges | grep -oE '[A-Z][A-Z0-9]+-[0-9]{3}' | sort -u)
+   TASK_CODES=$(git log main..<RELEASE_BRANCH> --oneline --no-merges | grep -oE '[A-Z][A-Z0-9]+-[0-9]{3}' | sort -u)
    ```
 
 2. For each task code, find the corresponding issue number:
    ```bash
-   # For each code in TASK_CODES:
-   # GitHub:
    ISSUE_NUM=$(gh issue list --repo "$TRACKER_REPO" --search "[$CODE] in:title" --label task --json number --jq '.[0].number' 2>/dev/null)
    # GitLab: glab issue list -R "$TRACKER_REPO" --search "[$CODE]" -l task --output json | jq '.[0].iid'
    ```
@@ -416,33 +445,31 @@ Use the task list from `releases.json` and cross-reference with issue numbers if
 3. Build the PR/MR body with issue references:
    ```
    ## Changes
-   [commit summaries from git log main..[RELEASE_BRANCH] --oneline --no-merges]
+   [commit summaries from git log main..<RELEASE_BRANCH> --oneline --no-merges]
 
    ## Related Issues
    Refs #N1 ([PREFIX-NNN])
    Refs #N2 ([PREFIX-NNN])
 
    ---
-   *Generated by Claude Code via `/release`*
+   *Generated by Claude Code via `/ctdf:release`*
    ```
 
 4. Create the PR/MR:
    ```bash
-   # GitHub:
-   gh pr create --base main --head [RELEASE_BRANCH] \
-     --title "Release [TAG_PREFIX]X.Y.Z" \
+   gh pr create --base main --head <RELEASE_BRANCH> \
+     --title "Release <TAG_PREFIX>X.Y.Z" \
      --body "$PR_BODY"
-   # GitLab: glab mr create --target-branch main --source-branch [RELEASE_BRANCH] --title "Release [TAG_PREFIX]X.Y.Z" --description "$PR_BODY"
+   # GitLab: glab mr create --target-branch main --source-branch <RELEASE_BRANCH> --title "Release <TAG_PREFIX>X.Y.Z" --description "$PR_BODY"
    ```
 
 **If `TRACKER_ENABLED` is `false` or the config file is missing**, use the simple body:
 
 ```bash
-# GitHub:
-gh pr create --base main --head [RELEASE_BRANCH] \
-  --title "Release [TAG_PREFIX]X.Y.Z" \
-  --body "Merge [RELEASE_BRANCH] into main for release [TAG_PREFIX]X.Y.Z"
-# GitLab: glab mr create --target-branch main --source-branch [RELEASE_BRANCH] --title "Release [TAG_PREFIX]X.Y.Z" --description "Merge [RELEASE_BRANCH] into main for release [TAG_PREFIX]X.Y.Z"
+gh pr create --base main --head <RELEASE_BRANCH> \
+  --title "Release <TAG_PREFIX>X.Y.Z" \
+  --body "Merge <RELEASE_BRANCH> into main for release <TAG_PREFIX>X.Y.Z"
+# GitLab: glab mr create --target-branch main --source-branch <RELEASE_BRANCH> --title "Release <TAG_PREFIX>X.Y.Z" --description "Merge <RELEASE_BRANCH> into main for release <TAG_PREFIX>X.Y.Z"
 ```
 
 Store the returned PR URL.
@@ -463,7 +490,7 @@ If this fails with an error about auto-merge not being enabled on the repository
 > Enable it at **Settings → General → Allow auto-merge**, or merge manually.
 > I will still poll for the PR to be merged."
 
-Continue to Step 11d regardless — the user may merge manually while we poll.
+Continue to Step 11d regardless.
 
 ### Step 11d: Wait for PR merge
 
@@ -499,7 +526,7 @@ Run this command with a 600000ms timeout.
 
 **If the output is `PR_CLOSED`:**
 
-> "The PR was closed without merging. Release commit exists on `[RELEASE_BRANCH]` but was not published to `main`."
+> "The PR was closed without merging. Release commit exists on `<RELEASE_BRANCH>` but was not published to `main`."
 
 Stop automation here.
 
@@ -509,8 +536,8 @@ Stop automation here.
 > Once it merges, tag the release manually:
 > ```
 > git fetch origin main
-> git tag -a [TAG_PREFIX]X.Y.Z origin/main -m "Release [TAG_PREFIX]X.Y.Z"
-> git push origin [TAG_PREFIX]X.Y.Z
+> git tag -a <TAG_PREFIX>X.Y.Z origin/main -m "Release <TAG_PREFIX>X.Y.Z"
+> git push origin <TAG_PREFIX>X.Y.Z
 > ```"
 
 Stop automation here.
@@ -522,40 +549,32 @@ After the PR has merged, create and push the release tag:
 First check if the tag already exists:
 
 ```bash
-git tag -l [TAG_PREFIX]X.Y.Z
+git tag -l <TAG_PREFIX>X.Y.Z
 ```
 
-If the tag already exists, warn: "Tag `[TAG_PREFIX]X.Y.Z` already exists, skipping tag creation." and proceed to Step 11.5.
+If the tag already exists, warn: "Tag `<TAG_PREFIX>X.Y.Z` already exists, skipping tag creation." and proceed to Step 11.5.
 
 Otherwise:
 
 ```bash
 git fetch origin main
-git tag -a [TAG_PREFIX]X.Y.Z origin/main -m "Release [TAG_PREFIX]X.Y.Z"
-git push origin [TAG_PREFIX]X.Y.Z
+git tag -a <TAG_PREFIX>X.Y.Z origin/main -m "Release <TAG_PREFIX>X.Y.Z"
+git push origin <TAG_PREFIX>X.Y.Z
 ```
 
 If tagging or pushing fails, show the error and provide the manual commands. Still proceed to Step 11.5 if the tag exists remotely.
 
-### Step 11.5: Create GitHub Release (if enabled)
+### Step 11.5: Create Platform Release (if enabled)
 
-Check if GitHub Issues integration is enabled:
-
-```bash
-TRACKER_ENABLED="$(jq -r '.enabled // false' .claude/github-issues.json 2>/dev/null)"
-```
+Check if platform integration is enabled (use platform-config from earlier):
 
 **If `TRACKER_ENABLED` is `true`:**
 
-Create a GitHub Release with enriched notes:
+Create a platform release with enriched notes:
 
 1. Collect task codes from the changelog entries generated in Step 5.
 
-2. For each task code, find the GitHub issue number:
-   ```bash
-   TRACKER_REPO="$(jq -r '.repo' .claude/github-issues.json)"
-   ISSUE_NUM=$(gh issue list --repo "$TRACKER_REPO" --search "[$CODE] in:title" --label task --json number --jq '.[0].number' 2>/dev/null)
-   ```
+2. For each task code, find the issue number using platform-cmd.
 
 3. Build enriched release notes:
    ```
@@ -566,33 +585,26 @@ Create a GitHub Release with enriched notes:
    - #N1 — [PREFIX-NNN] Task title
    - #N2 — [PREFIX-NNN] Task title
 
-   **Full Changelog:** [GITHUB_REPO_URL]/compare/[TAG_PREFIX]PREVIOUS...[TAG_PREFIX]X.Y.Z
+   **Full Changelog:** <GITHUB_REPO_URL>/compare/<TAG_PREFIX>PREVIOUS...<TAG_PREFIX>X.Y.Z
    ```
 
-4. Create or edit the GitHub Release:
+4. Create or edit the release:
    ```bash
-   gh release create "[TAG_PREFIX]X.Y.Z" --repo "$TRACKER_REPO" \
-     --title "[TAG_PREFIX]X.Y.Z" \
+   gh release create "<TAG_PREFIX>X.Y.Z" --repo "$TRACKER_REPO" \
+     --title "<TAG_PREFIX>X.Y.Z" \
      --notes "$RELEASE_NOTES" \
      --target main
    ```
-   For beta releases, add `--prerelease`:
-   ```bash
-   gh release create "[TAG_PREFIX]X.Y.Z-beta" --repo "$TRACKER_REPO" \
-     --title "[TAG_PREFIX]X.Y.Z-beta" \
-     --notes "$RELEASE_NOTES" \
-     --target main \
-     --prerelease
-   ```
+   For beta releases, add `--prerelease`.
 
 5. If the release already exists (created by CI), update it instead:
    ```bash
-   gh release edit "[TAG_PREFIX]X.Y.Z" --repo "$TRACKER_REPO" --notes "$RELEASE_NOTES" 2>/dev/null || true
+   gh release edit "<TAG_PREFIX>X.Y.Z" --repo "$TRACKER_REPO" --notes "$RELEASE_NOTES" 2>/dev/null || true
    ```
 
 **If `TRACKER_ENABLED` is `false` or the file is missing:** Skip this step.
 
-**If `gh` fails:** Warn but do not fail — the local release commit and tag are already done.
+**If the platform CLI fails:** Warn but do not fail — the local release commit and tag are already done.
 
 ### Step 11.9: Update Release Plan
 
@@ -606,37 +618,292 @@ If the command fails or no release plan exists, skip silently.
 
 ### Step 12: Final Report
 
-Present a summary of the completed release:
+Present a summary of the completed release (using TAG_PREFIX and CHANGELOG_FILE from CLAUDE.md):
 
 **If the release is a beta** (version ends with `-beta`):
 
-> **Beta release [TAG_PREFIX]X.Y.Z-beta published successfully:**
+> **Beta release <TAG_PREFIX>X.Y.Z-beta published successfully:**
 > - Version bumped in all manifest files
-> - [CHANGELOG_FILE] updated with N entries
-> - Commit: `chore(release): [TAG_PREFIX]X.Y.Z-beta`
+> - Changelog updated with N entries
+> - Commit: `chore(release): <TAG_PREFIX>X.Y.Z-beta`
 > - PR: <PR_URL> (merged)
-> - Tag: `[TAG_PREFIX]X.Y.Z-beta` pushed to `main`
-> - GitHub Release: created as **prerelease** (if enabled)
-> - To promote to stable later, run `/release stable`
+> - Tag: `<TAG_PREFIX>X.Y.Z-beta` pushed to `main`
+> - Platform Release: created as **prerelease** (if enabled)
+> - To promote to stable later, run `/ctdf:release stable`
 
 **If the release is a promotion from beta:**
 
-> **Release [TAG_PREFIX]X.Y.Z promoted and published:**
+> **Release <TAG_PREFIX>X.Y.Z promoted and published:**
 > - Version bumped from `X.Y.Z-beta` to `X.Y.Z` in all manifest files
-> - [CHANGELOG_FILE] updated
+> - Changelog updated
 > - PR: <PR_URL> (merged)
-> - Tag: `[TAG_PREFIX]X.Y.Z` pushed to `main`
-> - GitHub Release: created (if enabled)
+> - Tag: `<TAG_PREFIX>X.Y.Z` pushed to `main`
+> - Platform Release: created (if enabled)
 
 **Otherwise (minor/patch release):**
 
-> **Release [TAG_PREFIX]X.Y.Z published successfully:**
+> **Release <TAG_PREFIX>X.Y.Z published successfully:**
 > - Version bumped in all manifest files
-> - [CHANGELOG_FILE] updated with N entries
-> - Commit: `chore(release): [TAG_PREFIX]X.Y.Z`
+> - Changelog updated with N entries
+> - Commit: `chore(release): <TAG_PREFIX>X.Y.Z`
 > - PR: <PR_URL> (merged)
-> - Tag: `[TAG_PREFIX]X.Y.Z` pushed to `main`
-> - GitHub Release: created (if enabled)
+> - Tag: `<TAG_PREFIX>X.Y.Z` pushed to `main`
+> - Platform Release: created (if enabled)
+
+---
+
+## Release Planning
+
+This section handles the `plan` subcommand. The plan subcommand arguments are the remainder after stripping `plan` from `$ARGUMENTS`.
+
+### Plan Mode Detection
+
+`python3 ${CLAUDE_PLUGIN_ROOT}/scripts/task_manager.py platform-config`
+
+Use the `mode` field to determine behavior.
+
+### Plan Current State
+
+#### Release plan data:
+`python3 ${CLAUDE_PLUGIN_ROOT}/scripts/release_manager.py release-plan-list`
+
+#### Task summary:
+`python3 ${CLAUDE_PLUGIN_ROOT}/scripts/task_manager.py summary`
+
+### Plan Subcommands
+
+Parse the plan arguments to determine the subcommand. If empty or `list`, default to **list**.
+
+---
+
+#### plan list (default)
+
+Show a release timeline table.
+
+1. Run `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/release_manager.py release-plan-list`
+2. If no `releases.json` exists (error or empty), inform the user: "No release plan found. Use `/ctdf:release plan create vX.Y.Z` to create your first planned release."
+3. If releases exist, present a table:
+
+```
+| Version | Status      | Theme                          | Target Date | Tasks | Done | Progress |
+|---------|-------------|--------------------------------|-------------|-------|------|----------|
+| 1.1.0   | planned     | Plugin marketplace improvements| 2026-04-01  | 3     | 1    | 33%      |
+| 1.2.0   | planned     | API enhancements               | —           | 2     | 0    | 0%       |
+```
+
+4. Highlight the **next release** (lowest-versioned `planned` or `in-progress` release) with a note: "**Next release:** v1.1.0"
+
+---
+
+#### plan create vX.Y.Z
+
+Create a new planned release.
+
+1. Parse the version from arguments. Validate it is a valid semver (e.g., `1.1.0`, `2.0.0`). Strip any `v` prefix.
+2. Check if this version already exists in `releases.json`:
+   ```bash
+   python3 ${CLAUDE_PLUGIN_ROOT}/scripts/release_manager.py release-plan-list
+   ```
+   If the version already exists, inform the user and stop.
+3. Use `AskUserQuestion` to ask for:
+   - **Theme:** "What is the theme/goal for this release?" (required)
+   - **Target date:** "Optional target date (YYYY-MM-DD) or leave blank"
+4. Create the release:
+   ```bash
+   python3 ${CLAUDE_PLUGIN_ROOT}/scripts/release_manager.py release-plan-create --version X.Y.Z --theme "Theme text" [--target-date YYYY-MM-DD]
+   ```
+5. **In platform-only or dual-sync mode**, also create a milestone:
+
+   **GitHub:**
+   ```bash
+   gh api repos/OWNER/REPO/milestones -f title="vX.Y.Z" -f description="Theme text" [-f due_on="YYYY-MM-DDT00:00:00Z"]
+   ```
+
+   **GitLab:**
+   ```bash
+   glab api projects/:id/milestones -f title="vX.Y.Z" -f description="Theme text" [-f due_date="YYYY-MM-DD"]
+   ```
+
+   If the milestone creation fails, warn but continue.
+
+6. Report: "Release **vX.Y.Z** created with theme: *Theme text*."
+
+---
+
+#### plan assign TASK-CODE vX.Y.Z
+
+Assign a task to a release.
+
+1. Parse the task code and version from arguments. Strip any `v` prefix from the version.
+2. Validate the task exists:
+
+   **In platform-only mode:**
+   ```bash
+   gh issue list --repo "$TRACKER_REPO" --search "[TASK-CODE] in:title" --label task --json number,title --jq '.[0]'
+   ```
+
+   **In local/dual mode:**
+   ```bash
+   python3 ${CLAUDE_PLUGIN_ROOT}/scripts/task_manager.py parse TASK-CODE
+   ```
+
+   If the task is not found, inform the user and stop.
+
+3. Validate the release exists by checking `release-plan-list` output. If the version does not exist, use `AskUserQuestion`:
+   - **"Create release vX.Y.Z first"** — run the `plan create` flow, then continue
+   - **"Cancel"** — stop
+
+4. Add the task to the release:
+   ```bash
+   python3 ${CLAUDE_PLUGIN_ROOT}/scripts/release_manager.py release-plan-add-task --version X.Y.Z --task TASK-CODE
+   ```
+
+5. Update the task's `Release:` field:
+
+   **In local/dual mode:**
+   ```bash
+   python3 ${CLAUDE_PLUGIN_ROOT}/scripts/task_manager.py set-release TASK-CODE --version X.Y.Z
+   ```
+
+   **In platform-only or dual-sync mode**, also add label and milestone:
+   ```bash
+   ISSUE_NUM=$(gh issue list --repo "$TRACKER_REPO" --search "[TASK-CODE] in:title" --label task --json number --jq '.[0].number')
+   gh issue edit "$ISSUE_NUM" --repo "$TRACKER_REPO" --add-label "release:vX.Y.Z"
+   MILESTONE_NUM=$(gh api repos/OWNER/REPO/milestones --jq '.[] | select(.title == "vX.Y.Z") | .number')
+   gh api repos/OWNER/REPO/issues/$ISSUE_NUM -f milestone="$MILESTONE_NUM" --method PATCH
+   ```
+
+   For GitLab, use equivalent `glab` commands.
+
+6. Report: "Task **TASK-CODE** assigned to release **vX.Y.Z**."
+
+---
+
+#### plan unassign TASK-CODE
+
+Remove a task from its release.
+
+1. Parse the task code from arguments.
+2. Find which release the task belongs to:
+   ```bash
+   python3 ${CLAUDE_PLUGIN_ROOT}/scripts/release_manager.py release-plan-list
+   ```
+   Search the `tasks` arrays for the task code. If not found in any release, inform the user and stop.
+
+3. Remove the task from the release:
+   ```bash
+   python3 ${CLAUDE_PLUGIN_ROOT}/scripts/release_manager.py release-plan-remove-task --version X.Y.Z --task TASK-CODE
+   ```
+
+4. Clear the task's `Release:` field:
+
+   **In local/dual mode:**
+   ```bash
+   python3 ${CLAUDE_PLUGIN_ROOT}/scripts/task_manager.py set-release TASK-CODE --version None
+   ```
+
+   **In platform-only or dual-sync mode**, also remove label and milestone:
+   ```bash
+   ISSUE_NUM=$(gh issue list --repo "$TRACKER_REPO" --search "[TASK-CODE] in:title" --label task --json number --jq '.[0].number')
+   gh issue edit "$ISSUE_NUM" --repo "$TRACKER_REPO" --remove-label "release:vX.Y.Z"
+   gh api repos/OWNER/REPO/issues/$ISSUE_NUM -f milestone="" --method PATCH
+   ```
+
+5. Report: "Task **TASK-CODE** unassigned from release **vX.Y.Z**."
+
+---
+
+#### plan suggest
+
+Analyze unassigned tasks and suggest release groupings.
+
+1. **Gather unassigned tasks:**
+
+   **In local/dual mode:**
+   ```bash
+   python3 ${CLAUDE_PLUGIN_ROOT}/scripts/task_manager.py list --status todo --format json
+   python3 ${CLAUDE_PLUGIN_ROOT}/scripts/task_manager.py list --status progressing --format json
+   ```
+   Filter to tasks where `release` is empty or `"None"`.
+
+   **In platform-only mode:**
+   ```bash
+   gh issue list --repo "$TRACKER_REPO" --label "task" --state open --json number,title,labels --jq '.[] | select(.labels | map(.name) | all(startswith("release:") | not))'
+   ```
+
+2. **Read existing release themes:**
+   ```bash
+   python3 ${CLAUDE_PLUGIN_ROOT}/scripts/release_manager.py release-plan-list
+   ```
+
+3. **Analyze and group tasks** using these heuristics:
+   - **Prefix affinity**: Tasks with the same code prefix likely belong to the same domain
+   - **File overlap**: Tasks that touch the same files/modules should be released together
+   - **Dependency chains**: A task and its dependents should be in the same release
+   - **Description similarity**: Semantic grouping by reading task descriptions
+   - **Priority cohesion**: HIGH priority tasks should go in the nearest release
+
+4. **Present suggested groupings** with reasoning:
+
+   For each suggested group:
+   ```
+   ### Group 1: "Plugin marketplace improvements" (suggested: v1.1.0)
+   - MKT-004 — Add plugin search
+   - MKT-005 — Plugin ratings system
+   - UI-006 — Plugin detail page redesign
+
+   **Reasoning:** Same MKT- prefix (marketplace domain), MKT-005 depends on MKT-004,
+   UI-006 modifies the same plugin UI components.
+   ```
+
+5. **For each group**, use `AskUserQuestion`:
+   - **"Assign all to vX.Y.Z"** — execute assignments for the group
+   - **"Assign to a different version"** — ask for the version, then assign
+   - **"Skip this group"** — move to the next group
+
+6. Execute assignments for confirmed groups using the `plan assign` logic.
+
+7. Report the total number of tasks assigned and to which releases.
+
+---
+
+#### plan timeline
+
+Detailed timeline view with per-task status breakdown.
+
+1. Run `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/release_manager.py release-plan-list`
+2. If no releases exist, inform the user.
+3. For each release (ordered by version), show:
+
+   ```
+   ## v1.1.0 — Plugin marketplace improvements
+   **Status:** planned | **Target:** 2026-04-01 | **Progress:** 1/3 (33%)
+
+   | Task     | Title                    | Status       | Priority |
+   |----------|--------------------------|--------------|----------|
+   | MKT-004  | Add plugin search        | [~] progress | HIGH     |
+   | MKT-005  | Plugin ratings system    | [ ] todo     | MEDIUM   |
+   | UI-006   | Plugin detail redesign   | [x] done     | LOW      |
+   ```
+
+4. To get per-task status:
+
+   **In local/dual mode:**
+   ```bash
+   python3 ${CLAUDE_PLUGIN_ROOT}/scripts/task_manager.py parse TASK-CODE
+   ```
+
+   **In platform-only mode:**
+   ```bash
+   gh issue list --repo "$TRACKER_REPO" --search "[TASK-CODE] in:title" --label task --json number,title,labels,state --jq '.[0]'
+   ```
+
+5. After all releases, show a summary line:
+   ```
+   **Total:** N releases planned, M tasks assigned, P% overall progress
+   ```
+
+---
 
 ## Important Rules
 
@@ -645,8 +912,10 @@ Present a summary of the completed release:
 3. **NEVER create a tag on a dirty working tree** — ensure all changes are committed first.
 4. **NEVER reuse a version tag** — if the tag already exists, abort and inform the user.
 5. **Exclude non-user-facing commits from the changelog** — `chore:`, `ci:`, `test:`, `docs:`, `style:`, `build:` commits should not appear in the changelog.
-6. **Preserve the Keep a Changelog format exactly** — match the structure, link format, and section ordering of the existing `[CHANGELOG_FILE]`.
+6. **Preserve the Keep a Changelog format exactly** — match the structure, link format, and section ordering of the existing changelog.
 7. **All output must be in English.**
-8. **Major releases MUST go through beta first** — a major bump always produces `X.0.0-beta`. The beta stays until the user explicitly runs `/release stable` to promote it.
+8. **Major releases MUST go through beta first** — a major bump always produces `X.0.0-beta`. The beta stays until the user explicitly runs `/ctdf:release stable` to promote it.
 9. **NEVER promote a non-beta version** — if the current version does not end with `-beta`, the `stable`/`promote` argument must be rejected.
 10. **If the user chooses manual publish**, show manual instructions and stop. Do not proceed to the automated publish steps.
+11. **Release plan rules**: NEVER modify task files directly — use `set-release` and `release-plan-*` subcommands. Version format uses semver without `v` prefix in `releases.json`, display with `v` prefix in output. Platform-only mode never reads/writes local task files.
+12. **Read all configuration from CLAUDE.md** — never use hardcoded placeholder values.

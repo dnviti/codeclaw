@@ -23,6 +23,10 @@ Supported operations: `list-issues`, `search-issues`, `view-issue`, `edit-issue`
 
 Example: `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/task_manager.py platform-cmd create-issue title="[CODE] Title" body="Description" labels="task,status:todo"`
 
+## Release Branch Configuration
+
+Read CLAUDE.md's `## Development Commands` section to extract `RELEASE_BRANCH`. If not configured, detect: use `develop` if that branch exists, otherwise `main`. Use this value wherever `<RELEASE_BRANCH>` appears below.
+
 ## Current Task State
 
 ### Platform-only mode:
@@ -101,7 +105,7 @@ Same as dual sync steps 1-2, skip GitHub sync.
 
 ### Step 2.5: Create a task branch
 
-Create a dedicated git branch for this task, branching from `[RELEASE_BRANCH]`.
+Create a dedicated git branch for this task, branching from `<RELEASE_BRANCH>`.
 
 **2.5a. Check the working tree:**
 ```bash
@@ -111,8 +115,8 @@ If dirty, inform the user and stop.
 
 **2.5b. Switch to the release branch and pull latest:**
 ```bash
-git checkout [RELEASE_BRANCH]
-git pull origin [RELEASE_BRANCH]
+git checkout <RELEASE_BRANCH>
+git pull origin <RELEASE_BRANCH>
 ```
 
 **2.5c. Create the task branch:**
@@ -287,7 +291,7 @@ Use `AskUserQuestion` with options:
 **Important:** This step is ONLY executed when the user chose **"Yes, task is done (tests passed)"** in step 6b. Tasks that skipped testing must NOT be merged into the release branch to prevent untested or broken features from reaching production.
 
 **If testing was confirmed**, use `AskUserQuestion` with options:
-- **"Yes, create PR into [RELEASE_BRANCH]"** — execute the steps below
+- **"Yes, create PR into <RELEASE_BRANCH>"** — execute the steps below
 - **"No, stay on task branch"** — skip PR creation
 
 **If the user chooses to create a PR:**
@@ -299,8 +303,8 @@ Use `AskUserQuestion` with options:
 
 2. **Check for an existing PR/MR** (avoid duplicates):
    ```bash
-   gh pr list --base [RELEASE_BRANCH] --head task/<task-code-lowercase> --state open --json number,url --jq '.[0]'
-   # GitLab: glab mr list --target-branch [RELEASE_BRANCH] --source-branch task/<task-code-lowercase> --state opened --output json | jq '.[0]'
+   gh pr list --base <RELEASE_BRANCH> --head task/<task-code-lowercase> --state open --json number,url --jq '.[0]'
+   # GitLab: glab mr list --target-branch <RELEASE_BRANCH> --source-branch task/<task-code-lowercase> --state opened --output json | jq '.[0]'
    ```
    If a PR already exists, inform the user and provide the existing PR URL. Skip creation.
 
@@ -343,14 +347,14 @@ Use `AskUserQuestion` with options:
 
    **GitHub:**
    ```bash
-   gh pr create --base [RELEASE_BRANCH] --head task/<task-code-lowercase> \
+   gh pr create --base <RELEASE_BRANCH> --head task/<task-code-lowercase> \
      --title "[TASK-CODE] — [Task Title]" \
      --body "$PR_BODY"
    ```
 
    **GitLab:**
    ```bash
-   glab mr create --target-branch [RELEASE_BRANCH] --source-branch task/<task-code-lowercase> \
+   glab mr create --target-branch <RELEASE_BRANCH> --source-branch task/<task-code-lowercase> \
      --title "[TASK-CODE] — [Task Title]" \
      --description "$PR_BODY"
    ```
@@ -358,12 +362,12 @@ Use `AskUserQuestion` with options:
 5. **Report the PR URL to the user:**
 
    > "Pull Request created: <PR_URL>
-   > Target branch: `[RELEASE_BRANCH]`
+   > Target branch: `<RELEASE_BRANCH>`
    > The task branch `task/<task-code-lowercase>` is ready for review and merge."
 
 **If testing was skipped**, do NOT offer the PR. Instead, inform the user:
 
-> "Task [TASK-CODE] was closed without testing confirmation. The task branch `task/<task-code-lowercase>` has **NOT** been submitted as a PR into [RELEASE_BRANCH].
-> Run `/test-engineer [TASK-CODE]` to complete testing before creating a PR."
+> "Task [TASK-CODE] was closed without testing confirmation. The task branch `task/<task-code-lowercase>` has **NOT** been submitted as a PR into <RELEASE_BRANCH>.
+> Run `/ctdf:test-review [TASK-CODE]` to complete testing before creating a PR."
 
 **Important:** Always ask — never auto-commit, auto-close, or auto-create PRs without user confirmation.

@@ -105,8 +105,8 @@ Multi-line description in English. Explain WHAT the task does, WHY it is
 needed, and its scope. Technical but readable, roughly 4-10 lines.
 
 ## Technical Details
-Detailed technical implementation plan in English. Structure by layer/file:
-[TECH_DETAIL_LAYERS]
+Detailed technical implementation plan in English. Structure by architectural layer/file.
+Read CLAUDE.md's `## Architecture` section to understand the project's layers and structure them accordingly.
 Use indented sub-sections with specific code snippets, type definitions,
 function signatures, and endpoint paths where appropriate.
 
@@ -138,8 +138,9 @@ Template:
   4-10 lines.
 
   TECHNICAL DETAILS:
-  Detailed technical implementation plan. Structure by layer/file:
-[TECH_DETAIL_LAYERS]
+  Detailed technical implementation plan. Structure by architectural layer/file.
+  Read CLAUDE.md's `## Architecture` section to understand the project's layers
+  and structure the details accordingly.
   Use indented sub-sections with specific code snippets, type
   definitions, function signatures, and endpoint paths where appropriate.
 
