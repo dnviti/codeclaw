@@ -18,6 +18,7 @@
       "to-test": "status:to-test",
       "done": "status:done"
     },
-    "sections": {}
+    "sections": {},
+    "release_prefix": "release:"
   }
 }

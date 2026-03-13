@@ -118,7 +118,7 @@ Title: `[PREFIX-NNN] Task Title`
 
 Body:
 ```
-**Code:** PREFIX-NNN | **Priority:** HIGH/MEDIUM/LOW | **Section:** SECTION_NAME | **Dependencies:** DEPS
+**Code:** PREFIX-NNN | **Priority:** HIGH/MEDIUM/LOW | **Section:** SECTION_NAME | **Dependencies:** DEPS | **Release:** VERSION
 **Promoted from:** [IDEA-NNN] #IDEA_ISSUE_NUMBER
 
 ## Description
@@ -146,6 +146,7 @@ Include specific code snippets, function signatures, endpoint paths.
 ------------------------------------------------------------------------------
   Priority: [HIGH/MEDIUM/LOW]
   Dependencies: [TASK-CODE, TASK-CODE or None]
+  Release: [VERSION or None]
 
   DESCRIPTION:
   Expanded description based on the original idea's DESCRIPTION
@@ -245,7 +246,7 @@ This cleanly removes the idea block and handles whitespace cleanup automatically
    TASK_ISSUE_URL=$(gh issue create --repo "$TRACKER_REPO" \
      --title "[PREFIX-NNN] Task Title" \
      --body "$(cat <<'EOF'
-   **Code:** PREFIX-NNN | **Priority:** HIGH/MEDIUM/LOW | **Section:** SECTION_NAME | **Dependencies:** DEPS
+   **Code:** PREFIX-NNN | **Priority:** HIGH/MEDIUM/LOW | **Section:** SECTION_NAME | **Dependencies:** DEPS | **Release:** VERSION
    **Promoted from:** [IDEA-NNN] #IDEA_ISSUE
 
    ## Description
@@ -294,7 +295,7 @@ This cleanly removes the idea block and handles whitespace cleanup automatically
    TASK_ISSUE_URL=$(gh issue create --repo "$TRACKER_REPO" \
      --title "[PREFIX-NNN] Task Title" \
      --body "$(cat <<'EOF'
-   **Code:** PREFIX-NNN | **Priority:** PRIORITY | **Section:** SECTION_NAME | **Dependencies:** DEPS
+   **Code:** PREFIX-NNN | **Priority:** PRIORITY | **Section:** SECTION_NAME | **Dependencies:** DEPS | **Release:** VERSION
    **Promoted from:** [IDEA-NNN] #IDEA_ISSUE
 
    ## Description
@@ -328,7 +329,29 @@ This cleanly removes the idea block and handles whitespace cleanup automatically
 
 **If any `gh`/`glab` command fails:** Warn but do NOT fail — in dual sync mode the local operations are already complete. In platform-only mode, report the failure clearly since no local fallback exists.
 
-### Step 10: Confirm and Report
+### Step 10.5: Release Assignment
+
+After the task is created and the idea removed, check if release planning is active:
+
+1. Run: `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/release_manager.py release-plan-list`
+2. If no `releases.json` exists or no planned releases, skip this step entirely.
+3. If planned releases exist, analyze the new task's description against release themes.
+4. Suggest a release assignment:
+
+   > "This task could fit into release **vX.Y.Z** (*theme*). Assign it?"
+
+5. Use `AskUserQuestion` with options:
+   - **"Yes, assign to vX.Y.Z"** — proceed with assignment
+   - **"Assign to a different release"** — ask which version, then assign
+   - **"Create a new release"** — run the release creation flow, then assign
+   - **"Skip"** — leave unassigned
+
+6. If assigned:
+   - Run: `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/task_manager.py set-release TASK-CODE --version X.Y.Z`
+   - Run: `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/release_manager.py release-plan-add-task --version X.Y.Z --task TASK-CODE`
+   - **In platform-only or dual-sync mode**, also add the `release:vX.Y.Z` label and assign to milestone `vX.Y.Z` on the platform issue.
+
+### Step 11: Confirm and Report
 
 After successfully completing all operations, report:
 

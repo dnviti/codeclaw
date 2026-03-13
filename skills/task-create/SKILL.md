@@ -98,7 +98,7 @@ Platform issue format:
 - **Body:**
 
 ```markdown
-**Code:** PREFIX-NNN | **Priority:** PRIORITY | **Section:** SECTION_NAME | **Dependencies:** DEPS
+**Code:** PREFIX-NNN | **Priority:** PRIORITY | **Section:** SECTION_NAME | **Dependencies:** DEPS | **Release:** VERSION
 
 ## Description
 Multi-line description in English. Explain WHAT the task does, WHY it is
@@ -130,6 +130,7 @@ Template:
 ------------------------------------------------------------------------------
   Priority: [HIGH/MEDIUM/LOW]
   Dependencies: [TASK-CODE, TASK-CODE or None]
+  Release: [VERSION or None]
 
   DESCRIPTION:
   Multi-line description. Explain WHAT the task does, WHY it is
@@ -220,7 +221,7 @@ Use the `Edit` tool to insert the task block at the correct position.
    ISSUE_URL=$(gh issue create --repo "$TRACKER_REPO" \
      --title "[PREFIX-NNN] Task Title" \
      --body "$(cat <<'EOF'
-   **Code:** PREFIX-NNN | **Priority:** PRIORITY | **Section:** SECTION_NAME | **Dependencies:** DEPS
+   **Code:** PREFIX-NNN | **Priority:** PRIORITY | **Section:** SECTION_NAME | **Dependencies:** DEPS | **Release:** VERSION
 
    ## Description
    [Description content in English]
@@ -255,7 +256,7 @@ Use the `Edit` tool to insert the task block at the correct position.
    ISSUE_URL=$(gh issue create --repo "$TRACKER_REPO" \
      --title "[PREFIX-NNN] Task Title" \
      --body "$(cat <<'EOF'
-   **Code:** PREFIX-NNN | **Priority:** PRIORITY | **Section:** SECTION_NAME | **Dependencies:** DEPS
+   **Code:** PREFIX-NNN | **Priority:** PRIORITY | **Section:** SECTION_NAME | **Dependencies:** DEPS | **Release:** VERSION
 
    ## Description
    [DESCRIPTION content from the task block]
@@ -286,7 +287,29 @@ Use the `Edit` tool to insert the task block at the correct position.
 
 **In local only mode:** Skip this step entirely.
 
-### Step 9: Confirm and Report
+### Step 9.5: Release Assignment
+
+After the task is created, check if release planning is active:
+
+1. Run: `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/release_manager.py release-plan-list`
+2. If no `releases.json` exists or no planned releases, skip this step entirely.
+3. If planned releases exist, analyze the new task's description against release themes.
+4. Suggest a release assignment:
+
+   > "This task could fit into release **vX.Y.Z** (*theme*). Assign it?"
+
+5. Use `AskUserQuestion` with options:
+   - **"Yes, assign to vX.Y.Z"** — proceed with assignment
+   - **"Assign to a different release"** — ask which version, then assign
+   - **"Create a new release"** — run the release creation flow, then assign
+   - **"Skip"** — leave unassigned
+
+6. If assigned:
+   - Run: `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/task_manager.py set-release TASK-CODE --version X.Y.Z`
+   - Run: `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/release_manager.py release-plan-add-task --version X.Y.Z --task TASK-CODE`
+   - **In platform-only or dual-sync mode**, also add the `release:vX.Y.Z` label and assign to milestone `vX.Y.Z` on the platform issue.
+
+### Step 10: Confirm and Report
 
 After successfully creating the task, report:
 

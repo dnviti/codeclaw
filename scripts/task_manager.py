@@ -202,6 +202,7 @@ def _parse_content_fields(block: dict, content_lines: list[str]) -> None:
     block["motivation"] = ""
     block["completed"] = ""
     block["rejection_reason"] = ""
+    block["release"] = ""
 
     current_section = None
     section_lines = []
@@ -229,6 +230,9 @@ def _parse_content_fields(block: dict, content_lines: list[str]) -> None:
             continue
         if stripped.startswith("Dependencies:"):
             block["dependencies"] = stripped[len("Dependencies:"):].strip()
+            continue
+        if stripped.startswith("Release:"):
+            block["release"] = stripped[len("Release:"):].strip()
             continue
         if stripped.startswith("Category:"):
             block["category"] = stripped[len("Category:"):].strip()
@@ -910,6 +914,57 @@ def cmd_remove(args):
     }))
 
 
+# ── Subcommand: set-release ──────────────────────────────────────────────────
+
+def cmd_set_release(args):
+    """Set or clear the Release: field on a task block."""
+    root = find_project_root()
+    code = args.code.upper()
+    version = args.version  # "None" or a semver string
+
+    # Find the task across all task files
+    block, source_file = find_block_in_all(root, code, TASK_FILES)
+    if not block:
+        print(json.dumps({"error": f"Task {code} not found in any task file"}))
+        sys.exit(1)
+
+    fp = root / source_file
+    lines = read_lines(fp)
+
+    # Find the Dependencies: line within the block range
+    dep_line_idx = None
+    release_line_idx = None
+    for idx in range(block["line_start"], block["line_end"] + 1):
+        stripped = lines[idx].strip()
+        if stripped.startswith("Dependencies:"):
+            dep_line_idx = idx
+        if stripped.startswith("Release:"):
+            release_line_idx = idx
+
+    release_value = "None" if version in ("None", "none", "") else version
+    new_release_line = f"  Release: {release_value}"
+
+    if release_line_idx is not None:
+        # Update existing Release: line
+        lines[release_line_idx] = new_release_line
+    elif dep_line_idx is not None:
+        # Insert after Dependencies: line
+        lines.insert(dep_line_idx + 1, new_release_line)
+    else:
+        # Fallback: insert after the second separator line (line_start + 2)
+        insert_at = block["line_start"] + 2
+        lines.insert(insert_at, new_release_line)
+
+    write_lines(fp, lines)
+
+    print(json.dumps({
+        "success": True,
+        "code": code,
+        "file": source_file,
+        "release": release_value,
+    }))
+
+
 # ── Subcommand: hook ─────────────────────────────────────────────────────────
 
 def cmd_hook(args):
@@ -1486,6 +1541,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("code", help="Task or idea code")
     p.add_argument("--file", required=True, help="File to remove from")
     p.set_defaults(func=cmd_remove)
+
+    # set-release
+    p = sub.add_parser("set-release", help="Set or clear the Release field on a task")
+    p.add_argument("code", help="Task code (e.g., AUTH-001)")
+    p.add_argument("--version", required=True, help="Release version (e.g., 1.1.0) or 'None' to clear")
+    p.set_defaults(func=cmd_set_release)
 
     # hook
     p = sub.add_parser("hook", help="PostToolUse hook mode")

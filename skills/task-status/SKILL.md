@@ -148,4 +148,12 @@ Present the information above as a structured English-language report with these
    - Local status vs. platform status
    - Suggested action (e.g., "run `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/task_manager.py move CODE --to STATUS`")
 
+6. **Release Plan Overview** — Check if release planning is active:
+   - Run: `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/release_manager.py release-plan-list`
+   - If no `releases.json` exists (error or empty result), skip this section entirely.
+   - If releases exist, show:
+     - **Next release:** version, theme, target date, progress (done/total tasks)
+     - Per-task status breakdown for the next release (task code, title, current status)
+     - **Upcoming releases:** summary table of other planned releases with version, theme, task count
+
 Do NOT modify any files. This is a read-only status report.
