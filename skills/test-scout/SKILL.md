@@ -112,8 +112,8 @@ Compare the source code against existing tests:
 ```
 
 Use `AskUserQuestion` with options:
-- **"Create tasks for the gaps"** — use `/ctdf:task-create` to create test tasks for the top gaps
-- **"Generate the tests now"** — hand off to `/ctdf:test-create` for immediate test generation
+- **"Create tasks for the gaps"** — use `/task-create` to create test tasks for the top gaps
+- **"Generate the tests now"** — hand off to `/test-create` for immediate test generation
 - **"Done, just needed the report"** — stop here
 
 ## Important Rules

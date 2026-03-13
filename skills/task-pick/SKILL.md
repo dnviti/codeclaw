@@ -384,6 +384,6 @@ Use `AskUserQuestion` with options:
 **If testing was skipped**, do NOT offer the PR. Instead, inform the user:
 
 > "Task [TASK-CODE] was closed without testing confirmation. The task branch `task/<task-code-lowercase>` has **NOT** been submitted as a PR into <RELEASE_BRANCH>.
-> Run `/ctdf:test-review [TASK-CODE]` to complete testing before creating a PR."
+> Run `/test-review [TASK-CODE]` to complete testing before creating a PR."
 
 **Important:** Always ask — never auto-commit, auto-close, or auto-create PRs without user confirmation.

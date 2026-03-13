@@ -70,7 +70,7 @@ Ideas are stored separately from tasks and must be explicitly approved before en
 | `ideas.txt` | Ideas awaiting evaluation |
 | `idea-disapproved.txt` | Rejected ideas archive |
 
-Use `/ctdf:idea-create` to add ideas, `/ctdf:idea-approve` to promote an idea to a task, `/ctdf:idea-refactor` to update ideas based on codebase changes, and `/ctdf:idea-disapprove` to reject an idea. Ideas must never be picked up directly by `/ctdf:task-pick`.
+Use `/idea-create` to add ideas, `/idea-approve` to promote an idea to a task, `/idea-refactor` to update ideas based on codebase changes, and `/idea-disapprove` to reject an idea. Ideas must never be picked up directly by `/task-pick`.
 
 ### Task & Idea Management Modes
 

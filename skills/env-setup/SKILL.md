@@ -11,7 +11,7 @@ You are an environment setup assistant. Your job is to scan the current project,
 
 Skills are generic and read their configuration from CLAUDE.md at runtime — no skill files need to be edited.
 
-This skill fills the gap left by `/ctdf:project-initialization` — it re-detects and updates everything that project-initialization would have set, for projects that have already been scaffolded or have evolved since initial setup.
+This skill fills the gap left by `/project-initialization` — it re-detects and updates everything that project-initialization would have set, for projects that have already been scaffolded or have evolved since initial setup.
 
 ## CRITICAL: User Interaction Rules
 
@@ -391,7 +391,7 @@ Present a summary of all changes made:
 1. Review the updated CLAUDE.md to verify accuracy
 2. Fill in any remaining empty values in the Development Commands section
 3. Run `make dev` or the detected start command to verify the dev server works
-4. (Optional) Run `/ctdf:env-setup [section]` again to update specific sections
+4. (Optional) Run `/env-setup [section]` again to update specific sections
 ```
 
 ## Important Rules

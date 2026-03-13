@@ -7,7 +7,7 @@ argument-hint: "[project name]"
 
 # Setup Task Tracking
 
-You are a setup assistant for the CTDF plugin. Your job is to initialize the task and idea tracking files in the user's project so that all other CTDF skills (`/ctdf:task-create`, `/ctdf:task-pick`, `/ctdf:idea-create`, etc.) work correctly.
+You are a setup assistant for the CTDF plugin. Your job is to initialize the task and idea tracking files in the user's project so that all other CTDF skills (`/task-create`, `/task-pick`, `/idea-create`, etc.) work correctly.
 
 ## Current Directory State
 
@@ -41,7 +41,7 @@ For each missing file, create it with the appropriate template. **Never overwrit
 SECTION A — Core Features
 ================================================================================
 
-(No tasks yet — use /ctdf:task-create to add tasks)
+(No tasks yet — use /task-create to add tasks)
 ```
 
 **progressing.txt** (if missing):
@@ -50,7 +50,7 @@ SECTION A — Core Features
 [PROJECT NAME] — In Progress
 ================================================================================
 
-(No tasks in progress — use /ctdf:task-pick to start a task)
+(No tasks in progress — use /task-pick to start a task)
 ```
 
 **done.txt** (if missing):
@@ -68,7 +68,7 @@ SECTION A — Core Features
 [PROJECT NAME] — Idea Backlog
 ================================================================================
 
-(No ideas yet — use /ctdf:idea-create to add ideas)
+(No ideas yet — use /idea-create to add ideas)
 ```
 
 **idea-disapproved.txt** (if missing):
@@ -159,7 +159,7 @@ Ideas are stored separately from tasks and must be explicitly approved before en
 | `ideas.txt` | Ideas awaiting evaluation |
 | `idea-disapproved.txt` | Rejected ideas archive |
 
-Use `/ctdf:idea-create` to add ideas, `/ctdf:idea-approve` to promote an idea to a task, `/ctdf:idea-refactor` to update ideas based on codebase changes, and `/ctdf:idea-disapprove` to reject an idea. Ideas must never be picked up directly by `/ctdf:task-pick`.
+Use `/idea-create` to add ideas, `/idea-approve` to promote an idea to a task, `/idea-refactor` to update ideas based on codebase changes, and `/idea-disapprove` to reject an idea. Ideas must never be picked up directly by `/task-pick`.
 
 ### Task & Idea Management Modes
 
@@ -207,9 +207,9 @@ Present a summary to the user:
 ### Next Steps
 1. Customize `CLAUDE.md` — fill in Development Commands, Environment Setup, and Architecture
 2. Customize `to-do.txt` — rename sections to match your project areas
-3. Use `/ctdf:task-create [description]` to create your first task
-4. Use `/ctdf:idea-create [description]` to capture ideas
-5. (Optional) Run `/ctdf:project-initialization` for full project scaffolding
+3. Use `/task-create [description]` to create your first task
+4. Use `/idea-create [description]` to capture ideas
+5. (Optional) Run `/project-initialization` for full project scaffolding
 6. (Optional) Enable Issues tracker — see the CTDF README for setup instructions
 ```
 

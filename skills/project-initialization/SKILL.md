@@ -323,9 +323,9 @@ Present a comprehensive report to the user:
 - **Add a database:** [brief guidance for the chosen stack]
 - **Add authentication:** [brief guidance]
 - **Add an API layer:** [brief guidance]
-- **Add tests:** Use `/ctdf:test-create` to generate tests
-- **Run tests:** Use `/ctdf:test-run` to execute tests
-- **Security audit:** Use `/ctdf:vulnerability-scout` to scan for vulnerabilities
+- **Add tests:** Use `/test-create` to generate tests
+- **Run tests:** Use `/test-run` to execute tests
+- **Security audit:** Use `/vulnerability-scout` to scan for vulnerabilities
 - **Add CI/CD:** CI/CD templates are available in `${CLAUDE_PLUGIN_ROOT}/templates/` (see Step 9)
 
 ### Git Repository
@@ -340,15 +340,15 @@ Present a comprehensive report to the user:
 
 ### Skills Available
 The following CTDF skills are ready (they read configuration from CLAUDE.md):
-- `/ctdf:task-create`, `/ctdf:task-pick` — task management with platform-agnostic issues tracker
-- `/ctdf:idea-create`, `/ctdf:idea-approve` — idea pipeline
-- `/ctdf:test-scout`, `/ctdf:test-create`, `/ctdf:test-run`, `/ctdf:test-review` — test lifecycle
-- `/ctdf:vulnerability-scout`, `/ctdf:vulnerability-create`, `/ctdf:vulnerability-report` — security auditing
-- `/ctdf:release` — semantic versioning, changelog, and tagging
-- `/ctdf:release plan` — release planning and task grouping
-- `/ctdf:docs` — documentation management
-- `/ctdf:idea-scout` — idea research and scouting
-- `/ctdf:code-optimize` — code quality analysis
+- `/task-create`, `/task-pick` — task management with platform-agnostic issues tracker
+- `/idea-create`, `/idea-approve` — idea pipeline
+- `/test-scout`, `/test-create`, `/test-run`, `/test-review` — test lifecycle
+- `/vulnerability-scout`, `/vulnerability-create`, `/vulnerability-report` — security auditing
+- `/release` — semantic versioning, changelog, and tagging
+- `/release plan` — release planning and task grouping
+- `/docs` — documentation management
+- `/idea-scout` — idea research and scouting
+- `/code-optimize` — code quality analysis
 ```
 
 ### Step 8: Issues Tracker Integration (Optional)

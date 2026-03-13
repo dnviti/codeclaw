@@ -9,7 +9,7 @@ CTDF gives your AI-assisted development workflow a structured backbone: ideas ar
 - **Two-pipeline workflow** — separate idea evaluation from task execution
 - **21 built-in skills** — slash commands for every stage of the development lifecycle
 - **Claude Code plugin** — install via marketplace, uninstall cleanly, update easily
-- **Adaptive project initialization** — `/ctdf:project-initialization` scaffolds your project and tailors all skills to your chosen stack, domain, and architecture
+- **Adaptive project initialization** — `/project-initialization` scaffolds your project and tailors all skills to your chosen stack, domain, and architecture
 - **Plain-text tracking** — tasks and ideas live in simple `.txt` files, fully version-controllable
 - **GitHub/GitLab Issues integration** — optional tri-modal sync with GitHub or GitLab Issues
 - **Automated hooks** — file edits automatically surface related tasks and progress summaries
@@ -46,7 +46,7 @@ claude --plugin-dir ./claude-task-development-framework
 2. **Set up task tracking** in your project:
 
    ```
-   /ctdf:setup My Project Name
+   /setup My Project Name
    ```
 
    This creates the task/idea files (`to-do.txt`, `progressing.txt`, `done.txt`, `ideas.txt`, `idea-disapproved.txt`) and adds framework guidance to your `CLAUDE.md`.
@@ -54,7 +54,7 @@ claude --plugin-dir ./claude-task-development-framework
 3. **(Optional) Full project initialization** — if starting a new project from scratch:
 
    ```
-   /ctdf:project-initialization [project purpose or stack]
+   /project-initialization [project purpose or stack]
    ```
 
    This scaffolds your project, sets up git, and configures all skills for your specific tech stack.
@@ -62,10 +62,10 @@ claude --plugin-dir ./claude-task-development-framework
 4. **Start using skills:**
 
    ```
-   /ctdf:idea-create Add user authentication with JWT
-   /ctdf:idea-approve IDEA-AUTH-0001
-   /ctdf:task-pick
-   /ctdf:task-status
+   /idea-create Add user authentication with JWT
+   /idea-approve IDEA-AUTH-0001
+   /task-pick
+   /task-status
    ```
 
 ## Core Concepts
@@ -75,9 +75,9 @@ claude --plugin-dir ./claude-task-development-framework
 Ideas are lightweight proposals — high-level descriptions without implementation details. They go through evaluation before entering the task pipeline.
 
 ```
-ideas.txt  ──→  /ctdf:idea-approve  ──→  to-do.txt (becomes a task)
+ideas.txt  ──→  /idea-approve  ──→  to-do.txt (becomes a task)
     │
-    └──→  /ctdf:idea-disapprove  ──→  idea-disapproved.txt (archived)
+    └──→  /idea-disapprove  ──→  idea-disapproved.txt (archived)
 ```
 
 ### Task Pipeline
@@ -97,75 +97,75 @@ to-do.txt [ ]  ──→  progressing.txt [~]  ──→  done.txt [x]
 
 ## Skills Reference
 
-All skills are namespaced under `ctdf:`. Use `/ctdf:skill-name` to invoke.
+All skills are namespaced under `ctdf:`. Use `/skill-name` to invoke.
 
 ### Setup & Project
 
 | Skill | Usage | Description |
 |-------|-------|-------------|
-| `/ctdf:setup` | `/ctdf:setup [project name]` | Initialize task/idea tracking files in an existing project |
-| `/ctdf:project-initialization` | `/ctdf:project-initialization [purpose]` | Full project scaffold: choose stack, configure git, adapt all skills |
+| `/setup` | `/setup [project name]` | Initialize task/idea tracking files in an existing project |
+| `/project-initialization` | `/project-initialization [purpose]` | Full project scaffold: choose stack, configure git, adapt all skills |
 
 ### Task Management
 
 | Skill | Usage | Description |
 |-------|-------|-------------|
-| `/ctdf:task-create` | `/ctdf:task-create [description]` | Create a new task with auto-assigned ID and codebase-informed technical details |
-| `/ctdf:task-pick` | `/ctdf:task-pick [TASK-CODE]` | Pick up the next task — verifies in-progress work first, runs quality gates |
-| `/ctdf:task-continue` | `/ctdf:task-continue [TASK-CODE]` | Resume work on a specific in-progress task |
-| `/ctdf:task-status` | `/ctdf:task-status` | Show current task summary and recommend next tasks |
-| `/ctdf:idea-scout` | `/ctdf:idea-scout [focus area or @local-file]` | Research trends and online sources to suggest new ideas for evaluation |
+| `/task-create` | `/task-create [description]` | Create a new task with auto-assigned ID and codebase-informed technical details |
+| `/task-pick` | `/task-pick [TASK-CODE]` | Pick up the next task — verifies in-progress work first, runs quality gates |
+| `/task-continue` | `/task-continue [TASK-CODE]` | Resume work on a specific in-progress task |
+| `/task-status` | `/task-status` | Show current task summary and recommend next tasks |
+| `/idea-scout` | `/idea-scout [focus area or @local-file]` | Research trends and online sources to suggest new ideas for evaluation |
 
 ### Idea Management
 
 | Skill | Usage | Description |
 |-------|-------|-------------|
-| `/ctdf:idea-create` | `/ctdf:idea-create [description]` | Add a lightweight idea to the backlog for future evaluation |
-| `/ctdf:idea-approve` | `/ctdf:idea-approve [IDEA-PREFIX-XXXX]` | Promote an idea to a full task with technical details |
-| `/ctdf:idea-disapprove` | `/ctdf:idea-disapprove [IDEA-PREFIX-XXXX]` | Reject an idea and archive it |
-| `/ctdf:idea-refactor` | `/ctdf:idea-refactor [IDEA-PREFIX-XXXX]` | Update an idea to reflect codebase changes |
+| `/idea-create` | `/idea-create [description]` | Add a lightweight idea to the backlog for future evaluation |
+| `/idea-approve` | `/idea-approve [IDEA-PREFIX-XXXX]` | Promote an idea to a full task with technical details |
+| `/idea-disapprove` | `/idea-disapprove [IDEA-PREFIX-XXXX]` | Reject an idea and archive it |
+| `/idea-refactor` | `/idea-refactor [IDEA-PREFIX-XXXX]` | Update an idea to reflect codebase changes |
 
 ### Development Operations
 
 | Skill | Usage | Description |
 |-------|-------|-------------|
-| `/ctdf:app-start` | `/ctdf:app-start` | Start the development environment with error monitoring |
-| `/ctdf:app-stop` | `/ctdf:app-stop` | Stop running development processes |
-| `/ctdf:app-restart` | `/ctdf:app-restart` | Restart the development environment |
+| `/app-start` | `/app-start` | Start the development environment with error monitoring |
+| `/app-stop` | `/app-stop` | Stop running development processes |
+| `/app-restart` | `/app-restart` | Restart the development environment |
 
 ### Quality & Documentation
 
 | Skill | Usage | Description |
 |-------|-------|-------------|
-| `/ctdf:docs` | `/ctdf:docs <operation> [category]` | Manage documentation (create, update, verify, sync, claude-md) |
-| `/ctdf:test-engineer` | `/ctdf:test-engineer [scope] [target]` | Create, update, or optimize tests and CI/CD pipelines |
-| `/ctdf:security-audit` | `/ctdf:security-audit [scope]` | Perform security audits and generate detailed reports |
-| `/ctdf:github-pages-updater` | `/ctdf:github-pages-updater` | Create or update a GitHub Pages landing site for the project |
+| `/docs` | `/docs <operation> [category]` | Manage documentation (create, update, verify, sync, claude-md) |
+| `/test-engineer` | `/test-engineer [scope] [target]` | Create, update, or optimize tests and CI/CD pipelines |
+| `/security-audit` | `/security-audit [scope]` | Perform security audits and generate detailed reports |
+| `/github-pages-updater` | `/github-pages-updater` | Create or update a GitHub Pages landing site for the project |
 
 ### Release & Publishing
 
 | Skill | Usage | Description |
 |-------|-------|-------------|
-| `/ctdf:code-optimize` | `/ctdf:code-optimize` | Analyze codebase for optimization opportunities across 7 categories and apply selected fixes |
-| `/ctdf:git-publish` | `/ctdf:git-publish` | Push development branch and open an auto-merging PR into main |
-| `/ctdf:release` | `/ctdf:release [major\|minor\|patch\|stable]` | Bump version, update changelog, tag, and optionally publish with GitHub Release |
+| `/code-optimize` | `/code-optimize` | Analyze codebase for optimization opportunities across 7 categories and apply selected fixes |
+| `/git-publish` | `/git-publish` | Push development branch and open an auto-merging PR into main |
+| `/release` | `/release [major\|minor\|patch\|stable]` | Bump version, update changelog, tag, and optionally publish with GitHub Release |
 
 ## Typical Workflow
 
 ```
-0.  /ctdf:setup "My Project"                     → Create task/idea tracking files
-1.  /ctdf:idea-create "Add email notifications"   → Idea added to ideas.txt
-2.  /ctdf:idea-approve IDEA-AUTH-0001              → Idea promoted to task in to-do.txt
-3.  /ctdf:task-pick                               → Task moved to progressing.txt, briefing presented
+0.  /setup "My Project"                     → Create task/idea tracking files
+1.  /idea-create "Add email notifications"   → Idea added to ideas.txt
+2.  /idea-approve IDEA-AUTH-0001              → Idea promoted to task in to-do.txt
+3.  /task-pick                               → Task moved to progressing.txt, briefing presented
 4.  (implement the task)                           → Write code based on the briefing
-5.  /ctdf:task-pick                               → Verifies implementation, runs quality gates
+5.  /task-pick                               → Verifies implementation, runs quality gates
 6.  (confirm completion)                           → Task moved to done.txt
 7.  (optional: commit)                             → Changes committed with task code reference
 ```
 
-You can also create tasks directly with `/ctdf:task-create` if you don't need the idea evaluation step.
+You can also create tasks directly with `/task-create` if you don't need the idea evaluation step.
 
-Use `/ctdf:task-status` at any time to see your current progress and what to work on next.
+Use `/task-status` at any time to see your current progress and what to work on next.
 
 ## Issues Tracker Integration (Optional)
 
@@ -177,7 +177,7 @@ The plugin supports optional GitHub/GitLab Issues integration that can operate i
 | `true` | `true` | **Dual sync** | Local files first, then synced to platform issues |
 | `false` | — | **Local only** | Local `.txt` files only (default) |
 
-To enable, run `/ctdf:project-initialization` and choose "Yes, enable issues tracker" when prompted, or manually copy and configure the example config:
+To enable, run `/project-initialization` and choose "Yes, enable issues tracker" when prompted, or manually copy and configure the example config:
 
 ```bash
 cp <plugin-dir>/config/issues-tracker.example.json .claude/issues-tracker.json
@@ -241,7 +241,7 @@ IDEA-UIX-0001 — Dark Mode Support
   environments. It is a widely expected feature in modern apps.
 ```
 
-Ideas are intentionally **high-level** — no technical details, no file lists. Those are added during `/ctdf:idea-approve` when the idea becomes a task.
+Ideas are intentionally **high-level** — no technical details, no file lists. Those are added during `/idea-approve` when the idea becomes a task.
 
 ## Plugin Structure
 

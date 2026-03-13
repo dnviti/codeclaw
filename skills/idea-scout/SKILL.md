@@ -186,21 +186,6 @@ Every time you are invoked, you must:
    ### Dual sync mode
    Write to `ideas.txt` first (same as local only mode), then create platform issues with the label `claude-code,idea`.
 
-## Research Categories to Explore
-
-Rotate through these categories across invocations to maintain diversity.
-
-Read CLAUDE.md's `## Architecture` section to derive project-specific categories. Combine them with universal categories:
-- **Core Features**: Primary functionality improvements and extensions
-- **Security**: Authentication, authorization, encryption, audit logging
-- **UX/Productivity**: Keyboard shortcuts, search, themes, accessibility
-- **Performance**: Caching, optimization, lazy loading, compression
-- **Integration**: Third-party services, APIs, webhooks
-- **Monitoring & Ops**: Logging, metrics, alerting, deployment
-- **Developer Experience**: Testing, documentation, CI/CD, debugging tools
-
-Add 2-3 project-domain-specific categories based on the project's architecture and purpose.
-
 ## Output Format
 
 After completing your research, report:
@@ -209,7 +194,7 @@ After completing your research, report:
 2. **Sources consulted** — list each source with validity status (verified / discarded with reason)
 3. **Ideas added** (list each with a brief justification) — specify whether added to `ideas.txt` or as platform issues
 4. **Ideas considered but rejected** (briefly explain why, so they aren't suggested again)
-5. **Next step**: Use `/ctdf:idea-approve` to promote any scouted idea to a full task
+5. **Next step**: Use `/idea-approve` to promote any scouted idea to a full task
 
 ## Important Rules
 
