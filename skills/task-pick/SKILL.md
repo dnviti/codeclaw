@@ -169,11 +169,13 @@ After presenting the briefing, ask the user: "Ready to start implementation, or 
 
 After a task has been **fully implemented and the quality gate passes**, execute this completion flow:
 
-**6a. Present a Testing Guide:**
+**6a. Generate the Testing Guide (do NOT present yet):**
 
-Before asking the user to confirm, generate and present a **manual testing guide** specific to the task that was just implemented. Derive the guide from the task's TECHNICAL DETAILS and Files involved sections.
+Before asking the user to confirm, generate a **manual testing guide** specific to the task that was just implemented. Derive the guide from the task's TECHNICAL DETAILS and Files involved sections.
 
-Present it in this format:
+**IMPORTANT: Do NOT present this guide to the user yet.** Step 6a.5 determines where it goes based on platform configuration.
+
+Use this format for the guide content:
 
 > ### Testing Guide for [TASK-CODE] — [Task Title]
 >
@@ -192,11 +194,16 @@ Present it in this format:
 
 The guide must be actionable and specific — use real URLs, real UI element names, and real API endpoints from the implementation. Do not use generic placeholders.
 
-**6a.5. Mark task as to-test AND persist test procedure:**
+**6a.5. Route testing guide, mark as to-test, and persist:**
 
-Before asking the user to confirm, add the `status:to-test` label and save the testing guide so it survives chat closure.
+This step determines where the testing guide is delivered and persists it. Execute **all applicable parts** atomically — do not skip any.
 
-**Step 1 — Add `status:to-test` label (platform-only or dual sync mode):**
+**Part 1 — Deliver the testing guide (MANDATORY):**
+
+- **Platform-only or dual sync mode:** Post the testing guide **directly as a comment** on the issue. Do **NOT** present it on screen. After posting, inform the user: _"Testing guide has been posted as a comment on issue #[ISSUE_NUM]."_
+- **Local-only mode:** Present the testing guide on screen (display the full formatted guide to the user).
+
+**Part 2 — Add `status:to-test` label (platform-only or dual sync mode only):**
 ```bash
 ISSUE_NUM=$(gh issue list --repo "$TRACKER_REPO" --search "[TASK-CODE] in:title" --label task --state open --json number --jq '.[0].number')
 # GitLab: glab issue list -R "$TRACKER_REPO" --search "[TASK-CODE]" -l task --state opened --output json | jq '.[0].iid'
@@ -204,7 +211,7 @@ gh issue edit "$ISSUE_NUM" --repo "$TRACKER_REPO" --add-label "status:to-test"
 # GitLab: glab issue update "$ISSUE_NUM" -R "$TRACKER_REPO" --label "status:to-test"
 ```
 
-**Step 2 — Post test procedure as a comment (platform-only or dual sync mode):**
+**Part 3 — Post as issue comment (platform-only or dual sync mode only):**
 ```bash
 gh issue comment "$ISSUE_NUM" --repo "$TRACKER_REPO" \
   --body "## Test Procedure
@@ -214,13 +221,18 @@ gh issue comment "$ISSUE_NUM" --repo "$TRACKER_REPO" \
 #   -m "## Test Procedure\n\n[full testing guide text from step 6a]"
 ```
 
-**Step 3 — Append to local task block (local-only or dual sync mode):**
+**Part 4 — Append to local task block (local-only or dual sync mode only):**
 ```bash
 python3 ${CLAUDE_PLUGIN_ROOT}/scripts/task_manager.py add-test-procedure TASK-CODE \
   --body "[full testing guide text from step 6a — Prerequisites + Steps to test + Edge cases]"
 ```
 
-**In local only mode:** Skip Step 1 (no label) — perform Step 3 only.
+**Summary by mode:**
+| Mode | Part 1 (deliver) | Part 2 (label) | Part 3 (comment) | Part 4 (local) |
+|------|-------------------|-----------------|-------------------|-----------------|
+| **Platform-only** | Post as comment, notify user | Yes | Yes | No |
+| **Dual sync** | Post as comment, notify user | Yes | Yes | Yes |
+| **Local-only** | Show on screen | No | No | Yes |
 
 **6b. Ask for user confirmation:**
 
@@ -231,7 +243,7 @@ Present a summary of what was done and ask the user to confirm:
 > **Summary of work done:**
 > - [brief list of what was created/modified]
 >
-> The task has been marked as **status:to-test**. Please review the testing guide above.
+> The task has been marked as **status:to-test**. Please review the testing guide (posted as a comment on the issue, or shown above in local-only mode).
 >
 > Can you confirm this task is done?"
 
