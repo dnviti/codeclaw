@@ -1,0 +1,14 @@
+{
+  "provider": "claude",
+  "model": {
+    "task": "claude-opus-4-6",
+    "scout": "claude-sonnet-4-6",
+    "docs": "claude-sonnet-4-6"
+  },
+  "budget": {
+    "task": 15,
+    "scout": 5,
+    "docs": 5
+  },
+  "auto_pr": true
+}

@@ -239,6 +239,19 @@ Use `AskUserQuestion` with these options:
 
 STOP HERE after calling `AskUserQuestion`. Do NOT proceed until the user responds.
 
+### Step A1.5: Select AI Provider
+
+Ask the user which AI coding agent should power the pipelines:
+
+Use `AskUserQuestion` with these options:
+- **"Claude Code (Recommended)"** — Anthropic's Claude Code CLI. Uses CLAUDE.md, has plugin support for skills.
+- **"OpenAI Codex CLI"** — OpenAI's Codex CLI. Uses AGENTS.md, raw prompts (skills inlined).
+- **"OpenClaw"** — OpenClaw agent. Raw prompts (skills inlined).
+
+STOP HERE after calling `AskUserQuestion`. Do NOT proceed until the user responds.
+
+Store the selected provider value: `claude`, `openai`, or `openclaw`.
+
 ### Step A2: Select Pipelines
 
 Ask the user which agentic pipelines to enable:
@@ -293,16 +306,82 @@ Based on the detected platform and selected pipelines:
   - If Docs selected: `cp ${CLAUDE_PLUGIN_ROOT}/templates/gitlab/agentic-docs.gitlab-ci.yml .`
   - If a `.gitlab-ci.yml` already exists, instruct the user to add `include:` directives pointing to the new file(s), or merge the stages manually.
 
-### Step A5: Copy Memory Builder Script
+### Step A5: Copy Scripts, Prompts, and Skills
 
 ```bash
-mkdir -p .claude/scripts
+mkdir -p .claude/scripts .claude/prompts .claude/skills/idea-scout .claude/skills/docs
 cp ${CLAUDE_PLUGIN_ROOT}/scripts/memory_builder.py .claude/scripts/memory_builder.py
+cp ${CLAUDE_PLUGIN_ROOT}/scripts/codebase_analyzer.py .claude/scripts/codebase_analyzer.py
+cp ${CLAUDE_PLUGIN_ROOT}/scripts/agent_runner.py .claude/scripts/agent_runner.py
+cp ${CLAUDE_PLUGIN_ROOT}/templates/prompts/agentic-task-prompt.md .claude/prompts/agentic-task-prompt.md
+cp ${CLAUDE_PLUGIN_ROOT}/templates/prompts/agentic-docs-prompt.md .claude/prompts/agentic-docs-prompt.md
+cp ${CLAUDE_PLUGIN_ROOT}/skills/idea-scout/SKILL.md .claude/skills/idea-scout/SKILL.md
+cp ${CLAUDE_PLUGIN_ROOT}/skills/docs/SKILL.md .claude/skills/docs/SKILL.md
 ```
+
+### Step A5.5: Create Provider Configuration
+
+Create `.claude/agentic-provider.json` with the selected provider and appropriate model defaults:
+
+**If provider is `claude`:**
+```json
+{
+  "provider": "claude",
+  "model": {
+    "task": "claude-opus-4-6",
+    "scout": "claude-sonnet-4-6",
+    "docs": "claude-sonnet-4-6"
+  },
+  "budget": {
+    "task": 15,
+    "scout": 5,
+    "docs": 5
+  },
+  "auto_pr": true
+}
+```
+
+**If provider is `openai`:**
+```json
+{
+  "provider": "openai",
+  "model": {
+    "task": "o3",
+    "scout": "o3-mini",
+    "docs": "o3-mini"
+  },
+  "budget": {
+    "task": 0,
+    "scout": 0,
+    "docs": 0
+  },
+  "auto_pr": true
+}
+```
+
+**If provider is `openclaw`:**
+```json
+{
+  "provider": "openclaw",
+  "model": {
+    "task": "",
+    "scout": "",
+    "docs": ""
+  },
+  "budget": {
+    "task": 0,
+    "scout": 0,
+    "docs": 0
+  },
+  "auto_pr": true
+}
+```
+
+**If provider is `openai`**, also create `AGENTS.md` by copying the content from `CLAUDE.md` (Codex CLI reads `AGENTS.md` for project context). If `AGENTS.md` already exists, skip.
 
 ### Step A6: Verify Files
 
-Confirm the copied files exist. Check each pipeline file that was selected plus the memory builder script.
+Confirm the copied files exist. Check each pipeline file that was selected, plus the scripts, prompts, skills, and provider config.
 
 ### Step A7: Report
 
@@ -311,23 +390,22 @@ Present a summary to the user:
 ```
 ## Agentic Fleet Setup Complete
 
+### AI Provider: [Claude Code / OpenAI Codex CLI / OpenClaw]
+
 ### Pipelines Configured
 [For each enabled pipeline:]
 
 **Idea Scout Pipeline** (if enabled)
 - **Trigger:** Runs automatically when a release is published (+ manual dispatch)
-- **Fleet model:** Sonnet 4.6 (codebase reading)
-- **Scout model:** Opus 4.6 (idea evaluation and creation)
+- **Model:** [model name from provider config, e.g., claude-sonnet-4-6 / o3-mini]
 
 **Task Implementation Pipeline** (if enabled)
 - **Trigger:** Cron schedule: `[selected cron expression]` (+ manual dispatch)
-- **Fleet model:** Sonnet 4.6 (codebase reading)
-- **Implementation model:** Opus 4.6 (autonomous task implementation)
+- **Model:** [model name from provider config, e.g., claude-opus-4-6 / o3]
 
 **Documentation Pipeline** (if enabled)
 - **Trigger:** Push to release branch, excluding docs-only changes (+ manual dispatch)
-- **Fleet model:** Sonnet 4.6 (codebase reading)
-- **Docs model:** Opus 4.6 (runs `/docs update all` + `/docs claude-md`)
+- **Model:** [model name from provider config, e.g., claude-sonnet-4-6 / o3-mini]
 - **Behavior:** Commits updated docs directly to the release branch
 
 ### Platform: [GitHub / GitLab]
@@ -335,9 +413,21 @@ Present a summary to the user:
 ### Files Created
 - [list of pipeline file paths]
 - .claude/scripts/memory_builder.py
+- .claude/scripts/codebase_analyzer.py
+- .claude/scripts/agent_runner.py
+- .claude/prompts/agentic-task-prompt.md
+- .claude/prompts/agentic-docs-prompt.md
+- .claude/skills/idea-scout/SKILL.md
+- .claude/skills/docs/SKILL.md
+- .claude/agentic-provider.json
 
 ### Required Configuration
-⚠️  **Secret:** Add `ANTHROPIC_API_KEY` as a [repository secret (GitHub) / CI/CD masked variable (GitLab)].
+
+⚠️  **Secret:** Add `[ANTHROPIC_API_KEY / OPENAI_API_KEY / OPENCLAW_API_KEY]` as a [repository secret (GitHub) / CI/CD masked variable (GitLab)].
+
+⚠️  **Repository Variable:** Add `AGENTIC_PROVIDER` with value `[claude / openai / openclaw]` as a [repository variable (GitHub) / CI/CD variable (GitLab, NOT masked, NOT protected)].
+
+**(Optional)** Add `AGENTIC_AUTO_PR` with value `true` or `false` to control whether the task pipeline automatically creates a Pull Request after implementation. Defaults to `true`. Set to `false` if you prefer to review the branch and create PRs manually.
 
 [If Task Implementation was selected on GitHub:]
 The cron schedule `[selected cron expression]` has been written directly into `.github/workflows/agentic-task.yml`.
@@ -349,11 +439,16 @@ To change it later, edit the `cron:` line in that file.
   Alternatively, add `AGENTIC_TASK_CRON` as a CI/CD variable (uncheck "Protect" and "Mask").
 
 ### How It Works
-1. **Build Memory** — Python script generates a structural codebase summary
-2. **Deep Read (Sonnet 4.6 × 3)** — Three parallel agents analyze infrastructure, features, and code quality
-3. **[Idea Scout]** Opus 4.6 runs /idea-scout with all reports → creates idea issues
-   **[Task Implementation]** Opus 4.6 picks highest-priority task → implements it → opens a PR
-4. **Result** — [Ideas / PRs] are created automatically on [GitHub / GitLab]
+1. **Build Memory** — Python static analysis generates a structural codebase summary (zero tokens)
+2. **Codebase Analysis** — Python static analyzer generates infrastructure, features, and quality reports (zero tokens)
+3. **Agent Runner** — `agent_runner.py` invokes the configured AI provider with the appropriate prompt and tools
+   - **[Idea Scout]** Agent runs idea scouting with all reports → creates idea issues
+   - **[Task Implementation]** Agent picks highest-priority task → implements it → opens a PR/MR
+   - **[Documentation]** Agent updates docs/ and README.md → commits directly to release branch
+4. **Result** — [Ideas / PRs / Updated docs] are created automatically on [GitHub / GitLab]
+
+### Changing Provider Later
+To switch AI providers, edit `.claude/agentic-provider.json` or update the `AGENTIC_PROVIDER` repository variable. Only the matching API key secret needs to be set.
 
 Both pipelines can also be triggered manually from the [GitHub Actions / GitLab CI/CD] interface.
 ```

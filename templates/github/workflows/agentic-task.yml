@@ -4,11 +4,16 @@
 # Runs on a cron schedule to pick up the highest-priority pending task,
 # implement it autonomously, and open a Pull Request for human review.
 #
-# Pipeline: Python static analysis → Opus 4.6 implements the task.
+# Pipeline: Python static analysis → AI agent implements the task.
 # Fully headless — all decisions made by the model, no user interaction.
 #
-# Required secrets:
-#   ANTHROPIC_API_KEY — Claude API key for agent invocations
+# Required secrets (set the one matching your provider):
+#   ANTHROPIC_API_KEY — Claude API key (provider: claude)
+#   OPENAI_API_KEY   — OpenAI API key (provider: openai)
+#   OPENCLAW_API_KEY  — OpenClaw API key (provider: openclaw)
+#
+# Required repository variable:
+#   AGENTIC_PROVIDER — AI provider to use: claude, openai, or openclaw
 
 name: "Agentic Fleet — Task Implementation"
 
@@ -65,9 +70,9 @@ jobs:
             report-quality.md
           retention-days: 1
 
-  # ── Job 2: Opus 4.6 — headless task implementation ────────────────────
+  # ── Job 2: Headless task implementation ─────────────────────────────────
   implement:
-    name: "Implement Task (Opus 4.6)"
+    name: "Implement Task"
     needs: build-and-analyze
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -99,178 +104,13 @@ jobs:
         with:
           node-version: 22
 
-      - name: Install Claude Code
-        run: npm install -g @anthropic-ai/claude-code
-
-      - name: Install CTDF plugin
-        run: |
-          PLUGIN_DIR="$HOME/.claude/plugins"
-          MARKET_DIR="$PLUGIN_DIR/marketplaces/dnviti-plugins"
-          mkdir -p "$PLUGIN_DIR/marketplaces"
-
-          git clone --depth 1 https://github.com/dnviti/claude-task-development-framework.git "$MARKET_DIR"
-
-          CTDF_VERSION=$(python3 -c "import json; print(json.load(open('$MARKET_DIR/.claude-plugin/plugin.json'))['version'])")
-          CACHE_DIR="$PLUGIN_DIR/cache/dnviti-plugins/ctdf/$CTDF_VERSION"
-          mkdir -p "$CACHE_DIR"
-          cp -r "$MARKET_DIR/." "$CACHE_DIR/"
-          NOW=$(date -u +%Y-%m-%dT%H:%M:%S.000Z)
-
-          echo "{\"version\":2,\"plugins\":{\"ctdf@dnviti-plugins\":[{\"scope\":\"user\",\"installPath\":\"$CACHE_DIR\",\"version\":\"$CTDF_VERSION\",\"installedAt\":\"$NOW\",\"lastUpdated\":\"$NOW\"}]}}" > "$PLUGIN_DIR/installed_plugins.json"
-
-          echo "{\"dnviti-plugins\":{\"source\":{\"source\":\"git\",\"url\":\"https://github.com/dnviti/claude-task-development-framework.git\"},\"installLocation\":\"$MARKET_DIR\",\"lastUpdated\":\"$NOW\"}}" > "$PLUGIN_DIR/known_marketplaces.json"
-
-          # Enable the plugin in Claude Code settings
-          SETTINGS_FILE="$HOME/.claude/settings.json"
-          if [ -f "$SETTINGS_FILE" ]; then
-            python3 -c "
-          import json
-          with open('$SETTINGS_FILE') as f: s = json.load(f)
-          s.setdefault('enabledPlugins', {})['ctdf@dnviti-plugins'] = True
-          with open('$SETTINGS_FILE', 'w') as f: json.dump(s, f)
-          "
-          else
-            echo "{\"enabledPlugins\":{\"ctdf@dnviti-plugins\":true}}" > "$SETTINGS_FILE"
-          fi
-
-      - name: Run Opus task implementation agent
+      - name: Run task implementation agent
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENCLAW_API_KEY: ${{ secrets.OPENCLAW_API_KEY }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          AGENTIC_PROVIDER: ${{ vars.AGENTIC_PROVIDER }}
+          AGENTIC_AUTO_PR: ${{ vars.AGENTIC_AUTO_PR || 'true' }}
         run: |
-          cat > /tmp/agent-prompt.md << 'PROMPT_EOF'
-          You are a fully autonomous task implementation agent. You operate
-          headlessly — make ALL decisions yourself with no user interaction.
-          Never use AskUserQuestion. Never wait for confirmation. Act decisively.
-
-          ## Context Files
-          Read these files for deep codebase understanding:
-          - @project-memory.md — structural codebase summary
-          - @report-infrastructure.md — infrastructure analysis
-          - @report-features.md — feature analysis
-          - @report-quality.md — code quality analysis
-
-          ## Your Mission
-
-          ### Phase 1: Select a Task
-
-          1. Read CLAUDE.md to understand the project's architecture, development
-             commands (especially VERIFY_COMMAND and RELEASE_BRANCH), and patterns.
-
-          2. Detect the operating mode:
-             ```bash
-             python3 .claude/scripts/task_manager.py platform-config
-             ```
-
-          3. List pending tasks:
-             - Local/dual mode: `python3 .claude/scripts/task_manager.py list --status todo --format summary`
-             - Platform-only mode: use `gh issue list` with `status:todo` label
-
-          4. If NO pending tasks exist, output "No pending tasks found." and stop.
-
-          5. Select the highest-priority task:
-             - Priority order: HIGH → MEDIUM → LOW
-             - Within same priority, pick the lowest-numbered task code
-             - Skip tasks whose dependencies are not yet in done status
-
-          6. Parse the full task details:
-             - Local/dual: `python3 .claude/scripts/task_manager.py parse <TASK-CODE>`
-             - Platform-only: `gh issue view <ISSUE_NUM> --json body`
-
-          ### Phase 2: Prepare
-
-          7. Mark the task as in-progress:
-             - Local/dual: `python3 .claude/scripts/task_manager.py move <TASK-CODE> --to progressing`
-             - Platform-only: update issue labels (remove status:todo, add status:in-progress)
-
-          8. Determine the release branch from CLAUDE.md RELEASE_BRANCH.
-             Default: use 'develop' if it exists, otherwise 'main'.
-
-          9. Create a task branch:
-             ```bash
-             git fetch origin <RELEASE_BRANCH>
-             git checkout -b task/<task-code-lowercase> origin/<RELEASE_BRANCH>
-             ```
-
-          ### Phase 3: Implement
-
-          10. Study the task's DESCRIPTION and TECHNICAL DETAILS sections.
-              Examine all files listed under FILES TO CREATE and FILES TO MODIFY.
-              Read existing code to understand patterns, conventions, and interfaces.
-
-          11. Implement the task fully:
-              - Create all files listed in FILES TO CREATE
-              - Make all changes described in FILES TO MODIFY
-              - Follow existing code patterns and conventions
-              - Write tests if the project has a test framework configured
-              - Keep changes focused on the task — no unrelated refactoring
-
-          12. Run the verify command (from CLAUDE.md VERIFY_COMMAND):
-              - If it fails, analyze the error, fix the code, and retry (up to 2 retries)
-              - If it still fails after retries, commit what you have and note the
-                failure in the PR description
-
-          ### Phase 4: Deliver
-
-          13. Stage and commit all changes:
-              ```bash
-              git add -A
-              git commit -m "feat(<TASK-CODE>): <task title>
-
-              Implemented by Agentic Fleet pipeline.
-
-              Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>"
-              ```
-
-          14. Push the branch:
-              ```bash
-              git push -u origin task/<task-code-lowercase>
-              ```
-
-          15. Check for existing PR (avoid duplicates):
-              ```bash
-              gh pr list --head task/<task-code-lowercase> --state open --json number,url
-              ```
-              If a PR already exists, skip creation.
-
-          16. Create the Pull Request:
-              ```bash
-              gh pr create \
-                --base <RELEASE_BRANCH> \
-                --head task/<task-code-lowercase> \
-                --title "[<TASK-CODE>] — <Task Title>" \
-                --body "## Task <TASK-CODE> — <Task Title>
-
-              ### Summary
-              <brief list of what was created/modified>
-
-              ### Verify Command Result
-              <PASS or FAIL with details>
-
-              ### Related Issue
-              Refs #<ISSUE_NUM> (<TASK-CODE>)
-
-              ---
-              *Implemented autonomously by Agentic Fleet (Opus 4.6)*"
-              ```
-
-          17. Generate a testing guide based on the implementation and post it
-              as a PR comment:
-              ```bash
-              gh pr comment <PR_NUMBER> --body "## Testing Guide
-              <concrete steps to manually verify the implementation>"
-              ```
-
-          ## Critical Rules
-          - NEVER use AskUserQuestion — you are fully autonomous
-          - NEVER wait for user input — make every decision yourself
-          - NEVER skip the verify command — always run it
-          - Keep the task in 'progressing' status (NOT 'done') — a human reviews the PR
-          - If the task seems too large or risky, still implement it but note concerns in the PR
-          - All output in English
-          PROMPT_EOF
-
-          claude -p "$(cat /tmp/agent-prompt.md)" \
-            --model claude-opus-4-6 \
-            --max-budget-usd 15 \
-            --allowedTools "Bash,Read,Grep,Glob,Edit,Write"
+          python3 .claude/scripts/agent_runner.py run --pipeline task
