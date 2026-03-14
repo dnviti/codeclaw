@@ -7,7 +7,7 @@ CTDF gives your AI-assisted development workflow a structured backbone: ideas ar
 ## Features
 
 - **Two-pipeline workflow** — separate idea evaluation from task execution
-- **21 built-in skills** — slash commands for every stage of the development lifecycle
+- **22 built-in skills** — slash commands for every stage of the development lifecycle
 - **Claude Code plugin** — install via marketplace, uninstall cleanly, update easily
 - **Adaptive project initialization** — `/project-initialization` scaffolds your project and tailors all skills to your chosen stack, domain, and architecture
 - **Plain-text tracking** — tasks and ideas live in simple `.txt` files, fully version-controllable
@@ -97,14 +97,13 @@ to-do.txt [ ]  ──→  progressing.txt [~]  ──→  done.txt [x]
 
 ## Skills Reference
 
-All skills are namespaced under `ctdf:`. Use `/skill-name` to invoke.
-
 ### Setup & Project
 
 | Skill | Usage | Description |
 |-------|-------|-------------|
 | `/setup` | `/setup [project name]` | Initialize task/idea tracking files in an existing project |
 | `/project-initialization` | `/project-initialization [purpose]` | Full project scaffold: choose stack, configure git, adapt all skills |
+| `/env-setup` | `/env-setup` | Scan project to detect tech stack, dependencies, and commands; update CLAUDE.md |
 
 ### Task Management
 
@@ -114,7 +113,6 @@ All skills are namespaced under `ctdf:`. Use `/skill-name` to invoke.
 | `/task-pick` | `/task-pick [TASK-CODE]` | Pick up the next task — verifies in-progress work first, runs quality gates |
 | `/task-continue` | `/task-continue [TASK-CODE]` | Resume work on a specific in-progress task |
 | `/task-status` | `/task-status` | Show current task summary and recommend next tasks |
-| `/idea-scout` | `/idea-scout [focus area or @local-file]` | Research trends and online sources to suggest new ideas for evaluation |
 
 ### Idea Management
 
@@ -124,30 +122,36 @@ All skills are namespaced under `ctdf:`. Use `/skill-name` to invoke.
 | `/idea-approve` | `/idea-approve [IDEA-PREFIX-XXXX]` | Promote an idea to a full task with technical details |
 | `/idea-disapprove` | `/idea-disapprove [IDEA-PREFIX-XXXX]` | Reject an idea and archive it |
 | `/idea-refactor` | `/idea-refactor [IDEA-PREFIX-XXXX]` | Update an idea to reflect codebase changes |
+| `/idea-scout` | `/idea-scout [focus area or @local-file]` | Research trends and online sources to suggest new ideas for evaluation |
 
-### Development Operations
+### Testing
 
 | Skill | Usage | Description |
 |-------|-------|-------------|
-| `/app-start` | `/app-start` | Start the development environment with error monitoring |
-| `/app-stop` | `/app-stop` | Stop running development processes |
-| `/app-restart` | `/app-restart` | Restart the development environment |
+| `/test-scout` | `/test-scout` | Discover test infrastructure and coverage gaps |
+| `/test-create` | `/test-create` | Generate test files (unit, integration, e2e) and CI config |
+| `/test-run` | `/test-run` | Execute tests, analyze results, report coverage |
+| `/test-review` | `/test-review` | Review tasks marked `status:to-test` with guided testing |
 
-### Quality & Documentation
+### Security
+
+| Skill | Usage | Description |
+|-------|-------|-------------|
+| `/vulnerability-scout` | `/vulnerability-scout` | Scan codebase for security vulnerabilities |
+| `/vulnerability-create` | `/vulnerability-create` | Create tasks from discovered vulnerabilities |
+| `/vulnerability-report` | `/vulnerability-report` | Generate comprehensive security report |
+
+### Documentation & Quality
 
 | Skill | Usage | Description |
 |-------|-------|-------------|
 | `/docs` | `/docs <operation> [category]` | Manage documentation (create, update, verify, sync, claude-md) |
-| `/test-engineer` | `/test-engineer [scope] [target]` | Create, update, or optimize tests and CI/CD pipelines |
-| `/security-audit` | `/security-audit [scope]` | Perform security audits and generate detailed reports |
-| `/github-pages-updater` | `/github-pages-updater` | Create or update a GitHub Pages landing site for the project |
+| `/code-optimize` | `/code-optimize` | Analyze codebase for optimization opportunities across 7 categories and apply selected fixes |
 
-### Release & Publishing
+### Release
 
 | Skill | Usage | Description |
 |-------|-------|-------------|
-| `/code-optimize` | `/code-optimize` | Analyze codebase for optimization opportunities across 7 categories and apply selected fixes |
-| `/git-publish` | `/git-publish` | Push development branch and open an auto-merging PR into main |
 | `/release` | `/release [major\|minor\|patch\|stable]` | Bump version, update changelog, tag, and optionally publish with GitHub Release |
 
 ## Typical Workflow
@@ -183,6 +187,35 @@ To enable, run `/project-initialization` and choose "Yes, enable issues tracker"
 cp <plugin-dir>/config/issues-tracker.example.json .claude/issues-tracker.json
 # Edit .claude/issues-tracker.json with your repo and settings
 ```
+
+## Agentic Fleet Pipelines
+
+CTDF includes automated CI/CD pipelines that use Claude Code to perform idea scouting and task implementation without human intervention.
+
+### Pipelines
+
+| Pipeline | Trigger | What it does |
+|----------|---------|--------------|
+| **Idea Scout** | On release publish | Scans trends, documentation, and community sources to suggest new ideas |
+| **Task Implementation** | Cron-based schedule | Picks up pending tasks, implements them in isolated worktrees, and opens PRs |
+
+### Architecture
+
+Each pipeline uses a **three-agent architecture**:
+
+1. **Orchestrator** — coordinates the workflow and delegates to specialized agents
+2. **Worker** — performs the actual scouting or implementation work
+3. **Memory Builder** — persists learnings and context for future runs via `memory_builder.py`
+
+### Setup
+
+```bash
+/setup agentic-fleet
+```
+
+This generates the workflow files under `.github/workflows/` (or `.gitlab-ci.yml` for GitLab). Requires an `ANTHROPIC_API_KEY` secret configured in your repository.
+
+Supports both **GitHub Actions** and **GitLab CI/CD**.
 
 ## Task Format
 
@@ -250,41 +283,54 @@ claude-task-development-framework/
 ├── .claude-plugin/
 │   ├── plugin.json              # Plugin manifest
 │   └── marketplace.json         # Marketplace definition
-├── skills/                      # 21 Claude Code skills
+├── skills/                      # 22 Claude Code skills
 │   ├── setup/                   # Initialize task tracking in a project
+│   ├── project-initialization/  # Full project scaffolding
+│   ├── env-setup/               # Detect tech stack and update CLAUDE.md
 │   ├── task-create/             # Create tasks
 │   ├── task-pick/               # Pick up and close tasks
 │   ├── task-continue/           # Resume in-progress tasks
 │   ├── task-status/             # View task summary
-│   ├── idea-scout/              # Research and suggest new ideas
 │   ├── idea-create/             # Add ideas
 │   ├── idea-approve/            # Promote ideas to tasks
 │   ├── idea-disapprove/         # Reject ideas
 │   ├── idea-refactor/           # Update ideas
-│   ├── project-initialization/  # Full project scaffolding
-│   ├── app-start/               # Start dev environment
-│   ├── app-stop/                # Stop dev processes
-│   ├── app-restart/             # Restart dev environment
+│   ├── idea-scout/              # Research and suggest new ideas
+│   ├── test-scout/              # Discover test infrastructure and gaps
+│   ├── test-create/             # Generate test files and CI config
+│   ├── test-run/                # Execute tests and report coverage
+│   ├── test-review/             # Review tasks awaiting test verification
+│   ├── vulnerability-scout/     # Scan for security vulnerabilities
+│   ├── vulnerability-create/    # Create tasks from vulnerabilities
+│   ├── vulnerability-report/    # Generate security reports
 │   ├── docs/                    # Manage documentation
-│   ├── test-engineer/           # Manage tests and CI/CD
-│   ├── security-audit/          # Security audits
-│   ├── github-pages-updater/    # GitHub Pages site management
 │   ├── code-optimize/           # Codebase optimization analysis
-│   ├── git-publish/             # PR-based publishing to main
 │   └── release/                 # Version bumping and release management
 ├── scripts/                     # Python automation scripts (stdlib only)
 │   ├── task_manager.py          # Task/idea management CLI and post-edit hook
 │   ├── release_manager.py       # Release automation CLI (version, changelog)
 │   ├── app_manager.py           # Cross-platform port and process management
+│   ├── memory_builder.py        # Agentic fleet memory persistence
 │   ├── setup_labels.py          # Create platform labels for Issues integration
 │   └── setup_protection.py      # Branch protection setup
 ├── templates/                   # CI/CD workflow templates
-│   ├── github/workflows/        # GitHub Actions workflows
+│   ├── github/                  # GitHub templates
+│   │   └── workflows/
+│   │       ├── agentic-fleet.yml
+│   │       ├── agentic-task.yml
+│   │       ├── ci.yml
+│   │       ├── issue-triage.yml
+│   │       ├── release.yml
+│   │       ├── security.yml
+│   │       └── status-guard.yml
 │   └── gitlab/                  # GitLab CI templates
+│       ├── agentic-fleet.gitlab-ci.yml
+│       └── agentic-task.gitlab-ci.yml
 ├── config/                      # Example configuration files
 │   ├── issues-tracker.example.json
 │   ├── github-issues.example.json
-│   └── project-config.example.json
+│   ├── project-config.example.json
+│   └── releases.example.json
 ├── hooks/
 │   └── hooks.json               # Plugin hooks (PostToolUse for task tracking)
 ├── CLAUDE.md                    # Framework guidance
