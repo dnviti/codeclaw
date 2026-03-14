@@ -87,5 +87,5 @@ scout-ideas:
       @report-features.md
       @report-quality.md"
       --model claude-sonnet-4-6
-      --max-turns 15
+      --max-budget-usd 5
       --allowedTools "Bash,Read,Grep,Glob,WebSearch,WebFetch,Edit,Write"
