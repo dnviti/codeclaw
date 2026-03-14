@@ -431,14 +431,39 @@ STOP HERE after calling `AskUserQuestion`. Do NOT proceed until the user respond
    - Copy `${CLAUDE_PLUGIN_ROOT}/templates/github/workflows/status-guard.yml` for status transition enforcement (if issues tracker is enabled)
    - Copy `${CLAUDE_PLUGIN_ROOT}/templates/github/CODEOWNERS` to `.github/CODEOWNERS` and remind the user to replace `@your-org/platform-team`
 
+5. **Agentic Fleet (Optional):** Ask the user which agentic fleet pipelines to enable:
+
+   Use `AskUserQuestion` with these options:
+   - **"Idea Scout only"** — scouts new ideas on each release
+   - **"Task Implementation only"** — implements tasks on a cron schedule
+   - **"Both"** — both pipelines
+   - **"No, skip"** — do not enable agentic fleet
+
+   STOP HERE after calling `AskUserQuestion`. Do NOT proceed until the user responds.
+
+   **If the user chose any option except "No, skip":**
+
+   - Copy `${CLAUDE_PLUGIN_ROOT}/scripts/memory_builder.py` to `.claude/scripts/memory_builder.py`
+   - **If Idea Scout selected:**
+     - **GitHub:** Copy `${CLAUDE_PLUGIN_ROOT}/templates/github/workflows/agentic-fleet.yml` to `.github/workflows/agentic-fleet.yml`
+     - **GitLab:** Copy `${CLAUDE_PLUGIN_ROOT}/templates/gitlab/agentic-fleet.gitlab-ci.yml` to the project root
+   - **If Task Implementation selected:**
+     - **GitHub:** Copy `${CLAUDE_PLUGIN_ROOT}/templates/github/workflows/agentic-task.yml` to `.github/workflows/agentic-task.yml`
+     - **GitLab:** Copy `${CLAUDE_PLUGIN_ROOT}/templates/gitlab/agentic-task.gitlab-ci.yml` to the project root
+     - Ask for cron interval using `AskUserQuestion`: "Every 4 hours" / "Every 6 hours" / "Every 8 hours" / "Every 12 hours" / "Every 24 hours" / "Custom"
+     - STOP and wait for response.
+     - Instruct the user to create the `AGENTIC_TASK_CRON` repository variable with the selected cron value.
+   - If `.gitlab-ci.yml` already exists, instruct the user to add `include:` directives for the new file(s).
+   - Warn: "⚠️ Add `ANTHROPIC_API_KEY` as a repository secret (GitHub) or CI/CD masked variable (GitLab)."
+
 **If the user also chose branch protection:**
 
-5. **Run the branch protection setup script:**
+6. **Run the branch protection setup script:**
    ```bash
    python3 ${CLAUDE_PLUGIN_ROOT}/scripts/setup_protection.py --branch main --required-reviews 1 --status-checks "Lint, Test & Build"
    ```
 
-6. **Report the CI/CD setup:**
+7. **Report the CI/CD setup:**
    > "CI/CD and branch protection configured:
    > - CI pipeline: runs lint, test, build on every PR
    > - Security scanning: dependency review + secret scanning on PRs, weekly SAST
@@ -446,7 +471,9 @@ STOP HERE after calling `AskUserQuestion`. Do NOT proceed until the user respond
    > - Issue triage: auto-labels new issues with type and priority
    > - Status guard: enforces status:todo → in-progress → to-test → done transitions
    > - Branch protection: PRs required, status checks enforced, force-push blocked
-   > - CODEOWNERS: protects workflow files (update team names in .github/CODEOWNERS)"
+   > - CODEOWNERS: protects workflow files (update team names in .github/CODEOWNERS)
+   > - Agentic Fleet — Idea Scout: [enabled — runs on release publish / not enabled]
+   > - Agentic Fleet — Task Implementation: [enabled — runs on cron `CRON_VALUE` / not enabled]"
 
 ## Important Rules
 

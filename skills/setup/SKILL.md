@@ -2,12 +2,14 @@
 name: setup
 description: Initialize task and idea tracking files in an existing project. Creates to-do.txt, progressing.txt, done.txt, ideas.txt, idea-disapproved.txt, and adds framework guidance to CLAUDE.md.
 disable-model-invocation: true
-argument-hint: "[project name]"
+argument-hint: "[project name] or agentic-fleet"
 ---
 
 # Setup Task Tracking
 
 You are a setup assistant for the CTDF plugin. Your job is to initialize the task and idea tracking files in the user's project so that all other CTDF skills (`/task-create`, `/task-pick`, `/idea-create`, etc.) work correctly.
+
+**Special mode:** If `$ARGUMENTS` contains `agentic-fleet`, skip the normal task file setup and go directly to [Agentic Fleet Setup](#agentic-fleet-setup) below.
 
 ## Current Directory State
 
@@ -212,6 +214,134 @@ Present a summary to the user:
 5. (Optional) Run `/project-initialization` for full project scaffolding
 6. (Optional) Enable Issues tracker — see the CTDF README for setup instructions
 ```
+
+---
+
+## Agentic Fleet Setup
+
+This mode is activated when `$ARGUMENTS` contains `agentic-fleet`. It configures CI/CD pipelines that spawn AI agent fleets to automate idea scouting and/or task implementation.
+
+Both pipelines are fully headless — all decisions are made by the model autonomously.
+
+### Step A1: Detect Platform
+
+Determine the platform from the issues tracker config:
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/task_manager.py platform-config
+```
+
+Use the `platform` field (`github` or `gitlab`). If no config exists, ask the user which platform they use:
+
+Use `AskUserQuestion` with these options:
+- **"GitHub"** — set platform to `github`
+- **"GitLab"** — set platform to `gitlab`
+
+STOP HERE after calling `AskUserQuestion`. Do NOT proceed until the user responds.
+
+### Step A2: Select Pipelines
+
+Ask the user which agentic pipelines to enable:
+
+Use `AskUserQuestion` with these options:
+- **"Idea Scout only"** — on release publish, scouts new ideas
+- **"Task Implementation only"** — on cron schedule, implements tasks and opens PRs
+- **"Both"** — both pipelines
+- **"Cancel"** — abort setup
+
+STOP HERE after calling `AskUserQuestion`. Do NOT proceed until the user responds.
+
+### Step A3: Configure Cron (Task Implementation only)
+
+**Skip this step if only "Idea Scout" was selected.**
+
+Ask the user how often the task implementation pipeline should run:
+
+Use `AskUserQuestion` with these options:
+- **"Every 4 hours"** — cron: `0 */4 * * *`
+- **"Every 6 hours"** — cron: `0 */6 * * *`
+- **"Every 8 hours"** — cron: `0 */8 * * *`
+- **"Every 12 hours"** — cron: `0 */12 * * *`
+- **"Every 24 hours"** — cron: `0 0 * * *`
+- **"Custom"** — ask the user for a custom cron expression
+
+STOP HERE after calling `AskUserQuestion`. Do NOT proceed until the user responds.
+
+Store the selected cron expression for the report in Step A7.
+
+### Step A4: Copy Pipeline Templates
+
+Based on the detected platform and selected pipelines:
+
+- **GitHub:**
+  ```bash
+  mkdir -p .github/workflows
+  ```
+  - If Idea Scout selected: `cp ${CLAUDE_PLUGIN_ROOT}/templates/github/workflows/agentic-fleet.yml .github/workflows/agentic-fleet.yml`
+  - If Task Implementation selected: `cp ${CLAUDE_PLUGIN_ROOT}/templates/github/workflows/agentic-task.yml .github/workflows/agentic-task.yml`
+
+- **GitLab:**
+  - If Idea Scout selected: `cp ${CLAUDE_PLUGIN_ROOT}/templates/gitlab/agentic-fleet.gitlab-ci.yml .`
+  - If Task Implementation selected: `cp ${CLAUDE_PLUGIN_ROOT}/templates/gitlab/agentic-task.gitlab-ci.yml .`
+  - If a `.gitlab-ci.yml` already exists, instruct the user to add `include:` directives pointing to the new file(s), or merge the stages manually.
+
+### Step A5: Copy Memory Builder Script
+
+```bash
+mkdir -p .claude/scripts
+cp ${CLAUDE_PLUGIN_ROOT}/scripts/memory_builder.py .claude/scripts/memory_builder.py
+```
+
+### Step A6: Verify Files
+
+Confirm the copied files exist. Check each pipeline file that was selected plus the memory builder script.
+
+### Step A7: Report
+
+Present a summary to the user:
+
+```
+## Agentic Fleet Setup Complete
+
+### Pipelines Configured
+[For each enabled pipeline:]
+
+**Idea Scout Pipeline** (if enabled)
+- **Trigger:** Runs automatically when a release is published (+ manual dispatch)
+- **Fleet model:** Sonnet 4.6 (codebase reading)
+- **Scout model:** Opus 4.6 (idea evaluation and creation)
+
+**Task Implementation Pipeline** (if enabled)
+- **Trigger:** Cron schedule: `[selected cron expression]` (+ manual dispatch)
+- **Fleet model:** Sonnet 4.6 (codebase reading)
+- **Implementation model:** Opus 4.6 (autonomous task implementation)
+
+### Platform: [GitHub / GitLab]
+
+### Files Created
+- [list of pipeline file paths]
+- .claude/scripts/memory_builder.py
+
+### Required Configuration
+⚠️  **Secret:** Add `ANTHROPIC_API_KEY` as a [repository secret (GitHub) / CI/CD masked variable (GitLab)].
+
+[If Task Implementation was selected:]
+⚠️  **Repository Variable:** Add `AGENTIC_TASK_CRON` with value `[selected cron expression]`:
+  - GitHub: Settings → Secrets and variables → Actions → Variables tab → New repository variable
+  - GitLab: Settings → CI/CD → Variables → Add variable (uncheck "Protect" and "Mask")
+  Alternatively, for GitLab: create a Pipeline Schedule directly (CI/CD → Schedules).
+
+### How It Works
+1. **Build Memory** — Python script generates a structural codebase summary
+2. **Deep Read (Sonnet 4.6 × 3)** — Three parallel agents analyze infrastructure, features, and code quality
+3. **[Idea Scout]** Opus 4.6 runs /idea-scout with all reports → creates idea issues
+   **[Task Implementation]** Opus 4.6 picks highest-priority task → implements it → opens a PR
+4. **Result** — [Ideas / PRs] are created automatically on [GitHub / GitLab]
+
+Both pipelines can also be triggered manually from the [GitHub Actions / GitLab CI/CD] interface.
+```
+
+---
 
 ## Important Rules
 
