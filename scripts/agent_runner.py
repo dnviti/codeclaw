@@ -425,6 +425,29 @@ def build_prompt(pipeline: str, provider: str, model: str, auto_pr: bool = True)
         return prompt
 
     elif pipeline == "scout":
+        research_comment_instructions = (
+            "\n\n## Additional Instructions: Research Comments\n\n"
+            "After creating each idea issue, post a comment ON THAT IDEA ISSUE\n"
+            "documenting the research that led to it. This makes the reasoning\n"
+            "transparent and helps reviewers evaluate the idea.\n\n"
+            "**For each idea you create**, immediately post a comment:\n"
+            "```bash\n"
+            f"{platform_placeholders.get('{{{{PLATFORM_CLI}}}}', 'gh')} issue comment <IDEA_ISSUE_NUM> --body \"<research comment>\"\n"
+            "```\n\n"
+            "**Comment content should include:**\n"
+            "- 🔍 **Sources consulted**: which online sources, reports, or codebase\n"
+            "  files informed this idea (with links where available)\n"
+            "- 💡 **Reasoning**: why this idea is relevant to the project specifically\n"
+            "- 📊 **Evidence**: trends, data points, or patterns that support the idea\n"
+            "- 🔗 **Related existing work**: any existing tasks or code that this\n"
+            "  idea builds upon or relates to\n"
+            "- ⚖️ **Trade-offs considered**: alternatives you evaluated and why\n"
+            "  this approach was chosen\n\n"
+            "Write naturally, like a product strategist presenting their findings.\n"
+            "Use markdown formatting. Be specific — reference actual file paths,\n"
+            "endpoints, or components from the codebase analysis reports.\n"
+        )
+
         if provider == "claude":
             # Claude uses the plugin-resolved /idea-scout skill
             return (
@@ -433,6 +456,7 @@ def build_prompt(pipeline: str, provider: str, model: str, auto_pr: bool = True)
                 "@report-infrastructure.md "
                 "@report-features.md "
                 "@report-quality.md"
+                + research_comment_instructions
             )
         else:
             # Inline the idea-scout skill for non-Claude providers
@@ -476,7 +500,7 @@ def build_prompt(pipeline: str, provider: str, model: str, auto_pr: bool = True)
                 "- @report-quality.md — code quality analysis\n\n"
                 "## Skill Instructions\n\n"
             )
-            return preamble + skill_content
+            return preamble + skill_content + research_comment_instructions
 
     elif pipeline == "docs":
         if provider == "claude":
