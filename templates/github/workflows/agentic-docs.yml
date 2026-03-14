@@ -194,6 +194,6 @@ jobs:
           PROMPT_EOF
 
           claude -p "$(cat /tmp/agent-prompt.md)" \
-            --model claude-opus-4-6 \
-            --max-turns 30 \
+            --model claude-sonnet-4-6 \
+            --max-turns 15 \
             --allowedTools "Bash,Read,Grep,Glob,Edit,Write"

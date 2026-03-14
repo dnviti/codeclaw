@@ -126,6 +126,6 @@ jobs:
             @report-infrastructure.md \
             @report-features.md \
             @report-quality.md" \
-            --model claude-opus-4-6 \
-            --max-turns 30 \
+            --model claude-sonnet-4-6 \
+            --max-turns 15 \
             --allowedTools "Bash,Read,Grep,Glob,WebSearch,WebFetch,Edit,Write"
