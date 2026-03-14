@@ -1,6 +1,6 @@
 {
   "name": "ctdf",
-  "version": "2.1.3",
+  "version": "2.1.4",
   "description": "Project-agnostic task and idea management framework with 20+ built-in skills for the full development lifecycle.",
   "author": {
     "name": "dnviti"
