@@ -27,13 +27,17 @@ build-and-analyze:
   rules:
     - if: $CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == $GIT_CHECKOUT_REF
       changes:
-        - "**/*"
+        # Only trigger on actual source code / business logic changes.
+        # Customize these patterns to match your project structure.
+        - "src/**/*"
+        - "lib/**/*"
+        - "app/**/*"
+        - "server/src/**/*"
+        - "client/src/**/*"
+        - "prisma/**/*"
+        - "package.json"
       when: always
     - if: $CI_PIPELINE_SOURCE == "web"
-  except:
-    changes:
-      - "docs/**"
-      - "*.md"
   before_script:
     - git checkout "$GIT_CHECKOUT_REF" && git pull origin "$GIT_CHECKOUT_REF"
   script:

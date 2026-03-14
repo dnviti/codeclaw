@@ -18,9 +18,16 @@ name: "Agentic Fleet — Docs"
 on:
   push:
     branches: [develop]
-    paths-ignore:
-      - 'docs/**'
-      - '*.md'
+    paths:
+      # Only trigger on actual source code / business logic changes.
+      # Customize these patterns to match your project structure.
+      - "src/**"
+      - "lib/**"
+      - "app/**"
+      - "server/src/**"
+      - "client/src/**"
+      - "prisma/**"
+      - "package.json"
   workflow_dispatch:
 
 permissions:
