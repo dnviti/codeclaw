@@ -246,7 +246,9 @@ Ask the user which agentic pipelines to enable:
 Use `AskUserQuestion` with these options:
 - **"Idea Scout only"** — on release publish, scouts new ideas
 - **"Task Implementation only"** — on cron schedule, implements tasks and opens PRs
-- **"Both"** — both pipelines
+- **"Docs only"** — on push to release branch, auto-updates documentation
+- **"All"** — all three pipelines
+- **"Custom"** — pick specific pipelines (follow up to ask which combination)
 - **"Cancel"** — abort setup
 
 STOP HERE after calling `AskUserQuestion`. Do NOT proceed until the user responds.
@@ -283,10 +285,12 @@ Based on the detected platform and selected pipelines:
     cp ${CLAUDE_PLUGIN_ROOT}/templates/github/workflows/agentic-task.yml .github/workflows/agentic-task.yml
     sed -i 's|__AGENTIC_TASK_CRON__|<selected cron expression>|' .github/workflows/agentic-task.yml
     ```
+  - If Docs selected: `cp ${CLAUDE_PLUGIN_ROOT}/templates/github/workflows/agentic-docs.yml .github/workflows/agentic-docs.yml`
 
 - **GitLab:**
   - If Idea Scout selected: `cp ${CLAUDE_PLUGIN_ROOT}/templates/gitlab/agentic-fleet.gitlab-ci.yml .`
   - If Task Implementation selected: `cp ${CLAUDE_PLUGIN_ROOT}/templates/gitlab/agentic-task.gitlab-ci.yml .`
+  - If Docs selected: `cp ${CLAUDE_PLUGIN_ROOT}/templates/gitlab/agentic-docs.gitlab-ci.yml .`
   - If a `.gitlab-ci.yml` already exists, instruct the user to add `include:` directives pointing to the new file(s), or merge the stages manually.
 
 ### Step A5: Copy Memory Builder Script
@@ -319,6 +323,12 @@ Present a summary to the user:
 - **Trigger:** Cron schedule: `[selected cron expression]` (+ manual dispatch)
 - **Fleet model:** Sonnet 4.6 (codebase reading)
 - **Implementation model:** Opus 4.6 (autonomous task implementation)
+
+**Documentation Pipeline** (if enabled)
+- **Trigger:** Push to release branch, excluding docs-only changes (+ manual dispatch)
+- **Fleet model:** Sonnet 4.6 (codebase reading)
+- **Docs model:** Opus 4.6 (runs `/docs update all` + `/docs claude-md`)
+- **Behavior:** Commits updated docs directly to the release branch
 
 ### Platform: [GitHub / GitLab]
 
