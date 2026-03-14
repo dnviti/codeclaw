@@ -8,7 +8,7 @@
       "name": "ctdf",
       "source": "./",
       "description": "Project-agnostic task and idea management framework with 20+ built-in skills for the full development lifecycle.",
-      "version": "2.1.1"
+      "version": "2.1.2"
     }
   ]
 }
