@@ -28,7 +28,7 @@ Always respond and work in English.
 
 Run both and parse JSON:
 
-- `RM full-context` → **CTX**: `version`, `tags`, `git`, `config` (development_branch, staging_branch, production_branch, changelog_file, repo_url, verify_command, package_paths), `release_plan`, `release_state`.
+- `RM full-context` → **CTX**: `version`, `tags`, `git`, `config` (development_branch, staging_branch, production_branch, changelog_file, repo_url, verify_command, package_paths), `platform` (enabled, platform, repo), `release_plan`, `release_state`.
 - `SH context` → `platform`, `worktree`, `branches`, `release_config`.
 
 Use `CTX.config.*` for branch names, tag prefix, verify command — never re-read CLAUDE.md manually.
@@ -56,6 +56,22 @@ Used by Stages 5 and 7 when merging SOURCE into TARGET:
 3. **If clean:** `git checkout <TARGET> && git merge <SOURCE> --no-ff -m "Merge <SOURCE> into <TARGET> for release X.X.X"`
 4. **If `CTX.config.verify_command`:** Run it. On failure → GATE: "Loop back to Stage 2" / "Proceed despite failures" / "Abort release".
 5. GATE: "Proceed" / "Abort release".
+
+---
+
+## Local Build Gate
+
+Reusable procedure invoked before every `git push` in Stages 5 and 7. This is **distinct** from the Merge Template's verify step — it catches regressions introduced after the merge (e.g. by version bump commits).
+
+1. Resolve the build/test command: `CTX.config.verify_command` if set, otherwise auto-detect from project files (`package.json` → `npm run build && npm test`, `Cargo.toml` → `cargo build && cargo test`, `go.mod` → `go build ./... && go test ./...`, `pyproject.toml` → `python -m build && pytest`, `pom.xml` → `mvn package`). If nothing is detected, GATE: "No build/test command found. Enter command or skip."
+
+2. Run locally on the current branch. On failure:
+   - Present the error output.
+   - `TM create-patch-task --source "local-build" --title "Fix local build/test failure before push" --release X.X.X`
+   - Check [Loop Counter](#loop-counter).
+   - GATE: "Fix and retry" / "Loop back to Stage 2" / "Proceed despite failure (not recommended)" / "Abort release".
+
+3. On success: "Local build and tests passed. Proceeding to push."
 
 ---
 
@@ -202,6 +218,10 @@ Note: Staging is a mandatory validation gate. It mirrors production configuratio
 
 **5d.** On merge issues: create RPAT tasks with `--source "staging-merge"`. Check [Loop Counter](#loop-counter). GATE: "Loop back to Stage 2" / "Abort release".
 
+**5e.** Run [Local Build Gate](#local-build-gate) on the staging branch.
+
+**5f.** Push: `git push origin <CTX.config.staging_branch>` — this triggers the `latest` Docker image build via CI.
+
 **Exit condition:** Staging stable and verified → proceed with OK.
 
 ---
@@ -240,7 +260,19 @@ RM parse-commits --since "<CTX.tags.latest>" | RM generate-changelog --version "
 
 **7c.** Update `CTX.config.changelog_file`: insert new section after `## [Unreleased]`, update comparison links.
 
-**7d.** Bump version in manifest files using `Edit`.
+**7d.** Version Bump Gate:
+
+1. Discover version-bearing files: use `CTX.config.package_paths` if set. Otherwise auto-discover all `package.json` outside `node_modules/`, plus any `pyproject.toml`, `setup.cfg`, `Cargo.toml`, `pom.xml`, or `build.gradle` present in the repository.
+
+2. For each file, read the current version string. If it still matches the previous release tag value (`CTX.tags.latest` stripped of prefix), update it to `X.X.X`.
+
+3. Present a confirmation table:
+
+   | File | Old Version | New Version |
+   |------|-------------|-------------|
+   | path/to/manifest | (previous) | X.X.X |
+
+4. GATE: "Confirm version bump and proceed to commit" / "Edit manually" / "Abort release".
 
 **7e.** Commit and tag:
 ```bash
@@ -249,7 +281,65 @@ git commit -m "chore(release): <tag_prefix>X.X.X"
 git tag -a <tag_prefix>X.X.X -m "Release <tag_prefix>X.X.X"
 ```
 
+**7e-bis.** Run [Local Build Gate](#local-build-gate) on the production branch.
+
 **7f.** Push: `git push origin <production_branch> --tags` — this triggers the release CI which builds the `stable` + `vX.X.X` Docker images.
+
+**7f-bis.** Post-Tag CI Monitoring — Discover triggered workflows:
+
+Only run if `CTX.platform.enabled` is `true`. Otherwise skip to `7g` with: "Platform integration not enabled — skipping remote CI monitoring."
+
+```bash
+sleep 10
+PM list-ci-runs --ref "<tag_prefix>X.X.X"
+```
+Present: "Found N workflows triggered by tag push."
+
+If no workflows are found, skip to `7g` with: "No CI workflows triggered — proceeding."
+
+**7f-ter.** Spawn one monitoring agent per workflow (all in parallel):
+
+For each workflow run, spawn Agent with `mode: "bypassPermissions"`:
+```
+prompt: "Monitor CI run {RUN_ID} ('{WORKFLOW_NAME}') in repo {REPO}.
+1. Poll `{PLATFORM_CLI} run view {RUN_ID} --repo {REPO} --json status,conclusion` every 30s until completed.
+2. If success: report and exit.
+3. If failure:
+   a. Get logs: `{PLATFORM_CLI} run view {RUN_ID} --repo {REPO} --log-failed`
+   b. Identify root cause and fix the relevant file(s).
+   c. Commit to {DEVELOPMENT_BRANCH}, push, open PR to {PRODUCTION_BRANCH}, merge.
+   d. Report: { workflow, conclusion, root_cause, fix_description, pr_url }"
+```
+
+Where `{PLATFORM_CLI}` is `gh` for GitHub or `glab` for GitLab, derived from `CTX.platform.platform`.
+
+**7f-quater.** Collect results and present:
+
+| Workflow | Result | Fix Applied |
+|----------|--------|-------------|
+| name | pass | — |
+| name | fail → fixed | PR #N: description |
+
+**7f-quinquies.** If any fix was applied → Tag Move Sub-Loop:
+
+A merged fix means the tag no longer points to the correct HEAD:
+
+1. `git tag -d <tag_prefix>X.X.X`
+2. `git push origin :refs/tags/<tag_prefix>X.X.X`
+3. `git pull origin <production_branch>`
+4. Run [Local Build Gate](#local-build-gate) on the updated HEAD.
+5. `git tag -a <tag_prefix>X.X.X -m "Release <tag_prefix>X.X.X"`
+6. `git push origin <tag_prefix>X.X.X`
+
+Then delete and recreate the platform release — **never edit a release after its tag has moved; editing detaches the release object:**
+```bash
+PM delete-release --tag "<tag_prefix>X.X.X"
+PM create-release --tag "<tag_prefix>X.X.X" --title "..." --notes "..."
+```
+
+Increment loop counter. Re-run from **7f-bis**. Warn at 3 iterations, force user decision at 5.
+
+GATE (all green): "All CI workflows passed. Proceed to Step 7g." / "Abort release".
 
 **7g.** If platform enabled: create release via `PM create-release`. If fails, warn — local tag is source of truth.
 
@@ -310,6 +400,8 @@ Total loop iterations: N | Patch tasks created: N | Subagents spawned: N
 | Per-PR Sub-Agent (unresolved) | Release Patches (RPAT) | Tasks Loop (Stage 2) |
 | Merge to Staging | Release Patches (RPAT) | Tasks Loop (Stage 2) |
 | Integration Tests | Release Patches (RPAT) | Tasks Loop (Stage 2) |
+| Local build pre-push (5 / 7) | RPAT task | Tasks Loop (Stage 2) |
+| Post-Tag CI Monitor (7f) | Fix → PR → merge → tag move | CI Monitor (7f-bis), same stage |
 
 ---
 
@@ -327,3 +419,7 @@ Total loop iterations: N | Patch tasks created: N | Subagents spawned: N
 10. **Use CTX values** — never hardcode branch names, paths, or commands.
 11. **All output in English.**
 12. **Every GATE includes an "Abort release" option.**
+13. **Local build and tests must pass before any push.** Run `CTX.config.verify_command` locally before pushing to staging or production. This is distinct from the Merge Template's verify step — it catches regressions introduced after merge (e.g. by version bump commits). Failures create RPAT tasks and loop back to Stage 2.
+14. **Tags are moved, never recreated from scratch, when post-tag fixes are needed.** Sequence: delete local tag → delete remote tag → pull fix → local build gate → recreate tag at new HEAD → push tag → delete platform release → recreate platform release.
+15. **Version fields in all manifest files must be bumped before tagging.** Any file still holding the previous version when the tag is created forces a full tag-move cycle. Verify at Step 7d.
+16. **Remote CI monitoring only runs when platform integration is enabled** (`CTX.platform.enabled`). Without a connected platform, local build success is the sole pre-release gate.

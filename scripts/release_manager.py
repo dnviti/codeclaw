@@ -1069,6 +1069,27 @@ def cmd_full_context(args):
         except (json.JSONDecodeError, OSError):
             pass
 
+    # 9. Load platform config from issues-tracker.json
+    platform_info = {
+        "enabled": False,
+        "platform": None,
+        "repo": None,
+    }
+    for candidate in ["issues-tracker.json", "github-issues.json"]:
+        fp = main_root / ".claude" / candidate
+        if fp.exists():
+            try:
+                with open(fp, "r", encoding="utf-8") as f:
+                    pt_data = json.load(f)
+                platform_info = {
+                    "enabled": pt_data.get("enabled", False),
+                    "platform": pt_data.get("platform", "github"),
+                    "repo": pt_data.get("repo", None),
+                }
+            except (json.JSONDecodeError, OSError):
+                pass
+            break
+
     # Build output
     output = {
         "version": {
@@ -1097,6 +1118,7 @@ def cmd_full_context(args):
             "verify_command": verify_command,
             "package_paths": package_paths,
         },
+        "platform": platform_info,
         "release_plan": release_plan,
         "release_state": release_state,
     }

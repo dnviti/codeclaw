@@ -8,8 +8,10 @@ CTDF gives your AI-assisted development workflow a structured backbone: ideas ar
 
 - **Two-pipeline workflow** — separate idea evaluation from task execution
 - **5 streamlined skills** — unified slash commands (`/task`, `/idea`, `/release-start`, `/setup`, `/update`)
-- **Gated release pipeline** — 9 sequential stages with user-confirmed gates, feedback loops, and parallel sub-agents
+- **Gated release pipeline** — 9 sequential stages with user-confirmed gates, feedback loops, parallel sub-agents, and mandatory local build verification before every push
 - **Per-PR sub-agent analysis** — each PR gets an independent agent for code optimization, security scanning, fix application, and automated merge
+- **Post-tag CI monitoring** — parallel agents monitor remote CI after tagging, auto-fix failures, and move tags when needed (platform-only)
+- **Explicit version bump gate** — all manifest files are discovered, verified, and updated with user confirmation before tagging
 - **Three-branch strategy** — enforced `develop` → `staging` → `main` promotion path with mandatory staging validation
 - **Docker tagging** — staging builds the `latest` tag, production builds `stable` + versioned tags
 - **Claude Code plugin** — install via marketplace, uninstall cleanly, update easily
@@ -106,7 +108,7 @@ flowchart TD
     S4["4. PER-PR SUB-AGENTS<br>(one agent per PR, parallel)<br>analyze → optimize → security →<br>comment → fix → merge → cleanup"]
     S5["5. MERGE TO STAGING<br>develop → staging<br>Builds 'latest' Docker tag"]
     S6["6. INTEGRATION TESTS<br>Full test suite on staging"]
-    S7["7. MERGE TO MAIN + TAG<br>staging → main | Tag: vX.X.X<br>Builds 'stable' + 'vX.X.X' Docker tags"]
+    S7["7. MERGE TO MAIN + TAG<br>staging → main | Version bump gate |<br>Local build gate | Tag: vX.X.X |<br>CI monitoring (platform-only) |<br>Builds 'stable' + 'vX.X.X' Docker tags"]
     S8["8. USERS TESTING<br>Release is live"]
     S9["9. END<br>Cleanup, final report"]
 
@@ -123,6 +125,7 @@ flowchart TD
     S4 -. "unresolved issues<br>create RPAT" .-> S2
     S5 -. "merge issues<br>create RPAT" .-> S2
     S6 -. "test failures<br>create RPAT" .-> S2
+    S7 -. "CI failure<br>fix → tag move" .-> S7
 ```
 
 ### Feedback Loop Summary
@@ -133,6 +136,8 @@ flowchart TD
 | Per-PR Sub-Agent (unresolved) | Release Patches (RPAT) | Tasks Loop |
 | Merge to Staging | Release Patches (RPAT) | Tasks Loop |
 | Integration Tests | Release Patches (RPAT) | Tasks Loop |
+| Local build pre-push (5 / 7) | RPAT task | Tasks Loop |
+| Post-Tag CI Monitor (7f) | Fix → PR → merge → tag move | CI Monitor (7f-bis), same stage |
 
 ### Key Rules Enforced
 
@@ -144,6 +149,10 @@ flowchart TD
 6. **Staging = Main minus public visibility** — if it wouldn't survive on main, it doesn't pass staging.
 7. **Tags are only created on the production branch** — after full pipeline through staging.
 8. **Loop counter enforced** — warnings at 3 iterations, forced choice at 5. Prevents infinite loops.
+9. **Local build and tests must pass before any push** — catches regressions from version bump commits or post-merge changes.
+10. **Tags are moved, never recreated** — when post-tag CI fixes are needed: delete tag → pull fix → rebuild → re-tag → delete and recreate platform release.
+11. **Version fields in all manifests must be bumped before tagging** — explicit gate with user confirmation at Step 7d.
+12. **Remote CI monitoring is platform-only** — without a connected platform, local build success is the sole pre-release gate.
 
 ### Branch Strategy
 

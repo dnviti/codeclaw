@@ -1309,6 +1309,12 @@ def cmd_platform_cmd(args):
         elif op == "edit-release":
             cmd = f'gh release edit "{params.get("tag", "")}" --repo "{repo}"'
             cmd += f' --notes "{params.get("notes", "")}"'
+        elif op == "list-ci-runs":
+            ref = params.get("ref", "")
+            cmd = f'gh run list --repo "{repo}" --json databaseId,name,status,conclusion,workflowName --limit 20'
+            cmd += f""" -q '[.[] | select(.headBranch=="{ref}" or .headSha=="{ref}")]'"""
+        elif op == "delete-release":
+            cmd = f'gh release delete "{params.get("tag", "")}" --repo "{repo}" --yes'
         else:
             print(json.dumps({"error": f"Unknown operation: {op}"}))
             sys.exit(1)
@@ -1374,6 +1380,11 @@ def cmd_platform_cmd(args):
         elif op == "edit-release":
             cmd = f'glab release update "{params.get("tag", "")}"'
             cmd += f' --notes "{params.get("notes", "")}"'
+        elif op == "list-ci-runs":
+            ref = params.get("ref", "")
+            cmd = f'glab ci list --repo "{repo}" --ref "{ref}" --output json'
+        elif op == "delete-release":
+            cmd = f'glab release delete "{params.get("tag", "")}" --repo "{repo}" --yes'
         else:
             print(json.dumps({"error": f"Unknown operation: {op}"}))
             sys.exit(1)
