@@ -23,8 +23,12 @@ TEST_FILE_PATTERN=""                      # e.g., *.test.ts, test_*.py
 # CI
 CI_RUNTIME_SETUP=""                      # GitHub Actions setup step YAML
 
+# Branch Strategy
+DEVELOPMENT_BRANCH=""                    # e.g., develop (default: develop)
+STAGING_BRANCH=""                        # e.g., staging (default: staging)
+PRODUCTION_BRANCH=""                     # e.g., main (default: main)
+
 # Release
-RELEASE_BRANCH=""                        # e.g., develop, main
 PACKAGE_JSON_PATHS=""                    # Space-separated manifest paths
 CHANGELOG_FILE=""                        # e.g., CHANGELOG.md
 TAG_PREFIX=""                            # e.g., v
@@ -70,7 +74,7 @@ Ideas are stored separately from tasks and must be explicitly approved before en
 | `ideas.txt` | Ideas awaiting evaluation |
 | `idea-disapproved.txt` | Rejected ideas archive |
 
-Use `/idea-create` to add ideas, `/idea-approve` to promote an idea to a task, `/idea-refactor` to update ideas based on codebase changes, and `/idea-disapprove` to reject an idea. Ideas must never be picked up directly by `/task-pick`.
+Use `/idea create` to add ideas, `/idea approve` to promote an idea to a task, `/idea refactor` to update ideas based on codebase changes, and `/idea disapprove` to reject an idea. Ideas must never be picked up directly by `/task pick`.
 
 ### Task & Idea Management Modes
 
@@ -96,11 +100,11 @@ Tasks are developed in isolated git worktrees instead of branch switching, enabl
 | Source code | In the worktree directory |
 
 **Lifecycle:**
-- `/task-pick` creates a worktree when a task is picked up
+- `/task pick` creates a worktree when a task is picked up
 - When a task is closed (marked done), the worktree is **automatically removed**
-- `/task-continue` creates a **fresh worktree** from the existing branch (since the old one was dismissed at close)
+- `/task continue` creates a **fresh worktree** from the existing branch (since the old one was dismissed at close)
 - `task_manager.py` always reads/writes task files from the main repo root via `get_main_repo_root()`
-- `/release` and `/env-setup` should be run from the main repository
+- `/release-start` and `/setup env` should be run from the main repository
 - `.worktrees/` must be in `.gitignore`
 
 ## Cross-Platform Notes

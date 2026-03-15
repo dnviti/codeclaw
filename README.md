@@ -2,21 +2,23 @@
 
 A project-agnostic task and idea management plugin for [Claude Code](https://docs.anthropic.com/en/docs/claude-code).
 
-CTDF gives your AI-assisted development workflow a structured backbone: ideas are captured, evaluated, promoted to tasks, implemented with quality gates, and tracked to completion — all through plain-text files and Claude Code slash commands.
+CTDF gives your AI-assisted development workflow a structured backbone: ideas are captured, evaluated, promoted to tasks, implemented with quality gates, and tracked to completion — all through plain-text files and Claude Code slash commands. A gated release pipeline with parallel sub-agent orchestration enforces strict development rules from branch creation to production tagging.
 
 ## Features
 
 - **Two-pipeline workflow** — separate idea evaluation from task execution
-- **23 built-in skills** — slash commands for every stage of the development lifecycle
+- **5 streamlined skills** — unified slash commands (`/task`, `/idea`, `/release-start`, `/setup`, `/update`)
+- **Gated release pipeline** — 9 sequential stages with user-confirmed gates, feedback loops, and parallel sub-agents
+- **Per-PR sub-agent analysis** — each PR gets an independent agent for code optimization, security scanning, fix application, and automated merge
+- **Three-branch strategy** — enforced `develop` → `staging` → `main` promotion path with mandatory staging validation
+- **Docker tagging** — staging builds the `latest` tag, production builds `stable` + versioned tags
 - **Claude Code plugin** — install via marketplace, uninstall cleanly, update easily
-- **Adaptive project initialization** — `/project-initialization` scaffolds your project and tailors all skills to your chosen stack, domain, and architecture
 - **Plain-text tracking** — tasks and ideas live in simple `.txt` files, fully version-controllable
 - **GitHub/GitLab Issues integration** — optional tri-modal sync with GitHub or GitLab Issues
-- **Automated hooks** — file edits automatically surface related tasks and progress summaries
 - **Quality gates** — verification, linting, and smoke tests run before tasks can be closed
 - **Cross-platform** — works on Linux, macOS, and Windows with automatic OS detection
 - **Project-agnostic** — works with any language, framework, or tech stack
-- **Human-in-the-loop** — AI assists, but you make every decision
+- **Human-in-the-loop** — AI assists, but you make every decision at every gate
 
 ## Prerequisites
 
@@ -49,51 +51,117 @@ claude --plugin-dir ./claude-task-development-framework
    /setup My Project Name
    ```
 
-   This creates the task/idea files (`to-do.txt`, `progressing.txt`, `done.txt`, `ideas.txt`, `idea-disapproved.txt`) and adds framework guidance to your `CLAUDE.md`.
+   This creates the task/idea files (`to-do.txt`, `progressing.txt`, `done.txt`, `ideas.txt`, `idea-disapproved.txt`), configures the three-branch strategy, and adds framework guidance to your `CLAUDE.md`.
 
-3. **(Optional) Full project initialization** — if starting a new project from scratch:
-
-   ```
-   /project-initialization [project purpose or stack]
-   ```
-
-   This scaffolds your project, sets up git, and configures all skills for your specific tech stack.
-
-4. **Start using skills:**
+3. **Start using skills:**
 
    ```
-   /idea-create Add user authentication with JWT
-   /idea-approve IDEA-AUTH-0001
-   /task-pick
-   /task-status
+   /idea create Add user authentication with JWT
+   /idea approve IDEA-AUTH-0001
+   /task pick
+   /task status
    ```
 
-## Core Concepts
+4. **When ready to release:**
 
-### Ideas Pipeline
+   ```
+   /release-start 1.0.0
+   ```
 
-Ideas are lightweight proposals — high-level descriptions without implementation details. They go through evaluation before entering the task pipeline.
+## How It Works
 
-```
-ideas.txt  ──→  /idea-approve  ──→  to-do.txt (becomes a task)
-    │
-    └──→  /idea-disapprove  ──→  idea-disapproved.txt (archived)
+CTDF enforces strict development rules through two connected pipelines and a gated release process.
+
+### Idea Pipeline
+
+Ideas are lightweight proposals — *what* and *why* only. They must be explicitly approved before entering the task pipeline.
+
+```mermaid
+flowchart LR
+    A[ideas.txt] -->|/idea approve| B[to-do.txt<br>becomes a task]
+    A -->|/idea disapprove| C[idea-disapproved.txt<br>archived]
 ```
 
 ### Task Pipeline
 
-Tasks are actionable work items with technical details, file lists, and dependencies. They flow through three files:
+Tasks are actionable work items with technical details, file lists, and dependencies. Each task gets an isolated git worktree for parallel development.
 
-```
-to-do.txt [ ]  ──→  progressing.txt [~]  ──→  done.txt [x]
+```mermaid
+flowchart LR
+    A["to-do.txt [ ]"] -->|"/task pick"| B["progressing.txt [~]"]
+    B -->|"verify + close"| C["done.txt [x]"]
+    B -.->|worktree created| D[".worktrees/task/code/"]
+    C -.->|worktree removed| D
 ```
 
-| File | Status | Symbol |
-|------|--------|--------|
-| `to-do.txt` | Pending | `[ ]` |
-| `to-do.txt` | Blocked | `[!]` |
-| `progressing.txt` | In progress | `[~]` |
-| `done.txt` | Completed | `[x]` |
+### Release Pipeline — Flow Diagram
+
+The release pipeline enforces a strict sequential process with built-in feedback loops. Every stage is gated — the release advances only when the stage passes ("OK"). Issues found at any stage create patch tasks (RPAT) that loop back to Stage 2.
+
+```mermaid
+flowchart TD
+    S1["1. CREATE BRANCH<br>release/X.X.X from develop"]
+    S2["2. TASKS LOOP<br>Pick up & implement tasks<br>(parallel subagents)"]
+    S3["3. FETCH OPEN PRs<br>List PRs on release branch"]
+    S4["4. PER-PR SUB-AGENTS<br>(one agent per PR, parallel)<br>analyze → optimize → security →<br>comment → fix → merge → cleanup"]
+    S5["5. MERGE TO STAGING<br>develop → staging<br>Builds 'latest' Docker tag"]
+    S6["6. INTEGRATION TESTS<br>Full test suite on staging"]
+    S7["7. MERGE TO MAIN + TAG<br>staging → main | Tag: vX.X.X<br>Builds 'stable' + 'vX.X.X' Docker tags"]
+    S8["8. USERS TESTING<br>Release is live"]
+    S9["9. END<br>Cleanup, final report"]
+
+    S1 -->|OK| S2
+    S2 -->|OK| S3
+    S3 --> S4
+    S4 -->|ALL PRs DONE| S5
+    S5 -->|OK| S6
+    S6 -->|OK| S7
+    S7 --> S8
+    S8 --> S9
+
+    S2 -. "self-loop<br>(RPAT)" .-> S2
+    S4 -. "unresolved issues<br>create RPAT" .-> S2
+    S5 -. "merge issues<br>create RPAT" .-> S2
+    S6 -. "test failures<br>create RPAT" .-> S2
+```
+
+### Feedback Loop Summary
+
+| Stage | Issues go to | Then loops back to |
+|---|---|---|
+| Tasks Loop | Rebase Patch (RPAT) | itself (self-loop) |
+| Per-PR Sub-Agent (unresolved) | Release Patches (RPAT) | Tasks Loop |
+| Merge to Staging | Release Patches (RPAT) | Tasks Loop |
+| Integration Tests | Release Patches (RPAT) | Tasks Loop |
+
+### Key Rules Enforced
+
+1. **Stages are sequential and gated** — never skip a stage without explicit user override at a GATE.
+2. **Sub-agents run in parallel, one per PR** — each follows the full analyze → optimize → security → comment → fix → merge → cleanup sequence.
+3. **Sub-agents fix what they can, escalate what they can't** — unresolved issues become RPAT tasks and loop back.
+4. **Every PR comment is structured** — findings and fixes are posted as separate, labeled comments for audit trail.
+5. **Worktrees are always cleaned up** — after PR merge and at pipeline end, no stale worktrees survive.
+6. **Staging = Main minus public visibility** — if it wouldn't survive on main, it doesn't pass staging.
+7. **Tags are only created on the production branch** — after full pipeline through staging.
+8. **Loop counter enforced** — warnings at 3 iterations, forced choice at 5. Prevents infinite loops.
+
+### Branch Strategy
+
+```mermaid
+flowchart LR
+    DEV["develop<br><i>Active development<br>feature merges, task branches</i>"]
+    STG["staging<br><i>Pre-release validation<br>'latest' Docker image</i>"]
+    MAIN["main<br><i>Production: tagged releases<br>'stable' + 'vX.X.X' Docker images</i>"]
+
+    DEV -->|merge| STG -->|merge + tag| MAIN
+```
+
+### Docker Tagging Strategy
+
+| Branch | Trigger | Docker Tags Built |
+|--------|---------|-------------------|
+| `staging` | Push to staging | `latest` |
+| `main` | Release tag push (`v*`) | `stable`, `vX.X.X` |
 
 ## Skills Reference
 
@@ -101,76 +169,52 @@ to-do.txt [ ]  ──→  progressing.txt [~]  ──→  done.txt [x]
 
 | Skill | Usage | Description |
 |-------|-------|-------------|
-| `/setup` | `/setup [project name]` | Initialize task/idea tracking files in an existing project |
+| `/setup` | `/setup [project name]` | Initialize task/idea tracking, branches, CI/CD, and issues integration |
+| `/setup env` | `/setup env [section]` | Scan project to detect tech stack, dependencies, and commands; update CLAUDE.md |
+| `/setup init` | `/setup init [purpose]` | Full project scaffold: choose stack, configure git, adapt all skills |
+| `/setup branch-strategy` | `/setup branch-strategy` | Configure develop/staging/main branch strategy |
+| `/setup agentic-fleet` | `/setup agentic-fleet` | Set up AI-powered CI/CD pipelines for idea scouting and task implementation |
 | `/update` | `/update [category]` | Update CTDF-managed files (pipelines, scripts, prompts, skills, CLAUDE.md) to the latest plugin version |
-| `/project-initialization` | `/project-initialization [purpose]` | Full project scaffold: choose stack, configure git, adapt all skills |
-| `/env-setup` | `/env-setup` | Scan project to detect tech stack, dependencies, and commands; update CLAUDE.md |
 
 ### Task Management
 
 | Skill | Usage | Description |
 |-------|-------|-------------|
-| `/task-create` | `/task-create [description]` | Create a new task with auto-assigned ID and codebase-informed technical details |
-| `/task-pick` | `/task-pick [TASK-CODE]` | Pick up the next task — verifies in-progress work first, runs quality gates |
-| `/task-continue` | `/task-continue [TASK-CODE]` | Resume work on a specific in-progress task |
-| `/task-status` | `/task-status` | Show current task summary and recommend next tasks |
+| `/task pick` | `/task pick [CODE]` | Pick up the next task — creates worktree, presents briefing, runs quality gates |
+| `/task create` | `/task create [description]` | Create a new task with auto-assigned ID and codebase-informed technical details |
+| `/task continue` | `/task continue [CODE]` | Resume work on a specific in-progress task |
+| `/task status` | `/task status` | Show current task summary and recommend next tasks |
 
 ### Idea Management
 
 | Skill | Usage | Description |
 |-------|-------|-------------|
-| `/idea-create` | `/idea-create [description]` | Add a lightweight idea to the backlog for future evaluation |
-| `/idea-approve` | `/idea-approve [IDEA-PREFIX-XXXX]` | Promote an idea to a full task with technical details |
-| `/idea-disapprove` | `/idea-disapprove [IDEA-PREFIX-XXXX]` | Reject an idea and archive it |
-| `/idea-refactor` | `/idea-refactor [IDEA-PREFIX-XXXX]` | Update an idea to reflect codebase changes |
-| `/idea-scout` | `/idea-scout [focus area or @local-file]` | Research trends and online sources to suggest new ideas for evaluation |
-
-### Testing
-
-| Skill | Usage | Description |
-|-------|-------|-------------|
-| `/test-scout` | `/test-scout` | Discover test infrastructure and coverage gaps |
-| `/test-create` | `/test-create` | Generate test files (unit, integration, e2e) and CI config |
-| `/test-run` | `/test-run` | Execute tests, analyze results, report coverage |
-| `/test-review` | `/test-review` | Review tasks marked `status:to-test` with guided testing |
-
-### Security
-
-| Skill | Usage | Description |
-|-------|-------|-------------|
-| `/vulnerability-scout` | `/vulnerability-scout` | Scan codebase for security vulnerabilities |
-| `/vulnerability-create` | `/vulnerability-create` | Create tasks from discovered vulnerabilities |
-| `/vulnerability-report` | `/vulnerability-report` | Generate comprehensive security report |
-
-### Documentation & Quality
-
-| Skill | Usage | Description |
-|-------|-------|-------------|
-| `/docs` | `/docs <operation> [category]` | Manage documentation (create, update, verify, sync, claude-md) |
-| `/code-optimize` | `/code-optimize` | Analyze codebase for optimization opportunities across 7 categories and apply selected fixes |
+| `/idea create` | `/idea create [description]` | Add a lightweight idea to the backlog for future evaluation |
+| `/idea approve` | `/idea approve [IDEA-CODE]` | Promote an idea to a full task with technical details |
+| `/idea disapprove` | `/idea disapprove [IDEA-CODE]` | Reject an idea and archive it |
+| `/idea refactor` | `/idea refactor [IDEA-CODE]` | Update ideas to reflect codebase changes |
+| `/idea scout` | `/idea scout [focus area]` | Research trends and online sources to suggest new ideas |
 
 ### Release
 
 | Skill | Usage | Description |
 |-------|-------|-------------|
-| `/release` | `/release [major\|minor\|patch\|stable]` | Bump version, update changelog, tag, and optionally publish with GitHub Release |
+| `/release-start` | `/release-start [X.X.X]` | Full 9-stage release pipeline with parallel sub-agents, staging validation, and production tagging |
+| `/release-start resume` | `/release-start resume` | Resume a release pipeline from the last saved stage |
+| `/release-start security-only` | `/release-start security-only` | Run security analysis alone on the current branch |
+| `/release-start test-only` | `/release-start test-only` | Run integration tests alone on the current branch |
 
 ## Typical Workflow
 
 ```
-0.  /setup "My Project"                     → Create task/idea tracking files
-1.  /idea-create "Add email notifications"   → Idea added to ideas.txt
-2.  /idea-approve IDEA-AUTH-0001              → Idea promoted to task in to-do.txt
-3.  /task-pick                               → Task moved to progressing.txt, briefing presented
-4.  (implement the task)                           → Write code based on the briefing
-5.  /task-pick                               → Verifies implementation, runs quality gates
-6.  (confirm completion)                           → Task moved to done.txt
-7.  (optional: commit)                             → Changes committed with task code reference
+0.  /setup "My Project"                     → Create tracking files + branches
+1.  /idea create "Add email notifications"  → Idea added to ideas.txt
+2.  /idea approve IDEA-NOTIF-0001           → Idea promoted to task in to-do.txt
+3.  /task pick                              → Worktree created, briefing presented
+4.  (implement the task)                    → Write code in isolated worktree
+5.  /task pick                              → Verify, close task, create PR
+6.  /release-start 1.0.0                    → Full pipeline: tasks → PRs → staging → main
 ```
-
-You can also create tasks directly with `/task-create` if you don't need the idea evaluation step.
-
-Use `/task-status` at any time to see your current progress and what to work on next.
 
 ## Issues Tracker Integration (Optional)
 
@@ -182,7 +226,7 @@ The plugin supports optional GitHub/GitLab Issues integration that can operate i
 | `true` | `true` | **Dual sync** | Local files first, then synced to platform issues |
 | `false` | — | **Local only** | Local `.txt` files only (default) |
 
-To enable, run `/project-initialization` and choose "Yes, enable issues tracker" when prompted, or manually copy and configure the example config:
+To enable, run `/setup` and choose your platform when prompted, or manually configure:
 
 ```bash
 cp <plugin-dir>/config/issues-tracker.example.json .claude/issues-tracker.json
@@ -193,30 +237,17 @@ cp <plugin-dir>/config/issues-tracker.example.json .claude/issues-tracker.json
 
 CTDF includes automated CI/CD pipelines that use Claude Code to perform idea scouting and task implementation without human intervention.
 
-### Pipelines
-
 | Pipeline | Trigger | What it does |
 |----------|---------|--------------|
 | **Idea Scout** | On release publish | Scans trends, documentation, and community sources to suggest new ideas |
 | **Task Implementation** | Cron-based schedule | Picks up pending tasks, implements them in isolated worktrees, and opens PRs |
+| **Docs** | On release publish | Updates documentation based on code changes |
 
-### Architecture
-
-Each pipeline uses a **three-agent architecture**:
-
-1. **Orchestrator** — coordinates the workflow and delegates to specialized agents
-2. **Worker** — performs the actual scouting or implementation work
-3. **Memory Builder** — persists learnings and context for future runs via `memory_builder.py`
-
-### Setup
+Each pipeline uses a **three-agent architecture**: Orchestrator, Worker, and Memory Builder. Supports both **GitHub Actions** and **GitLab CI/CD** with multiple AI providers (Claude, OpenAI Codex, OpenClaw).
 
 ```bash
 /setup agentic-fleet
 ```
-
-This generates the workflow files under `.github/workflows/` (or `.gitlab-ci.yml` for GitLab). Requires an `ANTHROPIC_API_KEY` secret configured in your repository.
-
-Supports both **GitHub Actions** and **GitLab CI/CD**.
 
 ## Task Format
 
@@ -231,51 +262,19 @@ Each task in `to-do.txt` (or `progressing.txt` / `done.txt`) follows this struct
 
   DESCRIPTION:
   Implement user registration, login, and token-based authentication
-  using JWT. Users should be able to sign up with email/password,
-  log in, and access protected routes.
+  using JWT.
 
   TECHNICAL DETAILS:
   Backend:
     - POST /api/auth/register — validate input, hash password, store user
     - POST /api/auth/login — verify credentials, return JWT
-    - Auth middleware to protect routes
-  Frontend:
-    - Login and registration forms
-    - Auth context for token storage and user state
 
   Files involved:
     CREATE:  src/services/auth.service.ts
-    CREATE:  src/routes/auth.routes.ts
     MODIFY:  src/app.ts
 ```
 
-Key formatting rules:
-- Separator lines are exactly **78 dashes**
-- Title uses an **em dash** (`—`), not a hyphen
-- All content is **indented with 2 spaces**
-- Task codes are **globally sequential** across all files and prefixes
-
-## Idea Format
-
-Each idea in `ideas.txt` follows this structure:
-
-```
-------------------------------------------------------------------------------
-IDEA-UIX-0001 — Dark Mode Support
-------------------------------------------------------------------------------
-  Category: User Interface
-  Date: 2026-03-04
-
-  DESCRIPTION:
-  Add dark mode theme support to the application, allowing users
-  to switch between light and dark themes.
-
-  MOTIVATION:
-  Many users prefer dark mode for reduced eye strain in low-light
-  environments. It is a widely expected feature in modern apps.
-```
-
-Ideas are intentionally **high-level** — no technical details, no file lists. Those are added during `/idea-approve` when the idea becomes a task.
+Key formatting rules: 78-dash separators, em dash (`—`) in title, 2-space indent, globally sequential task codes.
 
 ## Plugin Structure
 
@@ -284,55 +283,27 @@ claude-task-development-framework/
 ├── .claude-plugin/
 │   ├── plugin.json              # Plugin manifest
 │   └── marketplace.json         # Marketplace definition
-├── skills/                      # 23 Claude Code skills
-│   ├── setup/                   # Initialize task tracking in a project
-│   ├── update/                  # Update CTDF-managed files to latest plugin version
-│   ├── project-initialization/  # Full project scaffolding
-│   ├── env-setup/               # Detect tech stack and update CLAUDE.md
-│   ├── task-create/             # Create tasks
-│   ├── task-pick/               # Pick up and close tasks
-│   ├── task-continue/           # Resume in-progress tasks
-│   ├── task-status/             # View task summary
-│   ├── idea-create/             # Add ideas
-│   ├── idea-approve/            # Promote ideas to tasks
-│   ├── idea-disapprove/         # Reject ideas
-│   ├── idea-refactor/           # Update ideas
-│   ├── idea-scout/              # Research and suggest new ideas
-│   ├── test-scout/              # Discover test infrastructure and gaps
-│   ├── test-create/             # Generate test files and CI config
-│   ├── test-run/                # Execute tests and report coverage
-│   ├── test-review/             # Review tasks awaiting test verification
-│   ├── vulnerability-scout/     # Scan for security vulnerabilities
-│   ├── vulnerability-create/    # Create tasks from vulnerabilities
-│   ├── vulnerability-report/    # Generate security reports
-│   ├── docs/                    # Manage documentation
-│   ├── code-optimize/           # Codebase optimization analysis
-│   └── release/                 # Version bumping and release management
+├── skills/                      # 5 unified Claude Code skills
+│   ├── setup/                   # Initialize, configure, scaffold projects
+│   ├── update/                  # Update CTDF-managed files
+│   ├── task/                    # Pick, create, continue, status
+│   ├── idea/                    # Create, approve, disapprove, refactor, scout
+│   └── release-start/           # 9-stage gated release pipeline
 ├── scripts/                     # Python automation scripts (stdlib only)
 │   ├── task_manager.py          # Task/idea management CLI and post-edit hook
 │   ├── release_manager.py       # Release automation CLI (version, changelog)
+│   ├── skill_helper.py          # Consolidated skill helper (context, dispatch, worktrees)
+│   ├── agent_runner.py          # Multi-provider agentic fleet runner
 │   ├── app_manager.py           # Cross-platform port and process management
+│   ├── codebase_analyzer.py     # Agentic fleet codebase analysis
 │   ├── memory_builder.py        # Agentic fleet memory persistence
 │   ├── setup_labels.py          # Create platform labels for Issues integration
 │   └── setup_protection.py      # Branch protection setup
 ├── templates/                   # CI/CD workflow templates
-│   ├── github/                  # GitHub templates
-│   │   └── workflows/
-│   │       ├── agentic-fleet.yml
-│   │       ├── agentic-task.yml
-│   │       ├── ci.yml
-│   │       ├── issue-triage.yml
-│   │       ├── release.yml
-│   │       ├── security.yml
-│   │       └── status-guard.yml
-│   └── gitlab/                  # GitLab CI templates
-│       ├── agentic-fleet.gitlab-ci.yml
-│       └── agentic-task.gitlab-ci.yml
+│   ├── github/workflows/        # GitHub Actions (ci, release, staging, security, agentic)
+│   ├── gitlab/                  # GitLab CI templates
+│   └── prompts/                 # Agentic fleet prompt templates
 ├── config/                      # Example configuration files
-│   ├── issues-tracker.example.json
-│   ├── github-issues.example.json
-│   ├── project-config.example.json
-│   └── releases.example.json
 ├── hooks/
 │   └── hooks.json               # Plugin hooks (PostToolUse for task tracking)
 ├── CLAUDE.md                    # Framework guidance

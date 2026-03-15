@@ -1,7 +1,7 @@
 {
   "name": "ctdf",
-  "version": "2.1.5",
-  "description": "Project-agnostic task and idea management framework with 20+ built-in skills for the full development lifecycle.",
+  "version": "3.0.0",
+  "description": "Project-agnostic task and release management framework with 5 streamlined skills: /task, /idea, /release-start, /setup, /update. Features a gated release pipeline with automatic subagent orchestration.",
   "author": {
     "name": "dnviti"
   },
@@ -14,7 +14,10 @@
     "workflow",
     "devops",
     "release",
-    "ci-cd"
+    "ci-cd",
+    "release-pipeline",
+    "subagents",
+    "staging"
   ],
   "skills": "./skills/"
 }

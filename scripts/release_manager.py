@@ -16,7 +16,7 @@ import json
 import re
 import subprocess
 import sys
-from datetime import date
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 # ── Constants ───────────────────────────────────────────────────────────────
@@ -657,6 +657,452 @@ def cmd_release_plan_mark_released(args):
     print(json.dumps({"success": True, "version": version, "released_at": target["released_at"]}))
 
 
+# ── Subcommand: release-state-get ──────────────────────────────────────────
+
+def cmd_release_state_get(args):
+    """Read and print .claude/release-state.json."""
+    root = get_main_repo_root()
+    state_file = root / ".claude" / "release-state.json"
+    if not state_file.exists():
+        print(json.dumps({"error": "No release state found"}))
+        return
+    try:
+        with open(state_file, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        print(json.dumps(data, indent=2))
+    except (json.JSONDecodeError, OSError) as e:
+        print(json.dumps({"error": str(e)}))
+
+
+# ── Subcommand: release-state-set ──────────────────────────────────────────
+
+def cmd_release_state_set(args):
+    """Update .claude/release-state.json fields."""
+    root = get_main_repo_root()
+    state_file = root / ".claude" / "release-state.json"
+    now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+    # Read existing or create default
+    if state_file.exists():
+        try:
+            with open(state_file, "r", encoding="utf-8") as f:
+                state = json.load(f)
+        except (json.JSONDecodeError, OSError):
+            state = {}
+    else:
+        state = {
+            "version": args.version,
+            "branch": "",
+            "current_stage": 1,
+            "stage_name": "start",
+            "started_at": now,
+            "updated_at": now,
+            "loop_count": 0,
+            "stages_completed": [],
+            "tasks_completed": [],
+            "tasks_pending": [],
+            "issues_found": [],
+            "gate_approvals": {},
+        }
+
+    # Update version (always required)
+    state["version"] = args.version
+
+    # Update branch if provided
+    if args.branch is not None:
+        state["branch"] = args.branch
+
+    # Update stage if provided
+    if args.stage is not None:
+        # Append previous stage to stages_completed
+        prev_stage = state.get("current_stage", 0)
+        if prev_stage > 0:
+            completed = state.setdefault("stages_completed", [])
+            if prev_stage not in completed:
+                completed.append(prev_stage)
+        state["current_stage"] = args.stage
+
+    # Update stage name if provided
+    if args.stage_name is not None:
+        state["stage_name"] = args.stage_name
+
+    # Append completed task
+    if args.add_completed_task is not None:
+        completed_tasks = state.setdefault("tasks_completed", [])
+        if args.add_completed_task not in completed_tasks:
+            completed_tasks.append(args.add_completed_task)
+
+    # Append issue
+    if args.add_issue is not None:
+        try:
+            issue = json.loads(args.add_issue)
+        except json.JSONDecodeError as e:
+            print(json.dumps({"error": f"Invalid JSON for --add-issue: {e}"}))
+            sys.exit(1)
+        state.setdefault("issues_found", []).append(issue)
+
+    # Increment loop count
+    if args.increment_loop:
+        state["loop_count"] = state.get("loop_count", 0) + 1
+
+    # Mark gate approved
+    if args.mark_gate_approved is not None:
+        approvals = state.setdefault("gate_approvals", {})
+        approvals[str(args.mark_gate_approved)] = True
+
+    # Always update timestamp
+    state["updated_at"] = now
+
+    # Ensure .claude directory exists
+    state_file.parent.mkdir(parents=True, exist_ok=True)
+    with open(state_file, "w", encoding="utf-8") as f:
+        json.dump(state, f, indent=2)
+        f.write("\n")
+
+    print(json.dumps(state, indent=2))
+
+
+# ── Subcommand: release-state-clear ────────────────────────────────────────
+
+def cmd_release_state_clear(args):
+    """Delete .claude/release-state.json if it exists."""
+    root = get_main_repo_root()
+    state_file = root / ".claude" / "release-state.json"
+    if state_file.exists():
+        state_file.unlink()
+    print(json.dumps({"success": True}))
+
+
+# ── Subcommand: release-plan-set-status ────────────────────────────────────
+
+def cmd_release_plan_set_status(args):
+    """Set a release's status in releases.json."""
+    releases = _read_releases()
+    version = args.version.lstrip("v")
+
+    target = None
+    for rel in releases:
+        if rel["version"] == version:
+            target = rel
+            break
+
+    if target is None:
+        print(json.dumps({"error": f"Release {version} not found"}))
+        sys.exit(1)
+
+    target["status"] = args.status
+    if args.status == "released":
+        target["released_at"] = date.today().isoformat()
+
+    _write_releases(releases)
+
+    result = {"success": True, "version": version, "status": args.status}
+    if args.status == "released":
+        result["released_at"] = target["released_at"]
+    print(json.dumps(result, indent=2))
+
+
+# ── Subcommand: merge-check ───────────────────────────────────────────────
+
+def cmd_merge_check(args):
+    """Dry-run a git merge and report conflicts."""
+    source = args.source
+    target = args.target
+
+    # Save current branch
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            capture_output=True, text=True, check=True,
+        )
+        original_branch = result.stdout.strip()
+    except (subprocess.CalledProcessError, FileNotFoundError) as e:
+        print(json.dumps({"error": f"Failed to get current branch: {e}"}))
+        sys.exit(1)
+
+    # Checkout target branch
+    try:
+        subprocess.run(
+            ["git", "checkout", target],
+            capture_output=True, text=True, check=True,
+        )
+    except subprocess.CalledProcessError as e:
+        print(json.dumps({
+            "error": f"Failed to checkout target branch '{target}': {e.stderr.strip()}",
+            "has_conflicts": False,
+            "conflicting_files": [],
+            "merge_possible": False,
+        }))
+        sys.exit(1)
+
+    # Try the merge
+    has_conflicts = False
+    conflicting_files = []
+    merge_possible = True
+
+    try:
+        merge_result = subprocess.run(
+            ["git", "merge", "--no-commit", "--no-ff", source],
+            capture_output=True, text=True,
+        )
+        if merge_result.returncode != 0:
+            has_conflicts = True
+            merge_possible = False
+            # Parse conflicting files from stderr and stdout
+            for line in (merge_result.stdout + merge_result.stderr).splitlines():
+                # "CONFLICT (content): Merge conflict in <file>"
+                conflict_match = re.search(r"Merge conflict in (.+)$", line)
+                if conflict_match:
+                    conflicting_files.append(conflict_match.group(1).strip())
+                # "CONFLICT (modify/delete): <file> deleted in ..."
+                modify_delete = re.search(r"^CONFLICT \([^)]+\):\s+(\S+)", line)
+                if modify_delete and not conflict_match:
+                    conflicting_files.append(modify_delete.group(1).strip())
+            # Abort the failed merge
+            subprocess.run(
+                ["git", "merge", "--abort"],
+                capture_output=True, text=True,
+            )
+        else:
+            # Merge succeeded — undo the uncommitted merge
+            subprocess.run(
+                ["git", "reset", "--merge"],
+                capture_output=True, text=True,
+            )
+    except (subprocess.CalledProcessError, FileNotFoundError) as e:
+        has_conflicts = True
+        merge_possible = False
+        # Try to abort on error
+        subprocess.run(
+            ["git", "merge", "--abort"],
+            capture_output=True, text=True,
+        )
+
+    # Restore original branch
+    subprocess.run(
+        ["git", "checkout", original_branch],
+        capture_output=True, text=True,
+    )
+
+    # Deduplicate conflicting files
+    seen = set()
+    unique_files = []
+    for f in conflicting_files:
+        if f not in seen:
+            seen.add(f)
+            unique_files.append(f)
+
+    print(json.dumps({
+        "has_conflicts": has_conflicts,
+        "conflicting_files": unique_files,
+        "merge_possible": not has_conflicts,
+    }, indent=2))
+
+
+# ── Subcommand: full-context ────────────────────────────────────────────────
+
+def parse_claude_md_config(root: Path) -> dict:
+    """Parse KEY="value" patterns from CLAUDE.md bash blocks."""
+    claude_md = root / "CLAUDE.md"
+    if not claude_md.exists():
+        return {}
+    content = claude_md.read_text(encoding="utf-8")
+    config = {}
+    # Match KEY="value" patterns in bash blocks
+    for match in re.finditer(r'^(\w+)="([^"]*)"', content, re.MULTILINE):
+        config[match.group(1).lower()] = match.group(2)
+    return config
+
+
+def cmd_full_context(args):
+    """Return all release-related context in a single call."""
+    root = find_project_root()
+    main_root = get_main_repo_root()
+    tag_prefix = args.tag_prefix
+
+    # 1. Detect current version from manifest files (reuse existing logic)
+    all_sources = []
+    primary_version = None
+    primary_file = None
+
+    for filename, reader in MANIFEST_READERS:
+        filepath = root / filename
+        if filepath.exists():
+            version = reader(filepath)
+            if version:
+                all_sources.append({"file": filename, "version": version})
+                if primary_version is None:
+                    primary_version = version
+                    primary_file = filename
+
+    if primary_version is None:
+        primary_version = "0.0.0"
+        primary_file = None
+
+    is_beta = primary_version.endswith("-beta")
+    base_version = primary_version.removesuffix("-beta")
+
+    # 2. Get latest git tag
+    latest_tag = get_latest_tag(tag_prefix)
+
+    # 3. Get current branch
+    current_branch = None
+    try:
+        result = subprocess.run(
+            ["git", "branch", "--show-current"],
+            capture_output=True, text=True, check=True,
+        )
+        current_branch = result.stdout.strip()
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        pass
+
+    # 4. Get working tree status
+    dirty_files_count = 0
+    is_clean = True
+    try:
+        result = subprocess.run(
+            ["git", "status", "--porcelain"],
+            capture_output=True, text=True, check=True,
+        )
+        dirty_lines = [l for l in result.stdout.strip().splitlines() if l.strip()]
+        dirty_files_count = len(dirty_lines)
+        is_clean = dirty_files_count == 0
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        pass
+
+    # 5. Read CLAUDE.md config
+    claude_config = parse_claude_md_config(root)
+
+    # 6. Auto-detect missing values
+    # Tag prefix: use --tag-prefix arg first, then CLAUDE.md, then auto-detect from existing tags
+    if args.tag_prefix == "auto":
+        configured_prefix = claude_config.get("tag_prefix", "")
+        if configured_prefix:
+            tag_prefix = configured_prefix
+        else:
+            # Try to detect from existing tags
+            try:
+                result = subprocess.run(
+                    ["git", "tag", "-l", "--sort=-v:refname"],
+                    capture_output=True, text=True, check=True,
+                )
+                tags = result.stdout.strip().splitlines()
+                if tags:
+                    first_tag = tags[0]
+                    m = re.match(r"^([a-zA-Z]*)\d", first_tag)
+                    tag_prefix = m.group(1) if m else "v"
+                else:
+                    tag_prefix = "v"
+            except (subprocess.CalledProcessError, FileNotFoundError):
+                tag_prefix = "v"
+        # Re-fetch latest tag with detected prefix
+        latest_tag = get_latest_tag(tag_prefix)
+
+    # Release branch: from CLAUDE.md or auto-detect
+    development_branch = claude_config.get("development_branch", "") or ""
+    staging_branch = claude_config.get("staging_branch", "") or "staging"
+    production_branch = claude_config.get("production_branch", "") or "main"
+    release_branch_legacy = claude_config.get("release_branch", "")
+
+    # Auto-detect development branch if not configured
+    if not development_branch and not release_branch_legacy:
+        try:
+            result = subprocess.run(
+                ["git", "branch", "--list", "develop"],
+                capture_output=True, text=True, check=True,
+            )
+            if result.stdout.strip():
+                development_branch = "develop"
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            pass
+
+    # Changelog
+    changelog_file = claude_config.get("changelog_file", "")
+    changelog_exists = False
+    if changelog_file:
+        changelog_exists = (root / changelog_file).exists()
+
+    # Repo URL and verify command
+    repo_url = claude_config.get("github_repo_url", "")
+    verify_command = claude_config.get("verify_command", "")
+    package_paths = claude_config.get("package_json_paths", "")
+
+    # 7. Check releases.json for next planned release
+    releases = _read_releases()
+    sorted_rels = _sort_releases(releases)
+    release_plan = {
+        "has_plan": False,
+        "next_version": None,
+        "next_status": None,
+        "next_theme": None,
+        "next_task_count": 0,
+    }
+    for rel in sorted_rels:
+        if rel["status"] in ("planned", "in-progress"):
+            release_plan = {
+                "has_plan": True,
+                "next_version": rel["version"],
+                "next_status": rel["status"],
+                "next_theme": rel.get("theme", ""),
+                "next_task_count": len(rel.get("tasks", [])),
+            }
+            break
+
+    # 8. Check if release-state.json exists (resume detection)
+    state_file = main_root / ".claude" / "release-state.json"
+    release_state = {
+        "has_active": False,
+        "version": None,
+        "stage": None,
+        "stage_name": None,
+    }
+    if state_file.exists():
+        try:
+            with open(state_file, "r", encoding="utf-8") as f:
+                state_data = json.load(f)
+            release_state = {
+                "has_active": True,
+                "version": state_data.get("version"),
+                "stage": state_data.get("current_stage"),
+                "stage_name": state_data.get("stage_name"),
+            }
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    # Build output
+    output = {
+        "version": {
+            "current": primary_version,
+            "base": base_version,
+            "is_beta": is_beta,
+            "source_file": primary_file,
+            "all_sources": all_sources,
+        },
+        "tags": {
+            "prefix": tag_prefix,
+            "latest": latest_tag,
+        },
+        "git": {
+            "current_branch": current_branch,
+            "is_clean": is_clean,
+            "dirty_files_count": dirty_files_count,
+        },
+        "config": {
+            "development_branch": development_branch or "develop",
+            "staging_branch": staging_branch or "staging",
+            "production_branch": production_branch or "main",
+            "changelog_file": changelog_file,
+            "changelog_exists": changelog_exists,
+            "repo_url": repo_url,
+            "verify_command": verify_command,
+            "package_paths": package_paths,
+        },
+        "release_plan": release_plan,
+        "release_state": release_state,
+    }
+    print(json.dumps(output, indent=2))
+
+
 # ── CLI Setup ───────────────────────────────────────────────────────────────
 
 def build_parser() -> argparse.ArgumentParser:
@@ -721,6 +1167,45 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("release-plan-mark-released", help="Mark a release as released")
     p.add_argument("--version", required=True, help="Release version to mark as released")
     p.set_defaults(func=cmd_release_plan_mark_released)
+
+    # release-state-get
+    p = sub.add_parser("release-state-get", help="Read release state from .claude/release-state.json")
+    p.set_defaults(func=cmd_release_state_get)
+
+    # release-state-set
+    p = sub.add_parser("release-state-set", help="Update release state in .claude/release-state.json")
+    p.add_argument("--version", required=True, help="Release version")
+    p.add_argument("--branch", default=None, help="Release branch name (e.g., release/1.2.0)")
+    p.add_argument("--stage", type=int, default=None, help="Current stage number (1-10)")
+    p.add_argument("--stage-name", default=None, help="Current stage name")
+    p.add_argument("--add-completed-task", default=None, help="Task code to append to tasks_completed")
+    p.add_argument("--add-issue", default=None, help="JSON string of issue to append to issues_found")
+    p.add_argument("--increment-loop", action="store_true", help="Increment loop_count by 1")
+    p.add_argument("--mark-gate-approved", type=int, default=None, help="Stage number to mark as approved")
+    p.set_defaults(func=cmd_release_state_set)
+
+    # release-state-clear
+    p = sub.add_parser("release-state-clear", help="Delete .claude/release-state.json")
+    p.set_defaults(func=cmd_release_state_clear)
+
+    # release-plan-set-status
+    p = sub.add_parser("release-plan-set-status", help="Set a release status in releases.json")
+    p.add_argument("--version", required=True, help="Release version")
+    p.add_argument("--status", required=True, choices=["planned", "in-progress", "released"],
+                    help="New status for the release")
+    p.set_defaults(func=cmd_release_plan_set_status)
+
+    # merge-check
+    p = sub.add_parser("merge-check", help="Dry-run git merge and report conflicts")
+    p.add_argument("--source", required=True, help="Source branch to merge from")
+    p.add_argument("--target", required=True, help="Target branch to merge into")
+    p.set_defaults(func=cmd_merge_check)
+
+    # full-context
+    p = sub.add_parser("full-context", help="Return all release-related context in a single call")
+    p.add_argument("--tag-prefix", default="auto",
+                    help="Git tag prefix (default: auto-detect from CLAUDE.md or existing tags)")
+    p.set_defaults(func=cmd_full_context)
 
     return parser
 

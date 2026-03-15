@@ -1,0 +1,1054 @@
+#!/usr/bin/env python3
+"""Consolidated skill helper for claude-task-development-framework.
+
+Eliminates repeated logic across CTDF skills by providing single-call
+subcommands that gather context, dispatch arguments, check state, and
+manage worktrees.
+
+All output is JSON.  Zero external dependencies — stdlib only.
+"""
+
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+# ── Constants ───────────────────────────────────────────────────────────────
+
+SEPARATOR = "-" * 78
+TASK_FILES = ["to-do.txt", "progressing.txt", "done.txt"]
+IDEA_FILES = ["ideas.txt", "idea-disapproved.txt"]
+ALL_FILES = TASK_FILES + IDEA_FILES
+
+STATUS_MAP = {"[ ]": "todo", "[~]": "progressing", "[x]": "done", "[!]": "blocked"}
+
+TASK_HEADER_RE = re.compile(r"^\[(.)\]\s+([A-Z]{3,5}-\d{4})\s+—\s+(.+)$")
+IDEA_HEADER_RE = re.compile(r"^(IDEA-[A-Z]{3,5}-\d{4})\s+—\s+(.+)$")
+TASK_CODE_RE = re.compile(r"^[A-Z]{3,5}-\d{4}$")
+VERSION_RE = re.compile(r"(\d+)\.(\d+)\.(\d+)(?:-beta)?")
+
+CLAUDE_MD_VAR_RE = re.compile(r'^([A-Z_]+)\s*=\s*"?([^"#]*)"?\s*(?:#.*)?$')
+
+
+# ── Project Root Detection ──────────────────────────────────────────────────
+
+def find_project_root() -> Path:
+    """Find project root via git or by walking up to find to-do.txt."""
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            capture_output=True, text=True, check=True,
+        )
+        root = Path(result.stdout.strip())
+        if (root / "to-do.txt").exists():
+            return root
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        pass
+
+    d = Path.cwd()
+    while d != d.parent:
+        if (d / "to-do.txt").exists():
+            return d
+        d = d.parent
+    return Path.cwd()
+
+
+def get_main_repo_root() -> Path:
+    """Return main repo root, even from inside a git worktree."""
+    try:
+        common = subprocess.run(
+            ["git", "rev-parse", "--git-common-dir"],
+            capture_output=True, text=True, check=True,
+        ).stdout.strip()
+        git_dir = subprocess.run(
+            ["git", "rev-parse", "--git-dir"],
+            capture_output=True, text=True, check=True,
+        ).stdout.strip()
+        common_path = Path(common).resolve()
+        git_dir_path = Path(git_dir).resolve()
+        if common_path != git_dir_path:
+            return common_path.parent
+        return find_project_root()
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return find_project_root()
+
+
+def is_in_worktree() -> bool:
+    """Return True if CWD is inside a git worktree (not the main repo)."""
+    try:
+        common = subprocess.run(
+            ["git", "rev-parse", "--git-common-dir"],
+            capture_output=True, text=True, check=True,
+        ).stdout.strip()
+        git_dir = subprocess.run(
+            ["git", "rev-parse", "--git-dir"],
+            capture_output=True, text=True, check=True,
+        ).stdout.strip()
+        return Path(common).resolve() != Path(git_dir).resolve()
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return False
+
+
+# ── Git Helpers ─────────────────────────────────────────────────────────────
+
+def git_run(*args: str, cwd: str | None = None) -> str | None:
+    """Run a git command and return stdout, or None on failure."""
+    try:
+        result = subprocess.run(
+            ["git"] + list(args),
+            capture_output=True, text=True, check=True,
+            cwd=cwd,
+        )
+        return result.stdout.strip()
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return None
+
+
+def git_current_branch() -> str:
+    return git_run("branch", "--show-current") or ""
+
+
+def git_branch_exists(name: str) -> bool:
+    return git_run("rev-parse", "--verify", f"refs/heads/{name}") is not None
+
+
+def git_remote_branch_exists(name: str) -> bool:
+    return git_run("rev-parse", "--verify", f"refs/remotes/origin/{name}") is not None
+
+
+def git_worktree_list() -> list[dict]:
+    """Parse git worktree list --porcelain output."""
+    raw = git_run("worktree", "list", "--porcelain")
+    if not raw:
+        return []
+    worktrees = []
+    current: dict = {}
+    for line in raw.splitlines():
+        if line.startswith("worktree "):
+            if current:
+                worktrees.append(current)
+            current = {"path": line[9:]}
+        elif line.startswith("HEAD "):
+            current["head"] = line[5:]
+        elif line.startswith("branch "):
+            current["branch"] = line[7:]
+        elif line == "bare":
+            current["bare"] = True
+        elif line == "detached":
+            current["detached"] = True
+    if current:
+        worktrees.append(current)
+    return worktrees
+
+
+# ── File Helpers ────────────────────────────────────────────────────────────
+
+def read_lines(filepath: Path) -> list[str]:
+    """Read file lines, stripping \\r.  Returns empty list if missing."""
+    if not filepath.exists():
+        return []
+    return filepath.read_text(encoding="utf-8").replace("\r", "").splitlines()
+
+
+def is_separator(line: str) -> bool:
+    return line.strip() == SEPARATOR
+
+
+# ── Simple Block Parser ────────────────────────────────────────────────────
+
+def parse_blocks(filepath: Path) -> list[dict]:
+    """Parse task/idea blocks from a file (simplified version for status).
+
+    Returns list of dicts with: code, title, status_symbol, status,
+    block_type, priority, dependencies.
+    """
+    lines = read_lines(filepath)
+    blocks: list[dict] = []
+    i = 0
+    while i < len(lines):
+        if not is_separator(lines[i]):
+            i += 1
+            continue
+        if i + 2 >= len(lines):
+            i += 1
+            continue
+        header_line = lines[i + 1]
+        task_m = TASK_HEADER_RE.match(header_line)
+        idea_m = IDEA_HEADER_RE.match(header_line) if not task_m else None
+        if not task_m and not idea_m:
+            i += 1
+            continue
+        if not is_separator(lines[i + 2]):
+            i += 1
+            continue
+
+        # Gather content lines
+        content_start = i + 3
+        content_end = content_start
+        while content_end < len(lines) and not is_separator(lines[content_end]):
+            content_end += 1
+
+        block: dict = {}
+        if task_m:
+            sym = f"[{task_m.group(1)}]"
+            block = {
+                "block_type": "task",
+                "code": task_m.group(2),
+                "title": task_m.group(3).strip(),
+                "status_symbol": sym,
+                "status": STATUS_MAP.get(sym, "unknown"),
+            }
+        else:
+            block = {
+                "block_type": "idea",
+                "code": idea_m.group(1),
+                "title": idea_m.group(2).strip(),
+                "status_symbol": "",
+                "status": "idea",
+            }
+
+        # Extract priority and dependencies from content
+        priority = ""
+        dependencies = ""
+        for cl in lines[content_start:content_end]:
+            s = cl.strip()
+            if s.startswith("Priority:"):
+                priority = s[len("Priority:"):].strip()
+            elif s.startswith("Dependencies:"):
+                dependencies = s[len("Dependencies:"):].strip()
+        block["priority"] = priority
+        block["dependencies"] = dependencies
+        blocks.append(block)
+        i = content_end
+
+    return blocks
+
+
+# ── CLAUDE.md Parser ───────────────────────────────────────────────────────
+
+def parse_claude_md(root: Path) -> dict[str, str]:
+    """Extract key=value pairs from the bash code block in CLAUDE.md."""
+    claude_md = root / "CLAUDE.md"
+    if not claude_md.exists():
+        return {}
+    content = claude_md.read_text(encoding="utf-8")
+    # Find the first ```bash ... ``` block
+    m = re.search(r"```bash\n(.*?)```", content, re.DOTALL)
+    if not m:
+        return {}
+    pairs: dict[str, str] = {}
+    for line in m.group(1).splitlines():
+        vm = CLAUDE_MD_VAR_RE.match(line)
+        if vm:
+            val = vm.group(2).strip().strip('"')
+            if val:
+                pairs[vm.group(1)] = val
+    return pairs
+
+
+def claude_md_info(root: Path) -> dict:
+    """Return metadata about CLAUDE.md."""
+    claude_md = root / "CLAUDE.md"
+    if not claude_md.exists():
+        return {"exists": False, "lines": 0, "has_ctdf_section": False}
+    content = claude_md.read_text(encoding="utf-8")
+    lines = content.splitlines()
+    return {
+        "exists": True,
+        "lines": len(lines),
+        "has_ctdf_section": "<!-- CTDF:START -->" in content,
+    }
+
+
+# ── Platform Config ────────────────────────────────────────────────────────
+
+def read_platform_config(root: Path) -> dict:
+    """Read .claude/issues-tracker.json (or legacy .claude/github-issues.json)."""
+    for name in ("issues-tracker.json", "github-issues.json"):
+        p = root / ".claude" / name
+        if p.exists():
+            try:
+                data = json.loads(p.read_text(encoding="utf-8"))
+                return data
+            except (json.JSONDecodeError, OSError):
+                pass
+    return {}
+
+
+def get_platform_info(root: Path) -> dict:
+    """Build full platform context."""
+    raw = read_platform_config(root)
+    enabled = raw.get("enabled", False)
+    sync = raw.get("sync", False)
+    platform = raw.get("platform", "github")
+
+    if not enabled:
+        mode = "local-only"
+    elif sync:
+        mode = "dual-sync"
+    else:
+        mode = "platform-only"
+
+    cli = "glab" if platform == "gitlab" else "gh"
+    return {
+        "mode": mode,
+        "enabled": enabled,
+        "sync": sync,
+        "platform": platform,
+        "cli": cli,
+        "repo": raw.get("repo", ""),
+        "labels": raw.get("labels", {}),
+    }
+
+
+# ── Version Detection ──────────────────────────────────────────────────────
+
+def read_version_from_file(filepath: Path) -> str | None:
+    """Detect version from a manifest file based on its name."""
+    name = filepath.name
+    try:
+        if name == "package.json":
+            data = json.loads(filepath.read_text(encoding="utf-8"))
+            return data.get("version")
+        elif name == "pyproject.toml":
+            content = filepath.read_text(encoding="utf-8")
+            m = re.search(r'version\s*=\s*"([^"]+)"', content)
+            return m.group(1) if m else None
+        elif name == "Cargo.toml":
+            content = filepath.read_text(encoding="utf-8")
+            in_pkg = False
+            for line in content.splitlines():
+                if line.strip() == "[package]":
+                    in_pkg = True
+                    continue
+                if in_pkg and line.strip().startswith("["):
+                    break
+                if in_pkg:
+                    m = re.match(r'version\s*=\s*"([^"]+)"', line.strip())
+                    if m:
+                        return m.group(1)
+        elif name == "setup.py":
+            content = filepath.read_text(encoding="utf-8")
+            m = re.search(r'version\s*=\s*["\']([^"\']+)["\']', content)
+            return m.group(1) if m else None
+    except (json.JSONDecodeError, FileNotFoundError, OSError):
+        pass
+    return None
+
+
+MANIFEST_NAMES = ["package.json", "pyproject.toml", "Cargo.toml", "setup.py"]
+
+
+def scan_manifests(root: Path) -> list[dict]:
+    """Return list of {file, version} for all found manifest files."""
+    results = []
+    for name in MANIFEST_NAMES:
+        fp = root / name
+        if fp.exists():
+            v = read_version_from_file(fp)
+            if v:
+                results.append({"file": name, "version": v})
+    return results
+
+
+def get_latest_tag(tag_prefix: str) -> str | None:
+    """Get the latest git tag matching the prefix."""
+    raw = git_run("tag", "-l", f"{tag_prefix}*", "--sort=-v:refname")
+    if raw:
+        tags = raw.splitlines()
+        return tags[0] if tags else None
+    return None
+
+
+def detect_tag_prefix() -> str:
+    """Auto-detect tag prefix from existing tags."""
+    raw = git_run("tag", "-l", "--sort=-v:refname")
+    if not raw:
+        return "v"
+    first = raw.splitlines()[0]
+    m = re.match(r"^([a-zA-Z]*)(\d+\.\d+\.\d+)", first)
+    if m:
+        return m.group(1) or "v"
+    return "v"
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# Subcommand: context
+# ════════════════════════════════════════════════════════════════════════════
+
+def cmd_context(_args) -> dict:
+    """Return all context a skill needs in one call."""
+    root = get_main_repo_root()
+    md_vars = parse_claude_md(root)
+
+    # ── platform ──
+    platform = get_platform_info(root)
+
+    # ── worktree ──
+    in_wt = is_in_worktree()
+    wt_list = git_worktree_list()
+    try:
+        wt_root = Path(subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            capture_output=True, text=True, check=True,
+        ).stdout.strip()).resolve()
+    except Exception:
+        wt_root = None
+
+    worktree = {
+        "in_worktree": in_wt,
+        "main_root": str(root),
+        "worktree_root": str(wt_root) if in_wt and wt_root else None,
+        "worktrees": [w.get("path", "") for w in wt_list],
+    }
+
+    # ── branches ──
+    dev_branch = md_vars.get("DEVELOPMENT_BRANCH", "")
+    if not dev_branch:
+        dev_branch = md_vars.get("RELEASE_BRANCH", "")
+    if not dev_branch:
+        dev_branch = "develop" if git_branch_exists("develop") else "main"
+    staging_branch = md_vars.get("STAGING_BRANCH", "") or "staging"
+    prod_branch = md_vars.get("PRODUCTION_BRANCH", "") or "main"
+
+    branches = {
+        "current": git_current_branch(),
+        "development": dev_branch,
+        "staging": staging_branch,
+        "production": prod_branch,
+        "release_branch": dev_branch,
+    }
+
+    # ── release_config ──
+    tag_prefix = md_vars.get("TAG_PREFIX", "")
+    if not tag_prefix:
+        tag_prefix = detect_tag_prefix()
+    repo_url = md_vars.get("GITHUB_REPO_URL", "")
+    if not repo_url:
+        url = git_run("remote", "get-url", "origin")
+        if url:
+            repo_url = url.replace(".git", "").replace("git@github.com:", "https://github.com/")
+    changelog = md_vars.get("CHANGELOG_FILE", "") or "CHANGELOG.md"
+
+    release_config = {
+        "tag_prefix": tag_prefix,
+        "package_paths": md_vars.get("PACKAGE_JSON_PATHS", ""),
+        "changelog_file": changelog,
+        "repo_url": repo_url,
+        "verify_command": md_vars.get("VERIFY_COMMAND", ""),
+        "test_command": md_vars.get("TEST_COMMAND", ""),
+        "test_framework": md_vars.get("TEST_FRAMEWORK", ""),
+    }
+
+    return {
+        "platform": platform,
+        "worktree": worktree,
+        "branches": branches,
+        "release_config": release_config,
+    }
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# Subcommand: dispatch
+# ════════════════════════════════════════════════════════════════════════════
+
+def _is_task_code(s: str) -> bool:
+    return bool(TASK_CODE_RE.match(s))
+
+
+def _is_version(s: str) -> bool:
+    return bool(re.match(r"^\d+\.\d+\.\d+$", s))
+
+
+def _task_in_progressing(code: str) -> bool:
+    """Check if task code exists in progressing.txt."""
+    root = get_main_repo_root()
+    fp = root / "progressing.txt"
+    if not fp.exists():
+        return False
+    content = fp.read_text(encoding="utf-8")
+    return code.upper() in content
+
+
+def dispatch_task(parts: list[str]) -> dict:
+    """Dispatch for the task skill."""
+    if not parts:
+        return {"flow": "status", "task_code": "", "remaining_args": ""}
+
+    first = parts[0].lower()
+    rest = parts[1:]
+
+    if first == "pick":
+        code = rest[0].upper() if rest else ""
+        remaining = " ".join(rest[1:]) if len(rest) > 1 else ""
+        return {"flow": "pick", "task_code": code, "remaining_args": remaining}
+    elif first == "create":
+        return {"flow": "create", "task_code": "", "remaining_args": " ".join(rest)}
+    elif first == "continue":
+        code = rest[0].upper() if rest else ""
+        remaining = " ".join(rest[1:]) if len(rest) > 1 else ""
+        return {"flow": "continue", "task_code": code, "remaining_args": remaining}
+    elif first == "status":
+        return {"flow": "status", "task_code": "", "remaining_args": " ".join(rest)}
+    elif _is_task_code(parts[0].upper()):
+        code = parts[0].upper()
+        if _task_in_progressing(code):
+            return {"flow": "continue", "task_code": code, "remaining_args": " ".join(rest)}
+        else:
+            return {"flow": "pick", "task_code": code, "remaining_args": " ".join(rest)}
+    else:
+        return {"flow": "status", "task_code": "", "remaining_args": " ".join(parts)}
+
+
+def dispatch_idea(parts: list[str]) -> dict:
+    """Dispatch for the idea skill."""
+    if not parts:
+        return {"flow": "list", "task_code": "", "remaining_args": ""}
+
+    first = parts[0].lower()
+    rest = parts[1:]
+
+    if first == "create":
+        return {"flow": "create", "task_code": "", "remaining_args": " ".join(rest)}
+    elif first == "approve":
+        code = rest[0].upper() if rest else ""
+        return {"flow": "approve", "task_code": code, "remaining_args": " ".join(rest[1:])}
+    elif first == "disapprove":
+        code = rest[0].upper() if rest else ""
+        return {"flow": "disapprove", "task_code": code, "remaining_args": " ".join(rest[1:])}
+    elif first == "refactor":
+        return {"flow": "refactor", "task_code": "", "remaining_args": " ".join(rest)}
+    elif first == "scout":
+        return {"flow": "scout", "task_code": "", "remaining_args": " ".join(rest)}
+    else:
+        return {"flow": "list", "task_code": "", "remaining_args": " ".join(parts)}
+
+
+def dispatch_setup(parts: list[str]) -> dict:
+    """Dispatch for the setup skill."""
+    if not parts:
+        return {"flow": "standard", "task_code": "", "remaining_args": ""}
+
+    first = parts[0].lower()
+    rest = parts[1:]
+
+    if first == "env":
+        return {"flow": "env", "task_code": "", "remaining_args": " ".join(rest)}
+    elif first == "init":
+        return {"flow": "init", "task_code": "", "remaining_args": " ".join(rest)}
+    elif first in ("branch-strategy", "branch_strategy"):
+        return {"flow": "branch-strategy", "task_code": "", "remaining_args": " ".join(rest)}
+    elif first in ("agentic-fleet", "agentic_fleet"):
+        return {"flow": "agentic-fleet", "task_code": "", "remaining_args": " ".join(rest)}
+    else:
+        return {"flow": "standard", "task_code": "", "remaining_args": " ".join(parts)}
+
+
+def dispatch_release_start(parts: list[str]) -> dict:
+    """Dispatch for the release-start skill."""
+    if not parts:
+        return {"flow": "auto", "task_code": "", "remaining_args": ""}
+
+    first = parts[0].lower()
+    rest = parts[1:]
+
+    if first == "resume":
+        return {"flow": "resume", "task_code": "", "remaining_args": " ".join(rest)}
+    elif first in ("security-only", "security_only"):
+        return {"flow": "security-only", "task_code": "", "remaining_args": " ".join(rest)}
+    elif first in ("optimize-only", "optimize_only"):
+        return {"flow": "optimize-only", "task_code": "", "remaining_args": " ".join(rest)}
+    elif first in ("test-only", "test_only"):
+        return {"flow": "test-only", "task_code": "", "remaining_args": " ".join(rest)}
+    elif _is_version(first):
+        return {"flow": first, "task_code": "", "remaining_args": " ".join(rest)}
+    else:
+        return {"flow": "auto", "task_code": "", "remaining_args": " ".join(parts)}
+
+
+def dispatch_update(parts: list[str]) -> dict:
+    """Dispatch for the update skill."""
+    valid = {"all", "pipelines", "agentic", "scripts", "prompts", "skills", "claude-md"}
+    if not parts:
+        return {"flow": "all", "task_code": "", "remaining_args": ""}
+    first = parts[0].lower()
+    if first in valid:
+        return {"flow": first, "task_code": "", "remaining_args": " ".join(parts[1:])}
+    return {"flow": "all", "task_code": "", "remaining_args": " ".join(parts)}
+
+
+DISPATCHERS = {
+    "task": dispatch_task,
+    "idea": dispatch_idea,
+    "setup": dispatch_setup,
+    "release-start": dispatch_release_start,
+    "update": dispatch_update,
+}
+
+
+def cmd_dispatch(args) -> dict:
+    """Parse skill arguments and return the dispatch target."""
+    skill = args.skill
+    raw_args = args.args or ""
+    parts = raw_args.split() if raw_args.strip() else []
+
+    dispatcher = DISPATCHERS.get(skill)
+    if not dispatcher:
+        return {"error": f"Unknown skill: {skill}", "flow": "", "task_code": "", "remaining_args": raw_args}
+    return dispatcher(parts)
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# Subcommand: check-project-state
+# ════════════════════════════════════════════════════════════════════════════
+
+def cmd_check_project_state(_args) -> dict:
+    """Return project file existence and CLAUDE.md status."""
+    root = get_main_repo_root()
+
+    existing = [f for f in ALL_FILES if (root / f).exists()]
+    missing = [f for f in ALL_FILES if not (root / f).exists()]
+
+    releases_json = root / "releases.json"
+    git_init = (root / ".git").exists() or git_run("rev-parse", "--git-dir") is not None
+
+    # Check .gitignore for .worktrees/
+    gitignore = root / ".gitignore"
+    gitignore_has_wt = False
+    if gitignore.exists():
+        content = gitignore.read_text(encoding="utf-8")
+        gitignore_has_wt = ".worktrees" in content or ".worktrees/" in content
+
+    return {
+        "existing_files": existing,
+        "missing_files": missing,
+        "claude_md": claude_md_info(root),
+        "releases_json": {"exists": releases_json.exists()},
+        "git_initialized": git_init,
+        "gitignore_has_worktrees": gitignore_has_wt,
+    }
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# Subcommand: create-project-files
+# ════════════════════════════════════════════════════════════════════════════
+
+FILE_TEMPLATES = {
+    "to-do.txt": """\
+================================================================================
+                     {project} — TASK BACKLOG
+================================================================================
+
+  SECTION A — Core Features
+================================================================================
+
+""",
+    "progressing.txt": """\
+================================================================================
+                 {project} — TASKS IN PROGRESS
+================================================================================
+
+""",
+    "done.txt": """\
+================================================================================
+                  {project} — COMPLETED TASKS
+================================================================================
+
+""",
+    "ideas.txt": """\
+================================================================================
+                     {project} — IDEAS
+================================================================================
+
+""",
+    "idea-disapproved.txt": """\
+================================================================================
+              {project} — DISAPPROVED IDEAS
+================================================================================
+
+""",
+}
+
+
+def cmd_create_project_files(args) -> dict:
+    """Create missing task/idea files from built-in templates."""
+    root = get_main_repo_root()
+    project_name = args.project_name or "Project"
+
+    created = []
+    already_exist = []
+
+    for filename, template in FILE_TEMPLATES.items():
+        fp = root / filename
+        if fp.exists():
+            already_exist.append(filename)
+        else:
+            fp.write_text(template.format(project=project_name), encoding="utf-8")
+            created.append(filename)
+
+    return {
+        "created": created,
+        "already_existed": already_exist,
+        "root": str(root),
+    }
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# Subcommand: detect-branch-strategy
+# ════════════════════════════════════════════════════════════════════════════
+
+def cmd_detect_branch_strategy(_args) -> dict:
+    """Return current branch state and what needs to be created."""
+    root = get_main_repo_root()
+    md_vars = parse_claude_md(root)
+
+    dev = md_vars.get("DEVELOPMENT_BRANCH", "") or md_vars.get("RELEASE_BRANCH", "") or "develop"
+    staging = md_vars.get("STAGING_BRANCH", "") or "staging"
+    prod = md_vars.get("PRODUCTION_BRANCH", "") or "main"
+
+    names = {"develop": dev, "staging": staging, "main": prod}
+    branches_exist: dict[str, bool] = {}
+    branches_remote: dict[str, bool] = {}
+
+    for key, branch_name in [("develop", dev), ("staging", staging), ("main", prod)]:
+        branches_exist[key] = git_branch_exists(branch_name)
+        branches_remote[key] = git_remote_branch_exists(branch_name)
+
+    needs_creation = [k for k in ("develop", "staging", "main") if not branches_exist[k]]
+
+    # Check if CLAUDE.md already has the values configured
+    has_dev = bool(md_vars.get("DEVELOPMENT_BRANCH") or md_vars.get("RELEASE_BRANCH"))
+    has_staging = bool(md_vars.get("STAGING_BRANCH"))
+    has_prod = bool(md_vars.get("PRODUCTION_BRANCH"))
+    needs_update = not (has_dev and has_staging and has_prod)
+
+    return {
+        "branches_exist": branches_exist,
+        "branches_remote": branches_remote,
+        "claude_md_config": {"development": dev, "staging": staging, "production": prod},
+        "needs_creation": needs_creation,
+        "needs_claude_md_update": needs_update,
+    }
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# Subcommand: setup-task-worktree
+# ════════════════════════════════════════════════════════════════════════════
+
+def cmd_setup_task_worktree(args) -> dict:
+    """Consolidate 5-step worktree creation into one command."""
+    task_code = args.task_code
+    base_branch = args.base_branch or "develop"
+
+    if not task_code:
+        return {"success": False, "error": "task_code is required"}
+
+    root = get_main_repo_root()
+    code_lower = task_code.lower()
+    branch_name = f"task/{code_lower}"
+    wt_dir = root / ".worktrees" / "task" / code_lower
+
+    # 1. Ensure directories exist
+    (root / ".worktrees" / "task").mkdir(parents=True, exist_ok=True)
+
+    # 2. Ensure .gitignore has .worktrees/
+    gitignore = root / ".gitignore"
+    if gitignore.exists():
+        content = gitignore.read_text(encoding="utf-8")
+        if ".worktrees" not in content and ".worktrees/" not in content:
+            with open(gitignore, "a", encoding="utf-8") as f:
+                f.write("\n.worktrees/\n")
+    else:
+        gitignore.write_text(".worktrees/\n", encoding="utf-8")
+
+    # 3. Check if worktree already exists
+    if wt_dir.exists() and (wt_dir / ".git").exists():
+        return {
+            "success": True,
+            "worktree_dir": str(wt_dir),
+            "branch": branch_name,
+            "created": False,
+            "reused_existing": True,
+        }
+
+    # 4. Prune stale worktrees
+    git_run("worktree", "prune", cwd=str(root))
+
+    # 5. Fetch latest base branch
+    git_run("fetch", "origin", base_branch, cwd=str(root))
+
+    # 6. Check if branch exists
+    branch_exists = git_branch_exists(branch_name)
+
+    try:
+        if branch_exists:
+            result = subprocess.run(
+                ["git", "worktree", "add", str(wt_dir), branch_name],
+                capture_output=True, text=True, check=True,
+                cwd=str(root),
+            )
+        else:
+            result = subprocess.run(
+                ["git", "worktree", "add", "-b", branch_name, str(wt_dir), f"origin/{base_branch}"],
+                capture_output=True, text=True,
+                cwd=str(root),
+            )
+            if result.returncode != 0:
+                # Fallback: try from local base branch
+                result = subprocess.run(
+                    ["git", "worktree", "add", "-b", branch_name, str(wt_dir), base_branch],
+                    capture_output=True, text=True, check=True,
+                    cwd=str(root),
+                )
+    except subprocess.CalledProcessError as e:
+        return {"success": False, "error": e.stderr.strip() or str(e)}
+
+    return {
+        "success": True,
+        "worktree_dir": str(wt_dir),
+        "branch": branch_name,
+        "created": True,
+        "reused_existing": False,
+    }
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# Subcommand: status-report
+# ════════════════════════════════════════════════════════════════════════════
+
+def cmd_status_report(_args) -> dict:
+    """Return pre-computed status data for the task status flow."""
+    root = get_main_repo_root()
+
+    todo_blocks = parse_blocks(root / "to-do.txt")
+    prog_blocks = parse_blocks(root / "progressing.txt")
+    done_blocks = parse_blocks(root / "done.txt")
+
+    # Count tasks only (exclude ideas)
+    todos = [b for b in todo_blocks if b["block_type"] == "task"]
+    progs = [b for b in prog_blocks if b["block_type"] == "task"]
+    dones = [b for b in done_blocks if b["block_type"] == "task"]
+
+    blocked = [b for b in todos if b["status"] == "blocked"]
+    non_blocked_todo = [b for b in todos if b["status"] != "blocked"]
+
+    total = len(todos) + len(progs) + len(dones)
+    progress = round(len(dones) / total * 100) if total > 0 else 0
+
+    # In-progress tasks
+    in_progress = [
+        {"code": b["code"], "title": b["title"], "priority": b["priority"]}
+        for b in progs
+    ]
+
+    # Blocked tasks
+    blocked_items = [
+        {"code": b["code"], "title": b["title"], "depends_on": b["dependencies"]}
+        for b in blocked
+    ]
+
+    # Recommend next tasks: HIGH priority first, check deps satisfied
+    progressing_codes = {b["code"] for b in progs}
+    done_codes = {b["code"] for b in dones}
+    resolved = progressing_codes | done_codes
+
+    next_recommended = []
+    for b in non_blocked_todo:
+        deps = b["dependencies"]
+        deps_satisfied = True
+        if deps and deps.lower() != "none":
+            dep_codes = re.findall(r"[A-Z]{3,5}-\d{4}", deps)
+            deps_satisfied = all(dc in resolved for dc in dep_codes)
+        next_recommended.append({
+            "code": b["code"],
+            "title": b["title"],
+            "priority": b["priority"],
+            "deps_satisfied": deps_satisfied,
+        })
+
+    # Sort: HIGH first, then deps_satisfied first
+    priority_order = {"HIGH": 0, "MEDIUM": 1, "LOW": 2, "": 3}
+    next_recommended.sort(
+        key=lambda x: (priority_order.get(x["priority"].upper(), 3), not x["deps_satisfied"])
+    )
+
+    # Worktrees mapped to tasks
+    wt_list = git_worktree_list()
+    task_worktrees = []
+    for wt in wt_list:
+        branch = wt.get("branch", "")
+        if "task/" in branch:
+            code_part = branch.split("task/")[-1].upper().replace("/", "")
+            # Try to map to a real code (best-effort)
+            task_worktrees.append({
+                "path": wt.get("path", ""),
+                "branch": branch.replace("refs/heads/", ""),
+                "task_code": code_part,
+            })
+
+    # Release plan from releases.json
+    release_plan = None
+    releases_fp = root / "releases.json"
+    if releases_fp.exists():
+        try:
+            release_plan = json.loads(releases_fp.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    return {
+        "summary": {
+            "todo": len(todos),
+            "progressing": len(progs),
+            "done": len(dones),
+            "blocked": len(blocked),
+            "total": total,
+            "progress_percent": progress,
+        },
+        "in_progress": in_progress,
+        "blocked": blocked_items,
+        "next_recommended": next_recommended[:10],
+        "worktrees": task_worktrees,
+        "release_plan": release_plan,
+    }
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# Subcommand: detect-release-config
+# ════════════════════════════════════════════════════════════════════════════
+
+def cmd_detect_release_config(_args) -> dict:
+    """Return all release configuration in one call."""
+    root = get_main_repo_root()
+    md_vars = parse_claude_md(root)
+
+    tag_prefix = md_vars.get("TAG_PREFIX", "")
+    if not tag_prefix:
+        tag_prefix = detect_tag_prefix()
+
+    last_tag = get_latest_tag(tag_prefix)
+    current_version = "0.0.0"
+    is_beta = False
+
+    if last_tag:
+        # Strip prefix
+        v_str = last_tag.lstrip("".join(set(tag_prefix)))
+        vm = VERSION_RE.match(v_str)
+        if vm:
+            current_version = f"{vm.group(1)}.{vm.group(2)}.{vm.group(3)}"
+            is_beta = "-beta" in last_tag
+
+    manifests = scan_manifests(root)
+    if manifests and current_version == "0.0.0":
+        v_str = manifests[0]["version"]
+        vm = VERSION_RE.match(v_str)
+        if vm:
+            current_version = f"{vm.group(1)}.{vm.group(2)}.{vm.group(3)}"
+            is_beta = "-beta" in v_str
+
+    changelog_file = md_vars.get("CHANGELOG_FILE", "") or "CHANGELOG.md"
+    changelog_exists = (root / changelog_file).exists()
+
+    repo_url = md_vars.get("GITHUB_REPO_URL", "")
+    if not repo_url:
+        url = git_run("remote", "get-url", "origin")
+        if url:
+            repo_url = url.replace(".git", "").replace("git@github.com:", "https://github.com/")
+
+    dev_branch = md_vars.get("DEVELOPMENT_BRANCH", "") or md_vars.get("RELEASE_BRANCH", "")
+    if not dev_branch:
+        dev_branch = "develop" if git_branch_exists("develop") else "main"
+
+    return {
+        "tag_prefix": tag_prefix,
+        "last_tag": last_tag,
+        "current_version": current_version,
+        "is_beta": is_beta,
+        "manifest_files": manifests,
+        "changelog_file": changelog_file,
+        "changelog_exists": changelog_exists,
+        "repo_url": repo_url,
+        "development_branch": dev_branch,
+        "staging_branch": md_vars.get("STAGING_BRANCH", "") or "staging",
+        "production_branch": md_vars.get("PRODUCTION_BRANCH", "") or "main",
+    }
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# CLI Entrypoint
+# ════════════════════════════════════════════════════════════════════════════
+
+def output_json(data: dict) -> None:
+    """Print JSON to stdout."""
+    json.dump(data, sys.stdout, indent=2, default=str)
+    print()
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Consolidated skill helper for CTDF",
+    )
+    sub = parser.add_subparsers(dest="command")
+
+    # context
+    sub.add_parser("context", help="Return all context a skill needs in one call")
+
+    # dispatch
+    p_dispatch = sub.add_parser("dispatch", help="Parse skill arguments and return dispatch target")
+    p_dispatch.add_argument("--skill", required=True, help="Skill name")
+    p_dispatch.add_argument("--args", default="", help="Raw arguments string")
+
+    # check-project-state
+    sub.add_parser("check-project-state", help="Return project file existence and CLAUDE.md status")
+
+    # create-project-files
+    p_create = sub.add_parser("create-project-files", help="Create missing task/idea files")
+    p_create.add_argument("--project-name", default="Project", help="Project name for templates")
+
+    # detect-branch-strategy
+    sub.add_parser("detect-branch-strategy", help="Return branch state and needs")
+
+    # setup-task-worktree
+    p_wt = sub.add_parser("setup-task-worktree", help="Create task worktree in one step")
+    p_wt.add_argument("--task-code", required=True, help="Task code e.g. AUTH-0001")
+    p_wt.add_argument("--base-branch", default="develop", help="Base branch")
+
+    # status-report
+    sub.add_parser("status-report", help="Return pre-computed task status data")
+
+    # detect-release-config
+    sub.add_parser("detect-release-config", help="Return all release configuration")
+
+    args = parser.parse_args()
+    if not args.command:
+        parser.print_help()
+        sys.exit(1)
+
+    handlers = {
+        "context": cmd_context,
+        "dispatch": cmd_dispatch,
+        "check-project-state": cmd_check_project_state,
+        "create-project-files": cmd_create_project_files,
+        "detect-branch-strategy": cmd_detect_branch_strategy,
+        "setup-task-worktree": cmd_setup_task_worktree,
+        "status-report": cmd_status_report,
+        "detect-release-config": cmd_detect_release_config,
+    }
+
+    handler = handlers.get(args.command)
+    if not handler:
+        output_json({"error": f"Unknown command: {args.command}"})
+        sys.exit(1)
+
+    try:
+        result = handler(args)
+        output_json(result)
+    except Exception as e:
+        output_json({"error": str(e)})
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
