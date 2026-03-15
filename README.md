@@ -106,7 +106,7 @@ flowchart TD
     S2["2. TASKS LOOP<br>Pick up & implement tasks<br>(parallel subagents)"]
     S3["3. FETCH OPEN PRs<br>List PRs on release branch"]
     S4["4. PER-PR SUB-AGENTS<br>(one agent per PR, parallel)<br>analyze → optimize → security →<br>comment → fix → merge → cleanup"]
-    S5["5. MERGE TO STAGING<br>develop → staging<br>Builds 'latest' Docker tag"]
+    S5["5. MERGE TO STAGING<br>develop → staging<br>Local build gate → push<br>Builds 'latest' Docker tag"]
     S6["6. INTEGRATION TESTS<br>Full test suite on staging"]
     S7["7. MERGE TO MAIN + TAG<br>staging → main | Version bump gate |<br>Local build gate | Tag: vX.X.X |<br>CI monitoring (platform-only) |<br>Builds 'stable' + 'vX.X.X' Docker tags"]
     S8["8. USERS TESTING<br>Release is live"]
@@ -123,9 +123,39 @@ flowchart TD
 
     S2 -. "self-loop<br>(RPAT)" .-> S2
     S4 -. "unresolved issues<br>create RPAT" .-> S2
-    S5 -. "merge issues<br>create RPAT" .-> S2
+    S5 -. "merge/build issues<br>create RPAT" .-> S2
     S6 -. "test failures<br>create RPAT" .-> S2
     S7 -. "CI failure<br>fix → tag move" .-> S7
+```
+
+### Stage 7 — Internal Flow Detail
+
+Stage 7 contains multiple sub-gates including version bumping, local build verification, and conditional CI monitoring with a tag-move self-healing loop.
+
+```mermaid
+flowchart TD
+    M["7a. Merge staging → main<br>(Merge Template)"]
+    CL["7b-c. Generate + update changelog"]
+    VB["7d. VERSION BUMP GATE<br>Discover manifests → diff table →<br>user confirmation"]
+    CT["7e. Commit + tag"]
+    LB["7e-bis. LOCAL BUILD GATE<br>verify_command before push"]
+    P["7f. Push production + tags"]
+    CI{"7f-bis. Platform<br>enabled?"}
+    SKIP["Skip to 7g"]
+    DISC{"CI workflows<br>found?"}
+    MON["7f-ter. Spawn monitor agents<br>(parallel, one per workflow)"]
+    RES["7f-quater. Collect results"]
+    FIX{"Any fix<br>applied?"}
+    TM["7f-quinquies. TAG MOVE<br>delete tag → pull fix →<br>local build gate → re-tag →<br>delete + recreate release"]
+    REL["7g. Create platform release"]
+
+    M --> CL --> VB --> CT --> LB --> P --> CI
+    CI -->|"no / not enabled"| SKIP --> REL
+    CI -->|yes| DISC
+    DISC -->|"no workflows"| REL
+    DISC -->|"workflows found"| MON --> RES --> FIX
+    FIX -->|no| REL
+    FIX -->|"yes (loop)"| TM --> CI
 ```
 
 ### Feedback Loop Summary
@@ -208,7 +238,7 @@ flowchart LR
 
 | Skill | Usage | Description |
 |-------|-------|-------------|
-| `/release-start` | `/release-start [X.X.X]` | Full 9-stage release pipeline with parallel sub-agents, staging validation, and production tagging |
+| `/release-start` | `/release-start [X.X.X]` | Full 9-stage release pipeline with parallel sub-agents, local build gates, version bump verification, staging validation, post-tag CI monitoring, and production tagging |
 | `/release-start resume` | `/release-start resume` | Resume a release pipeline from the last saved stage |
 | `/release-start security-only` | `/release-start security-only` | Run security analysis alone on the current branch |
 | `/release-start test-only` | `/release-start test-only` | Run integration tests alone on the current branch |
