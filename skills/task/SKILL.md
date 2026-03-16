@@ -370,9 +370,19 @@ STOP.
 
 1. `RM release-plan-list`
 2. If no releases, skip.
-3. If releases exist, suggest assignment based on description vs release themes.
-4. `AskUserQuestion`: **"Yes, assign to vX.Y.Z"** | **"Assign to different release"** | **"Create new release"** | **"Skip"**
-5. If assigned: `task_manager.py set-release`, `release_manager.py release-plan-add-task`, platform: add label + milestone.
+3. **Determine the default "next version":**
+   1. List all releases from the release-plan-list output.
+   2. Filter to only open/planned releases (exclude status "released").
+   3. Sort by semver ascending.
+   4. Skip any with status "in-progress" — the first remaining release with status "planned" is the **next version**.
+   5. If no "planned" releases remain, fall back to the active "in-progress" release.
+   6. **Platform-only:** Query milestones via GitHub API (`gh api repos/{owner}/{repo}/milestones --jq '.[] | select(.state=="open")'`), sort by semver ascending, and select the next open milestone as the default.
+4. **Yolo mode:** Auto-assign to the next version without prompting. Log: "Auto-assigned to vX.Y.Z (next release)." Proceed to step 5.
+5. **Normal mode:** `AskUserQuestion` with the next version as the recommended first option:
+   - **"Yes, assign to vX.Y.Z (next release)"** *(default/recommended)*
+   - **"Assign to different release"**
+   - **"Create new release"**
+6. If assigned: `task_manager.py set-release`, `release_manager.py release-plan-add-task`, platform: add label + milestone.
 
 #### Step 10: Confirm and Report
 
