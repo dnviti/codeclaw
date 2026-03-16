@@ -108,7 +108,7 @@ If the task has **no release assigned**:
 1. Run `RM release-plan-list` to get available releases.
 2. **Yolo mode:** Auto-assign to the current active release (from `RM release-state-get`). If no active release, use the next upcoming release. Log the auto-selection and proceed.
 3. **Normal mode:** Warn: "Task {CODE} has no release assigned. Every task must be tied to a release milestone." Present a GATE via `AskUserQuestion`: **"Assign to vX.Y.Z (recommended)"** | **"Assign to different release"** | **"Cancel"**. STOP until user responds.
-4. Apply the assignment: `task_manager.py set-release`, `release_manager.py release-plan-add-task`, platform: add label + milestone.
+4. Apply the assignment: `TM set-release`, `RM release-plan-add-task`, platform: add label + milestone.
 5. If no releases exist at all, proceed without assignment (but warn).
 
 #### Step 2: Mark task as in-progress
@@ -391,11 +391,20 @@ STOP.
 
 1. `RM release-plan-list`
 2. If **no releases exist at all**, skip this step entirely.
-3. If releases exist, suggest assignment based on description vs release themes.
-4. **Yolo mode:** Auto-assign to the most relevant release (best theme match; if unclear, use the current active release). Log the auto-selection. Skip the GATE.
-5. **Normal mode:** `AskUserQuestion`: **"Yes, assign to vX.Y.Z"** | **"Assign to different release"** | **"Create new release"**
+3. **Determine the default "next version":**
+   1. List all releases from the release-plan-list output.
+   2. Filter to only open/planned releases (exclude status "released").
+   3. Sort by semver ascending.
+   4. Skip any with status "in-progress" — the first remaining release with status "planned" is the **next version**.
+   5. If no "planned" releases remain, fall back to the active "in-progress" release.
+   6. **Platform-only:** Query milestones via GitHub API (`gh api repos/{owner}/{repo}/milestones --jq '.[] | select(.state=="open")'`), sort by semver ascending, and select the next open milestone as the default.
+4. **Yolo mode:** Auto-assign to the next version without prompting. Log: "Auto-assigned to vX.Y.Z (next release)." Skip the GATE. Proceed to step 6.
+5. **Normal mode:** `AskUserQuestion` with the next version as the recommended first option:
+   - **"Yes, assign to vX.Y.Z (next release)"** *(default/recommended)*
+   - **"Assign to different release"**
+   - **"Create new release"**
    - Note: "Skip" is **NOT** offered when releases exist — every task must be tied to a release milestone.
-6. If assigned: `task_manager.py set-release`, `release_manager.py release-plan-add-task`, platform: add label + milestone.
+6. If assigned: `TM set-release`, `RM release-plan-add-task`, platform: add label + milestone.
 
 #### Step 10: Confirm and Report
 
