@@ -33,6 +33,13 @@ Run both and parse JSON:
 
 Use `CTX.config.*` for branch names, tag prefix, verify command — never re-read CLAUDE.md manually.
 
+### Submodule Awareness
+
+When `SH context` returns `worktree.submodules` with entries, the project uses git submodules. During the release pipeline:
+- **Stage 5 (Merge to Staging)** and **Stage 7 (Merge to Main)**: After merge, run `git submodule update --init --recursive` to ensure submodules are at the correct commits
+- **Stage 7d (Version Bump)**: Check for version-bearing files in submodule paths as well
+- Submodule pointers are part of the commit tree — merges automatically carry the correct submodule references
+
 ## Arguments
 
 `SH dispatch --skill release --args "$ARGUMENTS"`
