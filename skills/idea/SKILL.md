@@ -89,8 +89,8 @@ Formatting: 78-dash separators, em dash `—` in title, 2-space indent, end with
 **Step 6 — Duplicate check** per Skill Context.
 
 **Step 7 — Create:**
-- **(platform)** `PM create-issue title="[IDEA-PREFIX-XXXX] Title" body="$BODY" labels="claude-code,idea"`.
-- **(dual)** Append block to `ideas.txt` via `Edit`, then create platform issue. Write `GitHub: #NNN` to the block after `Date:`. If platform fails, warn but do NOT fail.
+- **(platform)** `PM create-issue title="[IDEA-PREFIX-XXXX] Title" body="$BODY" labels="claude-code,idea" assignee="@me"`.
+- **(dual)** Append block to `ideas.txt` via `Edit`, then create platform issue with `assignee="@me"`. Write `GitHub: #NNN` to the block after `Date:`. If platform fails, warn but do NOT fail.
 - **(local)** Append block to `ideas.txt` via `Edit`.
 
 **Step 8 — Report:** Confirm with code, category, date, platform issue link (if created). Suggest `/idea approve` or `/idea disapprove`.
@@ -156,8 +156,8 @@ Formatting: 78-dash separators, `[ ]` status prefix, em dash `—`, 2-space inde
   - **8b.** Remove idea: `TM remove IDEA-PREFIX-XXXX --file ideas.txt`
 
 **Step 8.5 — Platform Sync (platform-only and dual-sync):**
-1. **Close idea issue:** Find via `PM search-issues` with idea label and code. Close with comment: "Approved and promoted to task [PREFIX-XXXX]." Use `PM close-issue` and `PM comment-issue`.
-2. **Create task issue:** `PM create-issue` with title, body, and labels `claude-code,task,$PRIORITY_LABEL,status:todo,$SECTION_LABEL`. Read label mappings from `.claude/issues-tracker.json`.
+1. **Close idea issue:** Find via `PM search-issues` with idea label and code. Close with comment: "Approved and promoted to task [PREFIX-XXXX]." Use `PM close-issue` and `PM comment-issue`. Also auto-assign: `PM edit-issue number=IDEA_ISSUE_NUM add-assignee="@me"`.
+2. **Create task issue:** `PM create-issue` with title, body, labels `claude-code,task,$PRIORITY_LABEL,status:todo,$SECTION_LABEL`, and `assignee="@me"`. Read label mappings from `.claude/issues-tracker.json`.
 3. **Cross-reference:** Comment on idea issue with task issue number.
 - **(dual extra)** Write `GitHub: #NNN` to the task block in `to-do.txt`.
 
@@ -291,9 +291,9 @@ Fetch current state per Skill Context (ideas AND tasks by all statuses). Read CL
 **Step 5 — Add worthy ideas** (1-5 max, quality over quantity):
 - **5.0 — Duplicate check** per Skill Context. If matches, skip idea.
 - **Then add:**
-  - **(platform)** `PM create-issue` with title `[IDEA-PREFIX-XXXX] Title`, labels `claude-code,idea`, body with Description and Motivation sections.
+  - **(platform)** `PM create-issue` with title `[IDEA-PREFIX-XXXX] Title`, labels `claude-code,idea`, `assignee="@me"`, body with Description and Motivation sections.
   - **(local)** Append block to `ideas.txt` (same format as Create Flow Step 4).
-  - **(dual)** Write to `ideas.txt` first, then create platform issue.
+  - **(dual)** Write to `ideas.txt` first, then create platform issue with `assignee="@me"`.
 
 ### Scout Output
 
