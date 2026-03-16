@@ -660,6 +660,13 @@ def dispatch_docs(parts: list[str]) -> dict:
         return {**base, "flow": "generate", "remaining_args": " ".join(parts)}
 
 
+def dispatch_help(parts: list[str]) -> dict:
+    """Dispatch for the help skill."""
+    if not parts:
+        return {"flow": "overview", "task_code": "", "remaining_args": ""}
+    return {"flow": "query", "task_code": "", "remaining_args": " ".join(parts)}
+
+
 DISPATCHERS = {
     "task": dispatch_task,
     "idea": dispatch_idea,
@@ -668,6 +675,7 @@ DISPATCHERS = {
     "release-start": dispatch_release,  # backward compat
     "update": dispatch_update,
     "docs": dispatch_docs,
+    "help": dispatch_help,
 }
 
 
