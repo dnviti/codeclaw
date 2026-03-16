@@ -171,6 +171,27 @@ ROLE_PATTERNS: list[tuple[str, str]] = [
 ]
 
 
+# ── Submodule Utilities ────────────────────────────────────────────────────
+
+def detect_submodule_paths(root: Path) -> list[str]:
+    """Return list of submodule paths from .gitmodules."""
+    import configparser as _cp
+    gitmodules = root / ".gitmodules"
+    if not gitmodules.exists():
+        return []
+    cfg = _cp.ConfigParser()
+    try:
+        cfg.read(str(gitmodules), encoding="utf-8")
+    except (_cp.Error, OSError):
+        return []
+    paths = []
+    for section in cfg.sections():
+        p = cfg.get(section, "path", fallback="")
+        if p:
+            paths.append(p)
+    return paths
+
+
 # ── File System Utilities ───────────────────────────────────────────────────
 
 def load_gitignore_patterns(root: Path) -> list[str]:
@@ -206,16 +227,21 @@ def walk_source_files(
     root: Path,
     gitignore_patterns: list[str] | None = None,
     max_files: int = 5000,
+    scope_path: str | None = None,
 ) -> Generator[tuple[str, Path, str, int], None, None]:
     """Walk source files, yielding (rel_path, abs_path, extension, file_size).
 
     Skips ignored directories, binary files, and respects max_files limit.
+    If scope_path is provided, only walk files under that subdirectory
+    (e.g. a submodule path). Paths are still relative to root.
     """
     if gitignore_patterns is None:
         gitignore_patterns = load_gitignore_patterns(root)
 
+    walk_root = root / scope_path if scope_path else root
+
     count = 0
-    for dirpath, dirnames, filenames in os.walk(root):
+    for dirpath, dirnames, filenames in os.walk(walk_root):
         # Prune ignored directories
         dirnames[:] = [
             d for d in dirnames
