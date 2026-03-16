@@ -1,0 +1,24 @@
+{
+  "platform": "github",
+  "enabled": true,
+  "sync": false,
+  "repo": "dnviti/claude-task-development-framework",
+  "labels": {
+    "source": "claude-code",
+    "task": "task",
+    "idea": "idea",
+    "priority": {
+      "HIGH": "priority:high",
+      "MEDIUM": "priority:medium",
+      "LOW": "priority:low"
+    },
+    "status": {
+      "todo": "status:todo",
+      "in-progress": "status:in-progress",
+      "to-test": "status:to-test",
+      "done": "status:done"
+    },
+    "sections": {},
+    "release_prefix": "release:"
+  }
+}

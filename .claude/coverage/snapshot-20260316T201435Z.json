@@ -1,0 +1,358 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-03-16T20:14:35.475290Z",
+  "root": "/home/daniele/Documents/Repos/claude-task-development-framework",
+  "summary": {
+    "total_source_files": 43,
+    "total_test_files": 3,
+    "covered_files": 0,
+    "uncovered_files": 43,
+    "coverage_pct": 0.0
+  },
+  "files": [
+    {
+      "source_file": ".claude/worktrees/agent-a8e0715c/scripts/agent_runner.py",
+      "source_hash": "add4500e32220e282b2b830abe8678ce54a70552f28340df6ca9e858c5df6e6d",
+      "test_file": "",
+      "test_hash": "",
+      "functions": 20,
+      "lines": 815
+    },
+    {
+      "source_file": ".claude/worktrees/agent-a8e0715c/scripts/app_manager.py",
+      "source_hash": "4c95e038129b54969666d551bf223e5ad173e25c70feefa039765413594ccfb9",
+      "test_file": "",
+      "test_hash": "",
+      "functions": 23,
+      "lines": 327
+    },
+    {
+      "source_file": ".claude/worktrees/agent-a8e0715c/scripts/codebase_analyzer.py",
+      "source_hash": "19c24c32a40591e098dcfc18b57b6691aee1a16c716e5781f1b19da5d88d485d",
+      "test_file": "",
+      "test_hash": "",
+      "functions": 3,
+      "lines": 137
+    },
+    {
+      "source_file": ".claude/worktrees/agent-a8e0715c/scripts/docs_manager.py",
+      "source_hash": "c8cbc0d6870389ee9b61637562821192e551b253789726ec47d6106adf4b0cb7",
+      "test_file": "",
+      "test_hash": "",
+      "functions": 18,
+      "lines": 524
+    },
+    {
+      "source_file": ".claude/worktrees/agent-a8e0715c/scripts/memory_builder.py",
+      "source_hash": "e83d9ee2d5f625a1ed9789ca25d9b878f5ddf6ef332f0542953831b1ae85df42",
+      "test_file": "",
+      "test_hash": "",
+      "functions": 18,
+      "lines": 402
+    },
+    {
+      "source_file": ".claude/worktrees/agent-a8e0715c/scripts/release_manager.py",
+      "source_hash": "8cb6db16f7f5596bd77ad65b2e8b335e9ac4adfeb1a3dafceedff61381e22f1a",
+      "test_file": "",
+      "test_hash": "",
+      "functions": 75,
+      "lines": 1477
+    },
+    {
+      "source_file": ".claude/worktrees/agent-a8e0715c/scripts/setup_labels.py",
+      "source_hash": "25389b648a0a79e3a6634b41c507c257c70d0ee0256bd660792699545a362b5d",
+      "test_file": "",
+      "test_hash": "",
+      "functions": 7,
+      "lines": 145
+    },
+    {
+      "source_file": ".claude/worktrees/agent-a8e0715c/scripts/setup_protection.py",
+      "source_hash": "797034c7bd5b6639f97f207db709ebb27b9d3a67a2d404823078eea77da7fee9",
+      "test_file": "",
+      "test_hash": "",
+      "functions": 9,
+      "lines": 233
+    },
+    {
+      "source_file": ".claude/worktrees/agent-a8e0715c/scripts/skill_helper.py",
+      "source_hash": "3f23f8ea40d312ced14c711bf95948418c6b166385e50aba4f18050f9d58b8b3",
+      "test_file": "",
+      "test_hash": "",
+      "functions": 62,
+      "lines": 1162
+    },
+    {
+      "source_file": ".claude/worktrees/agent-a8e0715c/scripts/task_manager.py",
+      "source_hash": "fb404d6ef67a753070a3a107c1b661cf179149c39d1e925d4d59167d20327704",
+      "test_file": "",
+      "test_hash": "",
+      "functions": 84,
+      "lines": 2158
+    },
+    {
+      "source_file": ".claude/worktrees/agent-a8e0715c/scripts/analyzers/__init__.py",
+      "source_hash": "15e290315c57955a9a46855c30a2bbb87418d62bd7b22cd880ba52c8af1d304b",
+      "test_file": "",
+      "test_hash": "",
+      "functions": 23,
+      "lines": 418
+    },
+    {
+      "source_file": ".claude/worktrees/agent-a8e0715c/scripts/analyzers/coverage.py",
+      "source_hash": "fc3735d26e44ad9e9fbb9de7067b53cc62b5f6520134bcbf24f5dd8073890a96",
+      "test_file": "",
+      "test_hash": "",
+      "functions": 22,
+      "lines": 360
+    },
+    {
+      "source_file": ".claude/worktrees/agent-a8e0715c/scripts/analyzers/features.py",
+      "source_hash": "9632dd821595e51caf1d2ec9879a6d620e361689008dc15881db0abaff3b02f4",
+      "test_file": "",
+      "test_hash": "",
+      "functions": 11,
+      "lines": 509
+    },
+    {
+      "source_file": ".claude/worktrees/agent-a8e0715c/scripts/analyzers/infrastructure.py",
+      "source_hash": "e73c811d030953df0ff3afb9640d339468511da2ff0ac572549a0c475850d4b8",
+      "test_file": "",
+      "test_hash": "",
+      "functions": 15,
+      "lines": 692
+    },
+    {
+      "source_file": ".claude/worktrees/agent-a8e0715c/scripts/analyzers/quality.py",
+      "source_hash": "a8640aa49f4e438bec149523f18240d70d57d4edb5ec8c10d5df02e97e4dc0d2",
+      "test_file": "",
+      "test_hash": "",
+      "functions": 15,
+      "lines": 615
+    },
+    {
+      "source_file": ".claude/worktrees/agent-aa2116e1/scripts/agent_runner.py",
+      "source_hash": "add4500e32220e282b2b830abe8678ce54a70552f28340df6ca9e858c5df6e6d",
+      "test_file": "",
+      "test_hash": "",
+      "functions": 20,
+      "lines": 815
+    },
+    {
+      "source_file": ".claude/worktrees/agent-aa2116e1/scripts/app_manager.py",
+      "source_hash": "4c95e038129b54969666d551bf223e5ad173e25c70feefa039765413594ccfb9",
+      "test_file": "",
+      "test_hash": "",
+      "functions": 23,
+      "lines": 327
+    },
+    {
+      "source_file": ".claude/worktrees/agent-aa2116e1/scripts/codebase_analyzer.py",
+      "source_hash": "19c24c32a40591e098dcfc18b57b6691aee1a16c716e5781f1b19da5d88d485d",
+      "test_file": "",
+      "test_hash": "",
+      "functions": 3,
+      "lines": 137
+    },
+    {
+      "source_file": ".claude/worktrees/agent-aa2116e1/scripts/docs_manager.py",
+      "source_hash": "c8cbc0d6870389ee9b61637562821192e551b253789726ec47d6106adf4b0cb7",
+      "test_file": "",
+      "test_hash": "",
+      "functions": 18,
+      "lines": 524
+    },
+    {
+      "source_file": ".claude/worktrees/agent-aa2116e1/scripts/memory_builder.py",
+      "source_hash": "e83d9ee2d5f625a1ed9789ca25d9b878f5ddf6ef332f0542953831b1ae85df42",
+      "test_file": "",
+      "test_hash": "",
+      "functions": 18,
+      "lines": 402
+    },
+    {
+      "source_file": ".claude/worktrees/agent-aa2116e1/scripts/release_manager.py",
+      "source_hash": "aa186343ce91b8706ac236495fc451e27054094798d8845c2b9ae9ad8b1284d8",
+      "test_file": "",
+      "test_hash": "",
+      "functions": 73,
+      "lines": 1433
+    },
+    {
+      "source_file": ".claude/worktrees/agent-aa2116e1/scripts/setup_labels.py",
+      "source_hash": "25389b648a0a79e3a6634b41c507c257c70d0ee0256bd660792699545a362b5d",
+      "test_file": "",
+      "test_hash": "",
+      "functions": 7,
+      "lines": 145
+    },
+    {
+      "source_file": ".claude/worktrees/agent-aa2116e1/scripts/setup_protection.py",
+      "source_hash": "797034c7bd5b6639f97f207db709ebb27b9d3a67a2d404823078eea77da7fee9",
+      "test_file": "",
+      "test_hash": "",
+      "functions": 9,
+      "lines": 233
+    },
+    {
+      "source_file": ".claude/worktrees/agent-aa2116e1/scripts/skill_helper.py",
+      "source_hash": "d6cd9fa5fbc5a190fdc89e9e8aeb27bcf3c98fc015214736a26b58400b93388e",
+      "test_file": "",
+      "test_hash": "",
+      "functions": 62,
+      "lines": 1160
+    },
+    {
+      "source_file": ".claude/worktrees/agent-aa2116e1/scripts/task_manager.py",
+      "source_hash": "fb404d6ef67a753070a3a107c1b661cf179149c39d1e925d4d59167d20327704",
+      "test_file": "",
+      "test_hash": "",
+      "functions": 84,
+      "lines": 2158
+    },
+    {
+      "source_file": ".claude/worktrees/agent-aa2116e1/scripts/analyzers/__init__.py",
+      "source_hash": "15e290315c57955a9a46855c30a2bbb87418d62bd7b22cd880ba52c8af1d304b",
+      "test_file": "",
+      "test_hash": "",
+      "functions": 23,
+      "lines": 418
+    },
+    {
+      "source_file": ".claude/worktrees/agent-aa2116e1/scripts/analyzers/features.py",
+      "source_hash": "9632dd821595e51caf1d2ec9879a6d620e361689008dc15881db0abaff3b02f4",
+      "test_file": "",
+      "test_hash": "",
+      "functions": 11,
+      "lines": 509
+    },
+    {
+      "source_file": ".claude/worktrees/agent-aa2116e1/scripts/analyzers/infrastructure.py",
+      "source_hash": "e73c811d030953df0ff3afb9640d339468511da2ff0ac572549a0c475850d4b8",
+      "test_file": "",
+      "test_hash": "",
+      "functions": 15,
+      "lines": 692
+    },
+    {
+      "source_file": ".claude/worktrees/agent-aa2116e1/scripts/analyzers/quality.py",
+      "source_hash": "a8640aa49f4e438bec149523f18240d70d57d4edb5ec8c10d5df02e97e4dc0d2",
+      "test_file": "",
+      "test_hash": "",
+      "functions": 15,
+      "lines": 615
+    },
+    {
+      "source_file": "scripts/agent_runner.py",
+      "source_hash": "add4500e32220e282b2b830abe8678ce54a70552f28340df6ca9e858c5df6e6d",
+      "test_file": "",
+      "test_hash": "",
+      "functions": 20,
+      "lines": 815
+    },
+    {
+      "source_file": "scripts/app_manager.py",
+      "source_hash": "4c95e038129b54969666d551bf223e5ad173e25c70feefa039765413594ccfb9",
+      "test_file": "",
+      "test_hash": "",
+      "functions": 23,
+      "lines": 327
+    },
+    {
+      "source_file": "scripts/codebase_analyzer.py",
+      "source_hash": "19c24c32a40591e098dcfc18b57b6691aee1a16c716e5781f1b19da5d88d485d",
+      "test_file": "",
+      "test_hash": "",
+      "functions": 3,
+      "lines": 137
+    },
+    {
+      "source_file": "scripts/docs_manager.py",
+      "source_hash": "c8cbc0d6870389ee9b61637562821192e551b253789726ec47d6106adf4b0cb7",
+      "test_file": "",
+      "test_hash": "",
+      "functions": 18,
+      "lines": 524
+    },
+    {
+      "source_file": "scripts/memory_builder.py",
+      "source_hash": "e83d9ee2d5f625a1ed9789ca25d9b878f5ddf6ef332f0542953831b1ae85df42",
+      "test_file": "",
+      "test_hash": "",
+      "functions": 18,
+      "lines": 402
+    },
+    {
+      "source_file": "scripts/release_manager.py",
+      "source_hash": "aa186343ce91b8706ac236495fc451e27054094798d8845c2b9ae9ad8b1284d8",
+      "test_file": "",
+      "test_hash": "",
+      "functions": 73,
+      "lines": 1433
+    },
+    {
+      "source_file": "scripts/setup_labels.py",
+      "source_hash": "25389b648a0a79e3a6634b41c507c257c70d0ee0256bd660792699545a362b5d",
+      "test_file": "",
+      "test_hash": "",
+      "functions": 7,
+      "lines": 145
+    },
+    {
+      "source_file": "scripts/setup_protection.py",
+      "source_hash": "797034c7bd5b6639f97f207db709ebb27b9d3a67a2d404823078eea77da7fee9",
+      "test_file": "",
+      "test_hash": "",
+      "functions": 9,
+      "lines": 233
+    },
+    {
+      "source_file": "scripts/skill_helper.py",
+      "source_hash": "d6cd9fa5fbc5a190fdc89e9e8aeb27bcf3c98fc015214736a26b58400b93388e",
+      "test_file": "",
+      "test_hash": "",
+      "functions": 62,
+      "lines": 1160
+    },
+    {
+      "source_file": "scripts/task_manager.py",
+      "source_hash": "fb404d6ef67a753070a3a107c1b661cf179149c39d1e925d4d59167d20327704",
+      "test_file": "",
+      "test_hash": "",
+      "functions": 84,
+      "lines": 2158
+    },
+    {
+      "source_file": "scripts/analyzers/__init__.py",
+      "source_hash": "15e290315c57955a9a46855c30a2bbb87418d62bd7b22cd880ba52c8af1d304b",
+      "test_file": "",
+      "test_hash": "",
+      "functions": 23,
+      "lines": 418
+    },
+    {
+      "source_file": "scripts/analyzers/features.py",
+      "source_hash": "9632dd821595e51caf1d2ec9879a6d620e361689008dc15881db0abaff3b02f4",
+      "test_file": "",
+      "test_hash": "",
+      "functions": 11,
+      "lines": 509
+    },
+    {
+      "source_file": "scripts/analyzers/infrastructure.py",
+      "source_hash": "e73c811d030953df0ff3afb9640d339468511da2ff0ac572549a0c475850d4b8",
+      "test_file": "",
+      "test_hash": "",
+      "functions": 15,
+      "lines": 692
+    },
+    {
+      "source_file": "scripts/analyzers/quality.py",
+      "source_hash": "a8640aa49f4e438bec149523f18240d70d57d4edb5ec8c10d5df02e97e4dc0d2",
+      "test_file": "",
+      "test_hash": "",
+      "functions": 15,
+      "lines": 615
+    }
+  ]
+}
