@@ -613,6 +613,8 @@ def cmd_check_project_state(_args) -> dict:
     missing = [f for f in ALL_FILES if not (root / f).exists()]
 
     releases_json = root / "releases.json"
+    platform_info = get_platform_info(root)
+    uses_local = platform_info["mode"] != "platform-only"
     git_init = (root / ".git").exists() or git_run("rev-parse", "--git-dir") is not None
 
     # Check .gitignore for .worktrees/
@@ -626,7 +628,7 @@ def cmd_check_project_state(_args) -> dict:
         "existing_files": existing,
         "missing_files": missing,
         "claude_md": claude_md_info(root),
-        "releases_json": {"exists": releases_json.exists()},
+        "releases_json": {"exists": releases_json.exists(), "active": uses_local},
         "git_initialized": git_init,
         "gitignore_has_worktrees": gitignore_has_wt,
     }
@@ -889,14 +891,16 @@ def cmd_status_report(_args) -> dict:
                 "task_code": code_part,
             })
 
-    # Release plan from releases.json
+    # Release plan from releases.json (only when using local file tracking)
     release_plan = None
-    releases_fp = root / "releases.json"
-    if releases_fp.exists():
-        try:
-            release_plan = json.loads(releases_fp.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
-            pass
+    platform_info = get_platform_info(root)
+    if platform_info["mode"] != "platform-only":
+        releases_fp = root / "releases.json"
+        if releases_fp.exists():
+            try:
+                release_plan = json.loads(releases_fp.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                pass
 
     return {
         "summary": {
