@@ -166,9 +166,20 @@ If any platform command fails: warn but do NOT fail.
 **Step 9 — Release Assignment:**
 1. Run: `RM release-plan-list`
 2. If no `releases.json` or no planned releases, skip.
-3. If releases exist, suggest assignment based on task description vs release themes.
-4. Ask: "Yes, assign to vX.Y.Z" | "Assign to a different release" | "Create a new release" | "Skip". STOP.
-5. If assigned: `TM set-release TASK-CODE --version X.Y.Z` and `RM release-plan-add-task --version X.Y.Z --task TASK-CODE`. In platform modes, also add `release:vX.Y.Z` label and milestone.
+3. **Determine the default "next version":**
+   1. List all releases from the release-plan-list output.
+   2. Filter to only open/planned releases (exclude status "released").
+   3. Sort by semver ascending.
+   4. Skip any with status "in-progress" — the first remaining release with status "planned" is the **next version**.
+   5. If no "planned" releases remain, fall back to the active "in-progress" release.
+   6. **Platform-only:** Query milestones via GitHub API (`gh api repos/{owner}/{repo}/milestones --jq '.[] | select(.state=="open")'`), sort by semver ascending, and select the next open milestone as the default.
+4. **Yolo mode:** Auto-assign to the next version without prompting. Log: "Auto-assigned to vX.Y.Z (next release)." Proceed to step 6.
+5. **Normal mode:** Ask with the next version as the recommended first option:
+   - **"Yes, assign to vX.Y.Z (next release)"** *(default/recommended)*
+   - **"Assign to a different release"**
+   - **"Create a new release"**
+   STOP.
+6. If assigned: `TM set-release TASK-CODE --version X.Y.Z` and `RM release-plan-add-task --version X.Y.Z --task TASK-CODE`. In platform modes, also add `release:vX.Y.Z` label and milestone.
 
 **Step 10 — Report:** Confirm with task code, priority, dependencies, section, file counts. Mode-specific message about where task was created. Suggest `/task pick PREFIX-XXXX`.
 
