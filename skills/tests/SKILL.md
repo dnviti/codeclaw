@@ -1,8 +1,8 @@
 ---
 name: tests
-description: "Test lifecycle management: scout coverage gaps, create test files, continue incomplete test suites."
+description: "Test lifecycle management: scout coverage gaps, create test files, continue incomplete test suites, track persistent coverage."
 disable-model-invocation: true
-argument-hint: "[scout] [create [target]] [continue [target]]"
+argument-hint: "[scout] [create [target]] [continue [target]] [coverage [snapshot|compare|report|threshold-check]]"
 ---
 
 # Test Manager
@@ -37,6 +37,7 @@ Route based on `flow` in the JSON result:
 - `scout` -> [Scout Flow](#scout-flow)
 - `create` -> [Create Flow](#create-flow)
 - `continue` -> [Continue Flow](#continue-flow)
+- `coverage` -> [Coverage Flow](#coverage-flow)
 
 ---
 
@@ -210,6 +211,100 @@ Report results. If new failures introduced, fix them.
 Present: tests added (count), tests fixed (count), current pass/fail status, remaining gaps (if any).
 
 ---
+
+## Coverage Flow
+
+Persistent coverage tracking across sessions. Takes snapshots of which source files have tests, detects regressions when source changes without test updates, and gates releases on minimum coverage thresholds.
+
+Coverage manifests are stored in `.claude/coverage/` with timestamped snapshots for trend analysis.
+
+### Coverage Step 1: Determine Sub-command
+
+Parse `remaining_args` from the dispatcher. Expected sub-commands:
+- `snapshot` -> [Coverage: Snapshot](#coverage-snapshot)
+- `compare` -> [Coverage: Compare](#coverage-compare)
+- `report` -> [Coverage: Report](#coverage-report)
+- `threshold-check` -> [Coverage: Threshold Check](#coverage-threshold-check)
+- *(empty)* -> default to **snapshot** then **report**
+
+### Coverage: Snapshot
+
+Capture the current state of test coverage and persist it.
+
+```bash
+TESTS coverage snapshot --root .
+```
+
+Present:
+- Total source files, test files, covered, uncovered
+- Coverage percentage
+- Timestamp of snapshot
+- Mention that the snapshot is saved for future comparisons
+
+### Coverage: Compare
+
+Compare two snapshots to detect regressions and improvements.
+
+```bash
+TESTS coverage list-snapshots --root .
+```
+
+If two or more snapshots exist, compare latest two automatically:
+
+```bash
+TESTS coverage compare --root .
+```
+
+If the user provides specific snapshots via arguments:
+
+```bash
+TESTS coverage compare --root . --old <old_snapshot> --new <new_snapshot>
+```
+
+Present:
+1. **Coverage change** -- percentage point difference
+2. **Regressions** -- source files that changed but their tests did not (table)
+3. **Improvements** -- new test coverage added since last snapshot
+4. **New files** -- source files added since last snapshot (with/without tests)
+5. **Removed files** -- source files deleted since last snapshot
+
+### Coverage: Report
+
+Generate a human-readable Markdown report from the current manifest.
+
+```bash
+TESTS coverage report --root .
+```
+
+If no manifest exists yet, take a snapshot first:
+
+```bash
+TESTS coverage snapshot --root .
+TESTS coverage report --root .
+```
+
+Present the report content directly.
+
+### Coverage: Threshold Check
+
+Verify coverage meets a minimum percentage. Used as a release gate.
+
+```bash
+TESTS coverage threshold-check --root . --min-coverage <N>
+```
+
+If the user does not specify a threshold, ask:
+
+Use `AskUserQuestion`:
+- **"Use default (0%)"** -> run with `--min-coverage 0`
+- **"I will specify a minimum"** -> wait for input
+
+STOP.
+
+Present: pass/fail status, actual coverage %, required %, deficit (if any).
+
+---
+
 
 ## Important Rules
 

@@ -674,6 +674,8 @@ def dispatch_tests(parts: list[str]) -> dict:
         return {"flow": "create", "task_code": "", "remaining_args": " ".join(rest)}
     elif first == "continue":
         return {"flow": "continue", "task_code": "", "remaining_args": " ".join(rest)}
+    elif first == "coverage":
+        return {"flow": "coverage", "task_code": "", "remaining_args": " ".join(rest)}
     else:
         # Treat unknown args as target for scout
         return {"flow": "scout", "task_code": "", "remaining_args": " ".join(parts)}

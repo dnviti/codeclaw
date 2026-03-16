@@ -1303,6 +1303,43 @@ def cmd_full_context(args):
     print(json.dumps(output, indent=2))
 
 
+# ── Subcommand: coverage-gate ───────────────────────────────────────────────
+
+def cmd_coverage_gate(args):
+    """Run coverage threshold check as a release gate.
+
+    Imports from the coverage analyzer to take a snapshot and evaluate
+    against the configured minimum threshold.  Designed to be invoked
+    during Stage 6 (Integration Tests) of the release pipeline.
+    """
+    root = get_main_repo_root()
+
+    # Lazy import to avoid circular dependency at module level
+    scripts_dir = Path(__file__).resolve().parent
+    if str(scripts_dir) not in sys.path:
+        sys.path.insert(0, str(scripts_dir))
+
+    from analyzers.coverage import (  # noqa: E402
+        take_snapshot,
+        check_threshold,
+        read_manifest,
+    )
+
+    min_cov = getattr(args, "min_coverage", 0.0)
+
+    # Take a fresh snapshot (also persists it)
+    manifest = take_snapshot(root)
+    result = check_threshold(manifest, min_cov)
+
+    # Augment with release-gate framing
+    result["gate"] = "coverage"
+    result["gate_status"] = "passed" if result["passed"] else "failed"
+
+    print(json.dumps(result, indent=2))
+    if not result["passed"]:
+        sys.exit(1)
+
+
 # ── CLI Setup ───────────────────────────────────────────────────────────────
 
 def build_parser() -> argparse.ArgumentParser:
@@ -1415,6 +1452,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--tag-prefix", default="auto",
                     help="Git tag prefix (default: auto-detect from CLAUDE.md or existing tags)")
     p.set_defaults(func=cmd_full_context)
+
+    # coverage-gate
+    p = sub.add_parser("coverage-gate",
+                        help="Run coverage threshold check as a release gate")
+    p.add_argument("--min-coverage", type=float, default=0.0,
+                    help="Minimum coverage percentage to pass (default: 0)")
+    p.set_defaults(func=cmd_coverage_gate)
 
     return parser
 

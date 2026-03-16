@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Test manager for the CTDF /tests skill.
 
-Provides test discovery, gap analysis, suggestion, and execution.
+Provides test discovery, gap analysis, suggestion, execution, and
+persistent coverage tracking with regression detection.
 All output is JSON. Zero external dependencies — stdlib only.
 
 Usage:
@@ -9,6 +10,10 @@ Usage:
     python3 test_manager.py analyze-gaps --root /path/to/project [--target file]
     python3 test_manager.py suggest --root /path/to/project
     python3 test_manager.py run --root /path/to/project [--target file]
+    python3 test_manager.py coverage snapshot --root /path/to/project
+    python3 test_manager.py coverage compare --root /path/to/project [--old FILE --new FILE]
+    python3 test_manager.py coverage report --root /path/to/project
+    python3 test_manager.py coverage threshold-check --root /path/to/project [--min-coverage N]
 """
 
 import argparse
@@ -35,6 +40,15 @@ from analyzers.quality import (
     TEST_FILE_PATTERNS,
     FUNCTION_PATTERNS,
     analyze_test_coverage,
+)
+from analyzers.coverage import (
+    take_snapshot,
+    compare_snapshots,
+    generate_report as generate_coverage_report,
+    check_threshold,
+    list_snapshots,
+    load_snapshot,
+    read_manifest as read_coverage_manifest,
 )
 
 # ── Constants ───────────────────────────────────────────────────────────────
@@ -444,6 +458,65 @@ def cmd_run(args) -> dict:
         }
 
 
+# ── Subcommand: coverage ─────────────────────────────────────────────────────
+
+def cmd_coverage(args) -> dict:
+    """Dispatch coverage sub-commands: snapshot, compare, report, threshold-check."""
+    root = Path(args.root).resolve()
+    sub = args.coverage_command
+
+    if sub == "snapshot":
+        return take_snapshot(root)
+
+    elif sub == "compare":
+        old_file = getattr(args, "old", None)
+        new_file = getattr(args, "new", None)
+
+        if old_file and new_file:
+            old_data = load_snapshot(root, old_file)
+            new_data = load_snapshot(root, new_file)
+        else:
+            # Compare current manifest against latest timestamped snapshot
+            snapshots = list_snapshots(root)
+            if len(snapshots) < 2:
+                # Not enough history — take a fresh snapshot and compare
+                # against the existing manifest
+                current_manifest = read_coverage_manifest(root)
+                if not current_manifest:
+                    return {
+                        "error": "No previous snapshot found. "
+                                 "Run 'coverage snapshot' first."
+                    }
+                new_data = take_snapshot(root)
+                old_data = current_manifest
+            else:
+                new_data = load_snapshot(root, snapshots[0]["file"])
+                old_data = load_snapshot(root, snapshots[1]["file"])
+
+        if not old_data or not new_data:
+            return {"error": "Could not load one or both snapshots."}
+
+        return compare_snapshots(old_data, new_data)
+
+    elif sub == "report":
+        manifest = read_coverage_manifest(root)
+        if not manifest:
+            return {"error": "No coverage manifest. Run 'coverage snapshot' first."}
+        return {"report": generate_coverage_report(manifest)}
+
+    elif sub == "threshold-check":
+        min_cov = getattr(args, "min_coverage", 0.0)
+        manifest = read_coverage_manifest(root)
+        if not manifest:
+            # Take a fresh snapshot
+            manifest = take_snapshot(root)
+        return check_threshold(manifest, min_cov)
+
+    elif sub == "list-snapshots":
+        return {"snapshots": list_snapshots(root)}
+
+    else:
+        return {"error": f"Unknown coverage sub-command: {sub}"}
 # ── CLI Entrypoint ──────────────────────────────────────────────────────────
 
 def output_json(data: dict) -> None:
@@ -476,9 +549,38 @@ def main():
     p_run.add_argument("--root", default=".", help="Project root directory")
     p_run.add_argument("--target", default=None, help="Specific test file or pattern to run")
 
+    # coverage (with sub-commands)
+    # Note: --root is added to each sub-sub-parser so argparse handles it
+    p_cov = sub.add_parser("coverage", help="Persistent coverage tracking")
+    p_cov_sub = p_cov.add_subparsers(dest="coverage_command")
+
+    p_snap = p_cov_sub.add_parser("snapshot", help="Capture current coverage state")
+    p_snap.add_argument("--root", default=".", help="Project root directory")
+
+    p_cmp = p_cov_sub.add_parser("compare", help="Diff two snapshots for regressions")
+    p_cmp.add_argument("--root", default=".", help="Project root directory")
+    p_cmp.add_argument("--old", default=None, help="Older snapshot filename")
+    p_cmp.add_argument("--new", default=None, help="Newer snapshot filename")
+
+    p_rpt = p_cov_sub.add_parser("report", help="Generate human-readable coverage report")
+    p_rpt.add_argument("--root", default=".", help="Project root directory")
+
+    p_thr = p_cov_sub.add_parser("threshold-check", help="Pass/fail against minimum coverage")
+    p_thr.add_argument("--root", default=".", help="Project root directory")
+    p_thr.add_argument("--min-coverage", type=float, default=0.0,
+                        help="Minimum coverage percentage (default: 0)")
+
+    p_ls = p_cov_sub.add_parser("list-snapshots", help="List available coverage snapshots")
+    p_ls.add_argument("--root", default=".", help="Project root directory")
+
     args = parser.parse_args()
     if not args.command:
         parser.print_help()
+        sys.exit(1)
+
+    # coverage requires a sub-command
+    if args.command == "coverage" and not getattr(args, "coverage_command", None):
+        p_cov.print_help()
         sys.exit(1)
 
     handlers = {
@@ -486,6 +588,7 @@ def main():
         "analyze-gaps": cmd_analyze_gaps,
         "suggest": cmd_suggest,
         "run": cmd_run,
+        "coverage": cmd_coverage,
     }
 
     handler = handlers.get(args.command)
