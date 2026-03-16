@@ -98,10 +98,23 @@ Based on mode:
 - **Platform-only:** Search via `platform-cmd search-issues`. Check dependency status via labels.
 - **Local/dual:** Verify task exists in `to-do.txt` with `[ ]` status. Check dependencies are in `done.txt` as `[x]`.
 
+**Release check (after task selection, before proceeding):**
+
+Once the task is identified, verify it has a release/milestone assigned:
+- **Platform-only:** Check for a `release:vX.Y.Z` label or milestone on the issue.
+- **Local/dual:** Check for a `Release:` field in the task block.
+
+If the task has **no release assigned**:
+1. Run `RM release-plan-list` to get available releases.
+2. **Yolo mode:** Auto-assign to the current active release (from `RM release-state-get`). If no active release, use the next upcoming release. Log the auto-selection and proceed.
+3. **Normal mode:** Warn: "Task {CODE} has no release assigned. Every task must be tied to a release milestone." Present a GATE via `AskUserQuestion`: **"Assign to vX.Y.Z (recommended)"** | **"Assign to different release"** | **"Cancel"**. STOP until user responds.
+4. Apply the assignment: `TM set-release`, `RM release-plan-add-task`, platform: add label + milestone.
+5. If no releases exist at all, proceed without assignment (but warn).
+
 #### Step 2: Mark task as in-progress
 
 1. **Local/dual:** `TM move TASK-CODE --to progressing` — verify `"success": true`. If task appears in recommended order section of `to-do.txt`, update annotation to `[IN PROGRESS]`.
-2. **Platform-only/dual sync:** Update labels (remove `status:todo`, add `status:in-progress`) and comment with branch name via `platform-cmd edit-issue` and `platform-cmd comment-issue`.
+2. **Platform-only/dual sync:** Update labels (remove `status:todo`, add `status:in-progress`) and comment with branch name via `platform-cmd edit-issue` and `platform-cmd comment-issue`. Also auto-assign: `PM edit-issue number=ISSUE_NUM add-assignee="@me"`.
 3. **Local only:** Skip platform sync.
 
 #### Step 2.5: Create task worktree
@@ -193,15 +206,20 @@ Inform: "Worktree removed. Branch preserved for PR. Use `/task continue [TASK-CO
 
 Use `AskUserQuestion`: **"Yes, commit"** | **"No, skip commit"**
 
-**6e. Ask to create PR (TESTS PASSED ONLY):**
+**6e. Ask to create PR (always offered):**
 
-Only when user chose "Yes, task is done (tests passed)" in 6b.
+Always offer PR creation after task completion, regardless of whether testing passed or was skipped.
 
-Use `AskUserQuestion`: **"Yes, create PR into <DEVELOPMENT_BRANCH>"** | **"No, stay on task branch"**
+**Yolo mode:** Auto-create the PR without asking. Log the auto-selection.
 
-**PR creation:** Push with `-u`, check existing PR via `platform-cmd list-pr` (skip if exists). Build PR: title, summary, issue ref (platform modes). Create via `platform-cmd create-pr`. Report URL.
+**Normal mode:** Use `AskUserQuestion`: **"Yes, create PR into <DEVELOPMENT_BRANCH>"** | **"No, stay on task branch"**
 
-**If testing was skipped:** Do NOT offer PR. Inform: "Branch NOT submitted as PR. Run `/release test-only [TASK-CODE]` to complete testing."
+**PR creation:** Push with `-u`, check existing PR via `platform-cmd list-pr` (skip if exists). Build PR: title, summary, issue ref (platform modes). Include `milestone` parameter from the task's release assignment. Create via `platform-cmd create-pr` with `assignee="@me"`. Report URL.
+
+**When testing was skipped:** Still create the PR, but:
+- Add a `needs-testing` label to the PR
+- Prepend a note in the PR body: "**Warning:** Testing was skipped for this task. Manual testing is required before merge."
+- Inform: "PR created with `needs-testing` label. Run `/release test-only [TASK-CODE]` to complete testing before merge."
 
 ---
 
@@ -257,17 +275,21 @@ For each batch, spawn Agent subagents with `isolation: "worktree"` and `mode: "b
 prompt: "You are a task implementation agent. Implement task {CODE} for release {VERSION}.
 
 1. Mark task as in-progress: `TM move {CODE} --to progressing`
-2. Create worktree: `SH setup-task-worktree --task-code {CODE} --base-branch {DEVELOPMENT_BRANCH}`
-3. Read full task details: `TM parse {CODE}`
-4. Explore the codebase: read all files listed in Files involved and related code
-5. Implement the task according to DESCRIPTION and TECHNICAL DETAILS
-6. Create/modify files as specified in Files involved
-7. Run {VERIFY_COMMAND} — on failure, fix and retry (max 3 attempts)
-8. Commit: `git add <changed files> && git commit -m 'feat: {description} ({CODE})'`
-9. Mark task as done: `TM move {CODE} --to done --completed-summary 'Implemented: {title}'`
-10. Remove worktree: `TM remove-worktree --task-code {CODE}`
+2. Auto-assign (platform-only/dual): `PM edit-issue number=ISSUE_NUM add-assignee="@me"`
+3. Create worktree: `SH setup-task-worktree --task-code {CODE} --base-branch {DEVELOPMENT_BRANCH}`
+4. Read full task details: `TM parse {CODE}`
+5. Explore the codebase: read all files listed in Files involved and related code
+6. Implement the task according to DESCRIPTION and TECHNICAL DETAILS
+7. Create/modify files as specified in Files involved
+8. Run {VERIFY_COMMAND} — on failure, fix and retry (max 3 attempts)
+9. Commit: `git add <changed files> && git commit -m 'feat: {description} ({CODE})'`
+10. Push branch: `git push -u origin task/{CODE}`
+11. Create PR: `PM create-pr title='feat: {description} ({CODE})' head='task/{CODE}' base='{DEVELOPMENT_BRANCH}' body='Implements {CODE} for release {VERSION}' milestone='{VERSION}' assignee='@me'`
+    - If verify command failed or was skipped, append to body: '**Note:** Testing was skipped or incomplete. Needs manual testing.' and add label `needs-testing`.
+12. Mark task as done: `TM move {CODE} --to done --completed-summary 'Implemented: {title}'`
+13. Remove worktree: `TM remove-worktree --task-code {CODE}`
 
-Report: {{ code, success, summary, files_changed[], error_if_any }}"
+Report: {{ code, success, summary, files_changed[], pr_url, error_if_any }}"
 ```
 
 Wait for **all agents in the current batch** to complete before proceeding to the next batch.
@@ -362,17 +384,28 @@ STOP.
 
 #### Step 8.5: Sync to Platform
 
-- **Platform-only:** Read label mappings, create issue via `platform-cmd create-issue`. On failure, hard fail.
-- **Dual sync:** Create platform issue as above, extract issue number, add `GitHub: #NNN` to task block via `Edit`. On platform failure, warn but keep local task.
+- **Platform-only:** Read label mappings, create issue via `platform-cmd create-issue` with `assignee="@me"`. On failure, hard fail.
+- **Dual sync:** Create platform issue as above (with `assignee="@me"`), extract issue number, add `GitHub: #NNN` to task block via `Edit`. On platform failure, warn but keep local task.
 - **Local only:** Skip.
 
 #### Step 9.5: Release Assignment
 
 1. `RM release-plan-list`
-2. If no releases, skip.
-3. If releases exist, suggest assignment based on description vs release themes.
-4. `AskUserQuestion`: **"Yes, assign to vX.Y.Z"** | **"Assign to different release"** | **"Create new release"** | **"Skip"**
-5. If assigned: `task_manager.py set-release`, `release_manager.py release-plan-add-task`, platform: add label + milestone.
+2. If **no releases exist at all**, skip this step entirely.
+3. **Determine the default "next version":**
+   1. List all releases from the release-plan-list output.
+   2. Filter to only open/planned releases (exclude status "released").
+   3. Sort by semver ascending.
+   4. Skip any with status "in-progress" — the first remaining release with status "planned" is the **next version**.
+   5. If no "planned" releases remain, fall back to the active "in-progress" release.
+   6. **Platform-only:** Query milestones via GitHub API (`gh api repos/{owner}/{repo}/milestones --jq '.[] | select(.state=="open")'`), sort by semver ascending, and select the next open milestone as the default.
+4. **Yolo mode:** Auto-assign to the next version without prompting. Log: "Auto-assigned to vX.Y.Z (next release)." Skip the GATE. Proceed to step 6.
+5. **Normal mode:** `AskUserQuestion` with the next version as the recommended first option:
+   - **"Yes, assign to vX.Y.Z (next release)"** *(default/recommended)*
+   - **"Assign to different release"**
+   - **"Create new release"**
+   - Note: "Skip" is **NOT** offered when releases exist — every task must be tied to a release milestone.
+6. If assigned: `TM set-release`, `RM release-plan-add-task`, platform: add label + milestone.
 
 #### Step 10: Confirm and Report
 
@@ -475,6 +508,8 @@ SH setup-task-worktree --task-code <CODE> --base-branch <DEVELOPMENT_BRANCH>
 ```
 
 If `reused_existing`: "Entering existing worktree." If `created`: "Created fresh worktree from existing branch." If fails: suggest `/task pick <TASK-CODE>`. All subsequent steps operate within the worktree.
+
+**Auto-assign (platform-only/dual sync):** `PM edit-issue number=ISSUE_NUM add-assignee="@me"` to track collaboration.
 
 #### Step 2: Read the Full Task Block
 
@@ -624,6 +659,6 @@ Suggest: "Start the release with `/release continue X.X.X`" or "Schedule more ta
 7. **Follow exact formatting** — local: 78-dash separators, same indentation/field order. Platform: markdown format.
 8. **Platform-only: NEVER modify local task files** — all operations via platform issues.
 9. **Create Flow (local/dual): NEVER modify `progressing.txt` or `done.txt`** — only append to `to-do.txt`.
-10. **Always ask** — never auto-commit, auto-close, or auto-create PRs.
+10. **Always ask** — never auto-commit, auto-close, or auto-create PRs (except in yolo mode, where auto-selection of recommended options is permitted as defined in Argument Dispatch).
 11. **Quality gate must pass** before closing any task.
 12. **Status Flow is read-only** — do NOT modify any files.

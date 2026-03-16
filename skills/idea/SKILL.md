@@ -89,8 +89,8 @@ Formatting: 78-dash separators, em dash `—` in title, 2-space indent, end with
 **Step 6 — Duplicate check** per Skill Context.
 
 **Step 7 — Create:**
-- **(platform)** `PM create-issue title="[IDEA-PREFIX-XXXX] Title" body="$BODY" labels="claude-code,idea"`.
-- **(dual)** Append block to `ideas.txt` via `Edit`, then create platform issue. Write `GitHub: #NNN` to the block after `Date:`. If platform fails, warn but do NOT fail.
+- **(platform)** `PM create-issue title="[IDEA-PREFIX-XXXX] Title" body="$BODY" labels="claude-code,idea" assignee="@me"`.
+- **(dual)** Append block to `ideas.txt` via `Edit`, then create platform issue with `assignee="@me"`. Write `GitHub: #NNN` to the block after `Date:`. If platform fails, warn but do NOT fail.
 - **(local)** Append block to `ideas.txt` via `Edit`.
 
 **Step 8 — Report:** Confirm with code, category, date, platform issue link (if created). Suggest `/idea approve` or `/idea disapprove`.
@@ -156,8 +156,8 @@ Formatting: 78-dash separators, `[ ]` status prefix, em dash `—`, 2-space inde
   - **8b.** Remove idea: `TM remove IDEA-PREFIX-XXXX --file ideas.txt`
 
 **Step 8.5 — Platform Sync (platform-only and dual-sync):**
-1. **Close idea issue:** Find via `PM search-issues` with idea label and code. Close with comment: "Approved and promoted to task [PREFIX-XXXX]." Use `PM close-issue` and `PM comment-issue`.
-2. **Create task issue:** `PM create-issue` with title, body, and labels `claude-code,task,$PRIORITY_LABEL,status:todo,$SECTION_LABEL`. Read label mappings from `.claude/issues-tracker.json`.
+1. **Close idea issue:** Find via `PM search-issues` with idea label and code. Close with comment: "Approved and promoted to task [PREFIX-XXXX]." Use `PM close-issue` and `PM comment-issue`. Also auto-assign: `PM edit-issue number=IDEA_ISSUE_NUM add-assignee="@me"`.
+2. **Create task issue:** `PM create-issue` with title, body, labels `claude-code,task,$PRIORITY_LABEL,status:todo,$SECTION_LABEL`, and `assignee="@me"`. Read label mappings from `.claude/issues-tracker.json`.
 3. **Cross-reference:** Comment on idea issue with task issue number.
 - **(dual extra)** Write `GitHub: #NNN` to the task block in `to-do.txt`.
 
@@ -166,9 +166,20 @@ If any platform command fails: warn but do NOT fail.
 **Step 9 — Release Assignment:**
 1. Run: `RM release-plan-list`
 2. If no `releases.json` or no planned releases, skip.
-3. If releases exist, suggest assignment based on task description vs release themes.
-4. Ask: "Yes, assign to vX.Y.Z" | "Assign to a different release" | "Create a new release" | "Skip". STOP.
-5. If assigned: `TM set-release TASK-CODE --version X.Y.Z` and `RM release-plan-add-task --version X.Y.Z --task TASK-CODE`. In platform modes, also add `release:vX.Y.Z` label and milestone.
+3. **Determine the default "next version":**
+   1. List all releases from the release-plan-list output.
+   2. Filter to only open/planned releases (exclude status "released").
+   3. Sort by semver ascending.
+   4. Skip any with status "in-progress" — the first remaining release with status "planned" is the **next version**.
+   5. If no "planned" releases remain, fall back to the active "in-progress" release.
+   6. **Platform-only:** Query milestones via GitHub API (`gh api repos/{owner}/{repo}/milestones --jq '.[] | select(.state=="open")'`), sort by semver ascending, and select the next open milestone as the default.
+4. **Yolo mode:** Auto-assign to the next version without prompting. Log: "Auto-assigned to vX.Y.Z (next release)." Proceed to step 6.
+5. **Normal mode:** Ask with the next version as the recommended first option:
+   - **"Yes, assign to vX.Y.Z (next release)"** *(default/recommended)*
+   - **"Assign to a different release"**
+   - **"Create a new release"**
+   STOP.
+6. If assigned: `TM set-release TASK-CODE --version X.Y.Z` and `RM release-plan-add-task --version X.Y.Z --task TASK-CODE`. In platform modes, also add `release:vX.Y.Z` label and milestone.
 
 **Step 10 — Report:** Confirm with task code, priority, dependencies, section, file counts. Mode-specific message about where task was created. Suggest `/task pick PREFIX-XXXX`.
 
@@ -280,9 +291,9 @@ Fetch current state per Skill Context (ideas AND tasks by all statuses). Read CL
 **Step 5 — Add worthy ideas** (1-5 max, quality over quantity):
 - **5.0 — Duplicate check** per Skill Context. If matches, skip idea.
 - **Then add:**
-  - **(platform)** `PM create-issue` with title `[IDEA-PREFIX-XXXX] Title`, labels `claude-code,idea`, body with Description and Motivation sections.
+  - **(platform)** `PM create-issue` with title `[IDEA-PREFIX-XXXX] Title`, labels `claude-code,idea`, `assignee="@me"`, body with Description and Motivation sections.
   - **(local)** Append block to `ideas.txt` (same format as Create Flow Step 4).
-  - **(dual)** Write to `ideas.txt` first, then create platform issue.
+  - **(dual)** Write to `ideas.txt` first, then create platform issue with `assignee="@me"`.
 
 ### Scout Output
 

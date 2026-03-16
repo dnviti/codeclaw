@@ -459,6 +459,14 @@ Present:
 
 **9a.** Mark released: `RM release-plan-mark-released --version X.X.X`
 
+**9a-bis.** Platform milestone close (if `CTX.platform.enabled`):
+
+GATE: "Yes, close milestone vX.X.X (recommended)" / "Keep milestone open" / "Abort cleanup".
+
+In yolo mode, auto-select "Yes, close milestone vX.X.X".
+
+If "Yes": execute `PM close-milestone title="vX.X.X"`. On failure, warn but continue — local release state is source of truth.
+
 **9b. GATE:** "Delete release branch" (`git branch -d release/X.X.X && git push origin --delete release/X.X.X`) / "Keep release branch" / "Abort cleanup".
 
 **9c.** Clear state: `RM release-state-clear`
@@ -517,7 +525,13 @@ GATE: "Force close anyway (pending tasks will NOT be included)" / "Cancel (imple
 RM release-plan-mark-released --version X.X.X
 ```
 
-**5.** Platform milestone close (if `CTX.platform.enabled`): close milestone via `PM close-milestone --title "vX.X.X"`. If fails, warn.
+**5.** Platform milestone close (if `CTX.platform.enabled`):
+
+GATE: "Yes, close milestone vX.X.X (recommended)" / "Keep milestone open" / "Skip".
+
+In yolo mode, auto-select "Yes, close milestone vX.X.X".
+
+If "Yes": execute `PM close-milestone title="vX.X.X"`. On failure, warn but continue.
 
 **6.** Clean up release state (if exists for this version):
 ```bash
