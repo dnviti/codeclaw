@@ -20,11 +20,22 @@ You are a task manager for this project. Manage the full task lifecycle: picking
 
 ## Skill Context
 
-`SH context` → platform config, worktree state, branch config, release config as JSON. Use throughout.
+`SH context` → platform config, worktree state (including `submodules` list), branch config, release config as JSON. Use throughout.
 
 `PM <operation> [key=value ...]` — operations: `list-issues`, `search-issues`, `view-issue`, `edit-issue`, `close-issue`, `comment-issue`, `create-issue`, `create-pr`, `list-pr`, `merge-pr`, `create-release`, `edit-release`.
 
 Task files (`to-do.txt`, `progressing.txt`, `done.txt`) always live in `main_root`. Source code lives in the worktree directory.
+
+### Submodule Awareness
+
+When `SH context` returns `worktree.submodules` with one or more entries, the project uses git submodules. Before creating a worktree or exploring the codebase:
+
+1. Run `SH list-submodules` to get available submodules
+2. Present an `AskUserQuestion` with options: each submodule name + "Root repository (parent)"
+3. If a submodule is selected, all codebase exploration and implementation operates within `<worktree_dir>/<submodule_path>` — never on the parent repo directly
+4. After task completion (Step 6), if a submodule was selected: `git add <submodule_path> && git commit -m "chore: update submodule <name> pointer"` in the parent repo to align the submodule reference
+
+Submodules are automatically initialized (`git submodule update --init --recursive`) when worktrees are created.
 
 ## Argument Dispatch
 

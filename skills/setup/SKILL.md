@@ -21,6 +21,13 @@ Always respond and work in English.
 | `SH`  | `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/skill_helper.py` |
 | `PM`  | `TM platform-cmd` |
 
+### Submodule Awareness
+
+When `SH context` returns `worktree.submodules` with entries, the project uses git submodules. The setup skill should:
+- Detect and report submodules during project analysis (`SH list-submodules`)
+- Allow the user to choose which submodule to configure if running `/setup env` on a submodule project
+- Apply CLAUDE.md and branch configuration to the selected submodule's repository context
+
 ## Arguments
 
 The user invoked with: **$ARGUMENTS**

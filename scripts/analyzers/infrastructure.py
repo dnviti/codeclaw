@@ -14,6 +14,7 @@ from . import (
     detect_ecosystems,
     detect_frameworks,
     detect_languages,
+    detect_submodule_paths,
     find_package_jsons,
     load_gitignore_patterns,
     make_table,
@@ -71,6 +72,37 @@ def extract_scripts(root: Path) -> dict[str, dict[str, str]]:
         if data.get("scripts"):
             rel = str(pkg_path.relative_to(root))
             results[rel] = data["scripts"]
+    return results
+
+
+# ── Git Submodule Detection ─────────────────────────────────────────────────
+
+def detect_submodules(root: Path) -> list[dict]:
+    """Detect git submodules and their configuration."""
+    import configparser as _cp
+    gitmodules = root / ".gitmodules"
+    if not gitmodules.exists():
+        return []
+    cfg = _cp.ConfigParser()
+    try:
+        cfg.read(str(gitmodules), encoding="utf-8")
+    except (_cp.Error, OSError):
+        return []
+    results = []
+    for section in cfg.sections():
+        name_match = re.match(r'^submodule\s+"(.+)"$', section)
+        name = name_match.group(1) if name_match else section
+        path = cfg.get(section, "path", fallback="")
+        url = cfg.get(section, "url", fallback="")
+        branch = cfg.get(section, "branch", fallback="")
+        initialized = (root / path / ".git").exists() if path else False
+        results.append({
+            "name": name,
+            "path": path,
+            "url": url,
+            "branch": branch or "(default)",
+            "initialized": initialized,
+        })
     return results
 
 
@@ -485,6 +517,16 @@ def generate_report(root: Path, gitignore_patterns: list[str] | None = None) -> 
     sections = []
     sections.append("# Infrastructure & Architecture Report\n")
     sections.append(f"> Auto-generated static analysis for `{root.name}`\n")
+
+    # Git Submodules
+    submodules = detect_submodules(root)
+    if submodules:
+        sections.append("## Git Submodules\n")
+        sections.append(make_table(
+            ["Name", "Path", "URL", "Branch", "Initialized"],
+            [[s["name"], s["path"], s["url"], s["branch"],
+              "Yes" if s["initialized"] else "No"] for s in submodules],
+        ))
 
     # Languages
     languages = detect_languages(root, gitignore_patterns)
