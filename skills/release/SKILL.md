@@ -357,17 +357,21 @@ RM parse-commits --since "<CTX.tags.latest>" | RM generate-changelog --version "
 
 **7d.** Version Bump Gate:
 
-1. Discover version-bearing files: use `CTX.config.package_paths` if set. Otherwise auto-discover all `package.json` outside `node_modules/`, plus any `pyproject.toml`, `setup.cfg`, `Cargo.toml`, `pom.xml`, or `build.gradle` present in the repository.
+1. Run the automated version bump command:
+```bash
+RM update-versions --version "X.X.X" --package-paths "<CTX.config.package_paths>"
+```
+Omit `--package-paths` if `CTX.config.package_paths` is empty — the command will auto-discover all `package.json` (outside `node_modules/`), `pyproject.toml`, `setup.cfg`, `Cargo.toml`, `pom.xml`, and `build.gradle` in the repository.
 
-2. For each file, read the current version string. If it still matches the previous release tag value (`CTX.tags.latest` stripped of prefix), update it to `X.X.X`.
-
-3. Present a confirmation table:
+2. Parse the JSON output. Present a confirmation table from the `updated` array, and list any `skipped` entries with reasons:
 
    | File | Old Version | New Version |
    |------|-------------|-------------|
    | path/to/manifest | (previous) | X.X.X |
 
-4. GATE: "Confirm version bump and proceed to commit" / "Edit manually" / "Abort release".
+   Inform the user which files were updated and where.
+
+3. GATE: "Confirm version bump and proceed to commit" / "Edit manually" / "Abort release".
 
 **7e.** Commit and tag:
 ```bash

@@ -168,6 +168,164 @@ MANIFEST_READERS = [
 ]
 
 
+# ── Version Writers ────────────────────────────────────────────────────────
+
+def write_version_to_package_json(filepath: Path, new_version: str) -> bool:
+    """Update version in package.json, preserving formatting."""
+    try:
+        content = filepath.read_text(encoding="utf-8")
+        data = json.loads(content)
+        data["version"] = new_version
+        # Detect indent from original file
+        indent = 2
+        for line in content.splitlines()[1:]:
+            stripped = line.lstrip()
+            if stripped:
+                indent = len(line) - len(stripped)
+                break
+        filepath.write_text(
+            json.dumps(data, indent=indent, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+        return True
+    except (json.JSONDecodeError, FileNotFoundError, OSError):
+        return False
+
+
+def write_version_to_pyproject(filepath: Path, new_version: str) -> bool:
+    """Update version in pyproject.toml via regex replacement."""
+    try:
+        content = filepath.read_text(encoding="utf-8")
+        new_content = re.sub(
+            r'(version\s*=\s*")[^"]+(")',
+            rf"\g<1>{new_version}\2",
+            content,
+            count=1,
+        )
+        if new_content == content:
+            return False
+        filepath.write_text(new_content, encoding="utf-8")
+        return True
+    except (FileNotFoundError, OSError):
+        return False
+
+
+def write_version_to_cargo(filepath: Path, new_version: str) -> bool:
+    """Update version in Cargo.toml [package] section."""
+    try:
+        content = filepath.read_text(encoding="utf-8")
+        lines = content.splitlines(keepends=True)
+        in_package = False
+        for i, line in enumerate(lines):
+            if line.strip() == "[package]":
+                in_package = True
+                continue
+            if in_package and line.strip().startswith("["):
+                break
+            if in_package and re.match(r'version\s*=\s*"[^"]+"', line.strip()):
+                lines[i] = re.sub(
+                    r'(version\s*=\s*")[^"]+(")',
+                    rf"\g<1>{new_version}\2",
+                    line,
+                )
+                filepath.write_text("".join(lines), encoding="utf-8")
+                return True
+    except (FileNotFoundError, OSError):
+        pass
+    return False
+
+
+def write_version_to_setup_py(filepath: Path, new_version: str) -> bool:
+    """Update version in setup.py."""
+    try:
+        content = filepath.read_text(encoding="utf-8")
+        new_content = re.sub(
+            r"""(version\s*=\s*['"])[^'"]+(['"])""",
+            rf"\g<1>{new_version}\2",
+            content,
+            count=1,
+        )
+        if new_content == content:
+            return False
+        filepath.write_text(new_content, encoding="utf-8")
+        return True
+    except (FileNotFoundError, OSError):
+        return False
+
+
+def write_version_to_setup_cfg(filepath: Path, new_version: str) -> bool:
+    """Update version in setup.cfg [metadata] section."""
+    try:
+        content = filepath.read_text(encoding="utf-8")
+        new_content = re.sub(
+            r"(version\s*=\s*)\S+",
+            rf"\g<1>{new_version}",
+            content,
+            count=1,
+        )
+        if new_content == content:
+            return False
+        filepath.write_text(new_content, encoding="utf-8")
+        return True
+    except (FileNotFoundError, OSError):
+        return False
+
+
+def write_version_to_pom_xml(filepath: Path, new_version: str) -> bool:
+    """Update top-level <version> in pom.xml."""
+    try:
+        content = filepath.read_text(encoding="utf-8")
+        # Match first <version> that is a direct child of <project>
+        # (before any <dependencies>, <build>, <parent> sections)
+        new_content = re.sub(
+            r"(<version>)[^<]+(</version>)",
+            rf"\g<1>{new_version}\2",
+            content,
+            count=1,
+        )
+        if new_content == content:
+            return False
+        filepath.write_text(new_content, encoding="utf-8")
+        return True
+    except (FileNotFoundError, OSError):
+        return False
+
+
+def write_version_to_build_gradle(filepath: Path, new_version: str) -> bool:
+    """Update version in build.gradle."""
+    try:
+        content = filepath.read_text(encoding="utf-8")
+        new_content = re.sub(
+            r"""(version\s*=\s*['"])[^'"]+(['"])""",
+            rf"\g<1>{new_version}\2",
+            content,
+            count=1,
+        )
+        if new_content == content:
+            return False
+        filepath.write_text(new_content, encoding="utf-8")
+        return True
+    except (FileNotFoundError, OSError):
+        return False
+
+
+MANIFEST_WRITERS = {
+    "package.json": write_version_to_package_json,
+    "pyproject.toml": write_version_to_pyproject,
+    "Cargo.toml": write_version_to_cargo,
+    "setup.py": write_version_to_setup_py,
+    "setup.cfg": write_version_to_setup_cfg,
+    "pom.xml": write_version_to_pom_xml,
+    "build.gradle": write_version_to_build_gradle,
+}
+
+# Filenames to auto-discover when no explicit package_paths configured
+AUTO_DISCOVER_MANIFESTS = [
+    "package.json", "pyproject.toml", "setup.cfg",
+    "Cargo.toml", "pom.xml", "build.gradle",
+]
+
+
 def get_latest_tag(tag_prefix: str) -> str | None:
     """Get the latest git tag matching the prefix."""
     try:
@@ -299,6 +457,87 @@ def cmd_current_version(args):
         "tag_prefix": tag_prefix,
     }
     print(json.dumps(result, indent=2))
+
+
+# ── Subcommand: update-versions ───────────────────────────────────────────
+
+def _discover_manifests(root: Path, package_paths: str | None) -> list[Path]:
+    """Return list of manifest file paths to update."""
+    if package_paths and package_paths.strip():
+        return [root / p.strip() for p in package_paths.split() if p.strip()]
+    # Auto-discover
+    found = []
+    for name in AUTO_DISCOVER_MANIFESTS:
+        if name == "package.json":
+            # Find all package.json excluding node_modules
+            for pj in root.rglob("package.json"):
+                if "node_modules" not in pj.parts:
+                    found.append(pj)
+        else:
+            candidate = root / name
+            if candidate.exists():
+                found.append(candidate)
+    return found
+
+
+def cmd_update_versions(args):
+    """Discover manifests, read old versions, write new version, report."""
+    root = find_project_root()
+    new_version = args.version
+    package_paths = getattr(args, "package_paths", None)
+
+    manifests = _discover_manifests(root, package_paths)
+
+    updated = []
+    skipped = []
+
+    for filepath in manifests:
+        filename = filepath.name
+        if not filepath.exists():
+            skipped.append({"file": str(filepath.relative_to(root)), "reason": "file not found"})
+            continue
+
+        # Read current version
+        reader = dict(MANIFEST_READERS).get(filename)
+        if not reader and filepath.suffix == ".json":
+            reader = read_version_from_package_json
+        if reader:
+            old_version = reader(filepath)
+        else:
+            old_version = None
+
+        # Get writer — fall back to JSON writer for any .json file
+        writer = MANIFEST_WRITERS.get(filename)
+        if not writer and filepath.suffix == ".json":
+            writer = write_version_to_package_json
+        if not writer:
+            skipped.append({
+                "file": str(filepath.relative_to(root)),
+                "reason": f"no writer for {filename}",
+            })
+            continue
+
+        if old_version == new_version:
+            skipped.append({
+                "file": str(filepath.relative_to(root)),
+                "reason": "already at target version",
+            })
+            continue
+
+        success = writer(filepath, new_version)
+        if success:
+            updated.append({
+                "file": str(filepath.relative_to(root)),
+                "old_version": old_version or "unknown",
+                "new_version": new_version,
+            })
+        else:
+            skipped.append({
+                "file": str(filepath.relative_to(root)),
+                "reason": "write failed or no version field found",
+            })
+
+    print(json.dumps({"updated": updated, "skipped": skipped}, indent=2))
 
 
 # ── Subcommand: parse-commits ──────────────────────────────────────────────
@@ -1352,6 +1591,13 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("current-version", help="Detect version from manifest files")
     p.add_argument("--tag-prefix", default="v", help="Git tag prefix (default: v)")
     p.set_defaults(func=cmd_current_version)
+
+    # update-versions
+    p = sub.add_parser("update-versions", help="Bump version in all manifest files")
+    p.add_argument("--version", required=True, help="New version to set (e.g., 1.2.3)")
+    p.add_argument("--package-paths", default=None,
+                    help="Space-separated manifest paths (uses auto-discovery if omitted)")
+    p.set_defaults(func=cmd_update_versions)
 
     # parse-commits
     p = sub.add_parser("parse-commits", help="Parse git log into structured data")
