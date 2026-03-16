@@ -377,7 +377,7 @@ STOP.
    4. Skip any with status "in-progress" — the first remaining release with status "planned" is the **next version**.
    5. If no "planned" releases remain, fall back to the active "in-progress" release.
    6. **Platform-only:** Query milestones via GitHub API (`gh api repos/{owner}/{repo}/milestones --jq '.[] | select(.state=="open")'`), sort by semver ascending, and select the next open milestone as the default.
-4. **Yolo mode:** Auto-assign to the next version without prompting. Log: "Auto-assigned to vX.Y.Z (next release)." Proceed to step 5.
+4. **Yolo mode:** Auto-assign to the next version without prompting. Log: "Auto-assigned to vX.Y.Z (next release)." Proceed to step 6.
 5. **Normal mode:** `AskUserQuestion` with the next version as the recommended first option:
    - **"Yes, assign to vX.Y.Z (next release)"** *(default/recommended)*
    - **"Assign to different release"**
