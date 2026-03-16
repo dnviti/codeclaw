@@ -9,6 +9,7 @@ All output is JSON.  Zero external dependencies — stdlib only.
 """
 
 import argparse
+import configparser
 import json
 import os
 import re
@@ -142,6 +143,39 @@ def git_worktree_list() -> list[dict]:
     if current:
         worktrees.append(current)
     return worktrees
+
+
+# ── Submodule Detection ────────────────────────────────────────────────────
+
+def _detect_submodules(root: Path) -> list[dict]:
+    """Parse .gitmodules and return list of submodule info dicts.
+
+    Returns list of {name, path, url, branch} for each submodule.
+    """
+    gitmodules = root / ".gitmodules"
+    if not gitmodules.exists():
+        return []
+    cfg = configparser.ConfigParser()
+    try:
+        cfg.read(str(gitmodules), encoding="utf-8")
+    except (configparser.Error, OSError):
+        return []
+    submodules = []
+    for section in cfg.sections():
+        # section looks like 'submodule "name"'
+        name_match = re.match(r'^submodule\s+"(.+)"$', section)
+        name = name_match.group(1) if name_match else section
+        path = cfg.get(section, "path", fallback="")
+        url = cfg.get(section, "url", fallback="")
+        branch = cfg.get(section, "branch", fallback="")
+        if path:
+            submodules.append({
+                "name": name,
+                "path": path,
+                "url": url,
+                "branch": branch,
+            })
+    return submodules
 
 
 # ── File Helpers ────────────────────────────────────────────────────────────
@@ -398,11 +432,14 @@ def cmd_context(_args) -> dict:
     except Exception:
         wt_root = None
 
+    submodules = _detect_submodules(root)
+
     worktree = {
         "in_worktree": in_wt,
         "main_root": str(root),
         "worktree_root": str(wt_root) if in_wt and wt_root else None,
         "worktrees": [w.get("path", "") for w in wt_list],
+        "submodules": submodules,
     }
 
     # ── branches ──
@@ -681,6 +718,13 @@ def dispatch_tests(parts: list[str]) -> dict:
         return {"flow": "scout", "task_code": "", "remaining_args": " ".join(parts)}
 
 
+def dispatch_help(parts: list[str]) -> dict:
+    """Dispatch for the help skill."""
+    if not parts:
+        return {"flow": "overview", "task_code": "", "remaining_args": ""}
+    return {"flow": "query", "task_code": "", "remaining_args": " ".join(parts)}
+
+
 DISPATCHERS = {
     "task": dispatch_task,
     "idea": dispatch_idea,
@@ -690,6 +734,7 @@ DISPATCHERS = {
     "update": dispatch_update,
     "docs": dispatch_docs,
     "tests": dispatch_tests,
+    "help": dispatch_help,
 }
 
 
@@ -912,12 +957,18 @@ def cmd_setup_task_worktree(args) -> dict:
     except subprocess.CalledProcessError as e:
         return {"success": False, "error": e.stderr.strip() or str(e)}
 
+    # Initialize submodules in the new worktree (if any)
+    submodules = _detect_submodules(root)
+    if submodules:
+        git_run("submodule", "update", "--init", "--recursive", cwd=str(wt_dir))
+
     return {
         "success": True,
         "worktree_dir": str(wt_dir),
         "branch": branch_name,
         "created": True,
         "reused_existing": False,
+        "submodules_initialized": len(submodules) > 0,
     }
 
 
@@ -1024,6 +1075,21 @@ def cmd_status_report(_args) -> dict:
 
 
 # ════════════════════════════════════════════════════════════════════════════
+# Subcommand: list-submodules
+# ════════════════════════════════════════════════════════════════════════════
+
+def cmd_list_submodules(_args) -> dict:
+    """Return detected submodules for the current project."""
+    root = get_main_repo_root()
+    submodules = _detect_submodules(root)
+    return {
+        "has_submodules": len(submodules) > 0,
+        "count": len(submodules),
+        "submodules": submodules,
+    }
+
+
+# ════════════════════════════════════════════════════════════════════════════
 # Subcommand: detect-release-config
 # ════════════════════════════════════════════════════════════════════════════
 
@@ -1126,6 +1192,9 @@ def main():
     # status-report
     sub.add_parser("status-report", help="Return pre-computed task status data")
 
+    # list-submodules
+    sub.add_parser("list-submodules", help="Return detected git submodules")
+
     # detect-release-config
     sub.add_parser("detect-release-config", help="Return all release configuration")
 
@@ -1141,6 +1210,7 @@ def main():
         "create-project-files": cmd_create_project_files,
         "detect-branch-strategy": cmd_detect_branch_strategy,
         "setup-task-worktree": cmd_setup_task_worktree,
+        "list-submodules": cmd_list_submodules,
         "status-report": cmd_status_report,
         "detect-release-config": cmd_detect_release_config,
     }
