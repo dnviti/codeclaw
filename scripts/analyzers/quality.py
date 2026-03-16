@@ -71,6 +71,36 @@ def analyze_test_coverage(root: Path, gitignore_patterns: list[str]) -> dict:
 
     ratio = len(test_files) / max(len(source_files), 1) * 100
 
+    # Per-file coverage mapping: match each source file to its test file
+    per_file: list[dict] = []
+    test_re_stem = re.compile(
+        r"(?:^test_|_test$|\.test$|\.spec$)", re.IGNORECASE
+    )
+    for src in source_files:
+        src_stem = Path(src).stem
+        src_ext = Path(src).suffix
+        matched_test = None
+        # Build candidate names
+        candidates = {
+            f"test_{src_stem}{src_ext}",
+            f"{src_stem}_test{src_ext}",
+            f"{src_stem}.test{src_ext}",
+            f"{src_stem}.spec{src_ext}",
+        }
+        for tf in test_files:
+            tf_name = Path(tf).name
+            if tf_name in candidates:
+                matched_test = tf
+                break
+            if f"__tests__/{Path(src).name}" in tf:
+                matched_test = tf
+                break
+        per_file.append({
+            "source": src,
+            "test": matched_test,
+            "has_test": matched_test is not None,
+        })
+
     # Test framework detection
     frameworks = set()
     pkg = root / "package.json"
@@ -92,6 +122,7 @@ def analyze_test_coverage(root: Path, gitignore_patterns: list[str]) -> dict:
         "source_files": len(source_files),
         "ratio_pct": round(ratio, 1),
         "by_directory": by_dir,
+        "per_file": per_file,
         "frameworks": sorted(frameworks),
     }
 

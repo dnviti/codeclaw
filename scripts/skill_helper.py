@@ -660,6 +660,25 @@ def dispatch_docs(parts: list[str]) -> dict:
         return {**base, "flow": "generate", "remaining_args": " ".join(parts)}
 
 
+def dispatch_tests(parts: list[str]) -> dict:
+    """Dispatch for the tests skill."""
+    if not parts:
+        return {"flow": "scout", "task_code": "", "remaining_args": ""}
+
+    first = parts[0].lower()
+    rest = parts[1:]
+
+    if first == "scout":
+        return {"flow": "scout", "task_code": "", "remaining_args": " ".join(rest)}
+    elif first == "create":
+        return {"flow": "create", "task_code": "", "remaining_args": " ".join(rest)}
+    elif first == "continue":
+        return {"flow": "continue", "task_code": "", "remaining_args": " ".join(rest)}
+    else:
+        # Treat unknown args as target for scout
+        return {"flow": "scout", "task_code": "", "remaining_args": " ".join(parts)}
+
+
 DISPATCHERS = {
     "task": dispatch_task,
     "idea": dispatch_idea,
@@ -668,6 +687,7 @@ DISPATCHERS = {
     "release-start": dispatch_release,  # backward compat
     "update": dispatch_update,
     "docs": dispatch_docs,
+    "tests": dispatch_tests,
 }
 
 
