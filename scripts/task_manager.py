@@ -46,7 +46,6 @@ TASK_CODE_RE = re.compile(r"[A-Z]{3,5}-(\d{4})")
 IDEA_CODE_RE = re.compile(r"IDEA-[A-Z]{3,5}-(\d{4})")
 SECTION_HEADER_RE = re.compile(r"^\s+SECTION\s+([A-Z])\s+—\s+(.+)$")
 
-
 # ── Project Root Detection ──────────────────────────────────────────────────
 
 def find_project_root() -> Path:
@@ -70,7 +69,6 @@ def find_project_root() -> Path:
 
     # Last resort: current directory
     return Path.cwd()
-
 
 def get_main_repo_root() -> Path:
     """Return main repo root, even from inside a git worktree.
@@ -98,7 +96,6 @@ def get_main_repo_root() -> Path:
     except (subprocess.CalledProcessError, FileNotFoundError):
         return find_project_root()
 
-
 def is_in_worktree() -> bool:
     """Return True if CWD is inside a git worktree (not the main repo)."""
     try:
@@ -114,7 +111,6 @@ def is_in_worktree() -> bool:
     except (subprocess.CalledProcessError, FileNotFoundError):
         return False
 
-
 # ── File Reading Helpers ────────────────────────────────────────────────────
 
 def read_lines(filepath: Path) -> list[str]:
@@ -123,11 +119,9 @@ def read_lines(filepath: Path) -> list[str]:
         return []
     return filepath.read_text(encoding="utf-8").replace("\r", "").splitlines()
 
-
 def write_lines(filepath: Path, lines: list[str]) -> None:
     """Write lines back to file with \\n endings."""
     filepath.write_text("\n".join(lines) + "\n" if lines else "", encoding="utf-8")
-
 
 # ── Block Parsing ───────────────────────────────────────────────────────────
 
@@ -135,11 +129,9 @@ def is_separator(line: str) -> bool:
     """Check if line is a 78-dash task/idea separator."""
     return line.strip() == SEPARATOR
 
-
 def is_section_sep(line: str) -> bool:
     """Check if line is an 80-equals section separator."""
     return line.strip() == SECTION_SEP
-
 
 def parse_blocks(filepath: Path) -> list[dict]:
     """Parse all task/idea blocks from a file.
@@ -231,7 +223,6 @@ def parse_blocks(filepath: Path) -> list[dict]:
 
     return blocks
 
-
 def _parse_content_fields(block: dict, content_lines: list[str]) -> None:
     """Parse the indented fields from a block's content lines."""
     block["priority"] = ""
@@ -322,7 +313,6 @@ def _parse_content_fields(block: dict, content_lines: list[str]) -> None:
 
     flush_section()
 
-
 def _parse_files_involved(block: dict, lines: list[str]) -> None:
     """Parse CREATE: and MODIFY: entries from Files involved lines."""
     for line in lines:
@@ -336,14 +326,12 @@ def _parse_files_involved(block: dict, lines: list[str]) -> None:
             if path:
                 block["files_modify"].append(path)
 
-
 def find_block(filepath: Path, code: str) -> dict | None:
     """Find a specific block by its code."""
     for block in parse_blocks(filepath):
         if block["code"] == code:
             return block
     return None
-
 
 def find_block_in_all(root: Path, code: str, file_list: list[str] | None = None) -> tuple[dict | None, str | None]:
     """Find a block across multiple files. Returns (block, filename) or (None, None)."""
@@ -355,7 +343,6 @@ def find_block_in_all(root: Path, code: str, file_list: list[str] | None = None)
             if block:
                 return block, fname
     return None, None
-
 
 # ── Section Parsing ─────────────────────────────────────────────────────────
 
@@ -378,7 +365,6 @@ def parse_sections(filepath: Path) -> list[dict]:
                 })
 
     return sections
-
 
 def find_section_range(filepath: Path, section_letter: str) -> tuple[int, int] | None:
     """Find the line range for a section (start of content to next section or EOF).
@@ -406,7 +392,6 @@ def find_section_range(filepath: Path, section_letter: str) -> tuple[int, int] |
 
     content_start = target["line_number"] + 3  # skip =, title, =
     return (content_start, next_section_line)
-
 
 # ── Subcommand: worktree-info ──────────────────────────────────────────────
 
@@ -477,7 +462,6 @@ def cmd_worktree_info(args):
     }
     print(json.dumps(result, indent=2))
 
-
 # ── Subcommand: platform-config ────────────────────────────────────────────
 
 def cmd_platform_config(args):
@@ -517,7 +501,6 @@ def cmd_platform_config(args):
     }
     print(json.dumps(result, indent=2))
 
-
 # ── Subcommand: next-id ─────────────────────────────────────────────────────
 
 def _next_id_from_stdin(code_re, filter_crypto=True):
@@ -535,7 +518,6 @@ def _next_id_from_stdin(code_re, filter_crypto=True):
                 max_num = num
             prefixes.add(prefix)
     return max_num, prefixes
-
 
 def cmd_next_id(args):
     root = get_main_repo_root()
@@ -576,7 +558,6 @@ def cmd_next_id(args):
     result["prefixes"] = sorted(prefixes)
 
     print(json.dumps(result))
-
 
 # ── Subcommand: list ─────────────────────────────────────────────────────────
 
@@ -621,7 +602,6 @@ def cmd_list(args):
                 symbol = STATUS_REVERSE.get(r["status"], "[ ]")
                 print(f"{symbol} {r['code']} — {r['title']}")
 
-
 # ── Subcommand: list-ideas ───────────────────────────────────────────────────
 
 def cmd_list_ideas(args):
@@ -659,7 +639,6 @@ def cmd_list_ideas(args):
             for r in results:
                 print(f"{r['code']} — {r['title']}")
 
-
 # ── Subcommand: parse ────────────────────────────────────────────────────────
 
 def cmd_parse(args):
@@ -675,7 +654,6 @@ def cmd_parse(args):
     # Remove internal line tracking from output
     output = {k: v for k, v in block.items() if k not in ("line_start", "line_end")}
     print(json.dumps(output, indent=2))
-
 
 # ── Subcommand: summary ─────────────────────────────────────────────────────
 
@@ -712,7 +690,6 @@ def cmd_summary(args):
     else:
         print(json.dumps(result))
 
-
 # ── Subcommand: prefixes ────────────────────────────────────────────────────
 
 def cmd_prefixes(args):
@@ -730,7 +707,6 @@ def cmd_prefixes(args):
 
     print(json.dumps(sorted(prefixes)))
 
-
 # ── Subcommand: sections ────────────────────────────────────────────────────
 
 def cmd_sections(args):
@@ -742,7 +718,6 @@ def cmd_sections(args):
 
     sections = parse_sections(fp)
     print(json.dumps(sections, indent=2))
-
 
 # ── Subcommand: duplicates ──────────────────────────────────────────────────
 
@@ -769,7 +744,6 @@ def cmd_duplicates(args):
                     break  # one match per line
 
     print(json.dumps(matches, indent=2))
-
 
 # ── Subcommand: verify-files ────────────────────────────────────────────────
 
@@ -799,7 +773,6 @@ def cmd_verify_files(args):
     )
 
     print(json.dumps(report, indent=2))
-
 
 # ── Subcommand: move ────────────────────────────────────────────────────────
 
@@ -831,7 +804,6 @@ def cmd_add_test_procedure(args):
     new_lines = lines[:block["line_start"]] + new_block_lines + lines[block["line_end"] + 1:]
     write_lines(prog_path, new_lines)
     print(json.dumps({"success": True, "code": code}))
-
 
 def cmd_move(args):
     root = get_main_repo_root()
@@ -966,7 +938,6 @@ def cmd_move(args):
         "new_status": target_status,
     }))
 
-
 def _find_insert_position(lines: list[str], sections: list[dict]) -> int:
     """Find the best position to insert a new block in a task file.
 
@@ -1001,7 +972,6 @@ def _find_insert_position(lines: list[str], sections: list[dict]) -> int:
 
     # Fallback: end of file
     return len(lines)
-
 
 # ── Subcommand: remove ──────────────────────────────────────────────────────
 
@@ -1054,7 +1024,6 @@ def cmd_remove(args):
         "removed_block": removed_text,
     }))
 
-
 # ── Subcommand: set-release ──────────────────────────────────────────────────
 
 def cmd_set_release(args):
@@ -1104,7 +1073,6 @@ def cmd_set_release(args):
         "file": source_file,
         "release": release_value,
     }))
-
 
 # ── Subcommand: schedule-tasks ──────────────────────────────────────────────
 
@@ -1189,7 +1157,6 @@ def cmd_schedule_tasks(args):
         "failed": failed,
     }, indent=2))
 
-
 # ── Subcommand: hook ─────────────────────────────────────────────────────────
 
 def cmd_hook(args):
@@ -1244,7 +1211,6 @@ def cmd_hook(args):
         print(f"  Progress:    {pct}%")
         print(f"=====================")
 
-
 # ── Subcommand: find-files ──────────────────────────────────────────────────
 
 def cmd_find_files(args):
@@ -1283,7 +1249,6 @@ def cmd_find_files(args):
             for r in results[:args.limit]:
                 print(r)
 
-
 # ── Subcommand: platform-cmd ───────────────────────────────────────────────
 
 def _load_platform_config():
@@ -1303,7 +1268,6 @@ def _load_platform_config():
             }
     return {"platform": "github", "repo": "", "cli": "gh", "labels": {}}
 
-
 def _shlex_quote(s: str) -> str:
     """Quote a string for shell use (cross-platform safe)."""
     if not s:
@@ -1311,7 +1275,6 @@ def _shlex_quote(s: str) -> str:
     # Simple quoting: if no special chars, return as-is
     import shlex
     return shlex.quote(s)
-
 
 def cmd_platform_cmd(args):
     """Generate the correct platform CLI command string."""
@@ -1355,6 +1318,8 @@ def cmd_platform_cmd(args):
                 cmd += f' --add-label "{params["add-labels"]}"'
             if params.get("remove-labels"):
                 cmd += f' --remove-label "{params["remove-labels"]}"'
+            if params.get("add-assignee"):
+                cmd += f' --add-assignee "{params["add-assignee"]}"'
         elif op == "close-issue":
             cmd = f'gh issue close {params.get("number", "N")} --repo "{repo}"'
             if params.get("comment"):
@@ -1368,6 +1333,8 @@ def cmd_platform_cmd(args):
             cmd += f' --body "{params.get("body", "")}"'
             if params.get("labels"):
                 cmd += f' --label "{params["labels"]}"'
+            if params.get("assignee"):
+                cmd += f' --assignee "{params["assignee"]}"'
         elif op == "create-pr":
             cmd = f'gh pr create'
             cmd += f' --base {params.get("base", "main")}'
@@ -1376,6 +1343,8 @@ def cmd_platform_cmd(args):
             cmd += f' --body "{params.get("body", "")}"'
             if params.get("milestone"):
                 cmd += f' --milestone "{params["milestone"]}"'
+            if params.get("assignee"):
+                cmd += f' --assignee "{params["assignee"]}"'  
         elif op == "list-pr":
             cmd = f'gh pr list'
             cmd += f' --base {params.get("base", "main")}'
@@ -1430,6 +1399,11 @@ def cmd_platform_cmd(args):
                 cmd += f' --label "{params["add-labels"]}"'
             if params.get("remove-labels"):
                 cmd += f' --unlabel "{params["remove-labels"]}"'
+            if params.get("add-assignee"):
+                # GitLab CLI does not support --add-assignee; use API PATCH
+                number = params.get("number", "N")
+                encoded_repo = repo.replace("/", "%2F")
+                cmd += f' && glab api --method PUT "projects/{encoded_repo}/issues/{number}" -f add_labels="" -f assignee_ids[]={params["add-assignee"]}'
         elif op == "close-issue":
             cmd = f'glab issue close {params.get("number", "N")} -R "{repo}"'
             if params.get("comment"):
@@ -1443,6 +1417,8 @@ def cmd_platform_cmd(args):
             cmd += f' --description "{params.get("body", "")}"'
             if params.get("labels"):
                 cmd += f' -l "{params["labels"]}"'
+            if params.get("assignee"):
+                cmd += f' --assignee-id "{params["assignee"]}"'
         elif op == "create-pr":
             cmd = f'glab mr create'
             cmd += f' --target-branch {params.get("base", "main")}'
@@ -1451,6 +1427,8 @@ def cmd_platform_cmd(args):
             cmd += f' --description "{params.get("body", "")}"'
             if params.get("milestone"):
                 cmd += f' --milestone "{params["milestone"]}"'
+            if params.get("assignee"):
+                cmd += f' --assignee "{params["assignee"]}"'  
         elif op == "list-pr":
             cmd = f'glab mr list'
             cmd += f' --target-branch {params.get("base", "main")}'
@@ -1478,7 +1456,6 @@ def cmd_platform_cmd(args):
             sys.exit(1)
 
     print(cmd)
-
 
 # ── Subcommand: sync-from-platform ────────────────────────────────────────
 
@@ -1643,7 +1620,6 @@ def cmd_sync_from_platform(args):
             else:
                 print("\n  To apply changes, use task_manager.py move <code> --to <status>")
 
-
 # ── Subcommand: pr-body ───────────────────────────────────────────────────
 
 PR_BODY_TEMPLATES = {
@@ -1676,7 +1652,6 @@ Task tested and verified by release test pipeline.
 *Generated by Claude Code via `/release`*""",
 }
 
-
 def cmd_pr_body(args):
     """Generate a PR body from template."""
     source = args.source
@@ -1699,7 +1674,6 @@ def cmd_pr_body(args):
     # Clean up empty sections
     body = re.sub(r'\n\n\n+', '\n\n', body)
     print(body.strip())
-
 
 # ── Release-task helpers ─────────────────────────────────────────────────────
 
@@ -1725,11 +1699,9 @@ def _uses_local_files() -> bool:
                 pass
     return True
 
-
 def _releases_path() -> Path:
     """Return path to releases.json in the main repo root."""
     return get_main_repo_root() / "releases.json"
-
 
 def _read_releases_local() -> list[dict]:
     """Read releases from releases.json. Returns empty list if missing."""
@@ -1743,14 +1715,12 @@ def _read_releases_local() -> list[dict]:
     except (json.JSONDecodeError, OSError):
         return []
 
-
 def _write_releases_local(releases: list[dict]) -> None:
     """Write releases list to releases.json."""
     fp = _releases_path()
     with open(fp, "w", encoding="utf-8") as f:
         json.dump({"releases": releases}, f, indent=2)
         f.write("\n")
-
 
 # ── Subcommand: list-release-tasks ──────────────────────────────────────────
 
@@ -1846,7 +1816,6 @@ def cmd_list_release_tasks(args):
     else:
         print(json.dumps(result, indent=2))
 
-
 # ── Subcommand: create-patch-task ───────────────────────────────────────────
 
 def cmd_create_patch_task(args):
@@ -1932,7 +1901,6 @@ def cmd_create_patch_task(args):
         "title": args.title,
     }))
 
-
 # ── Subcommand: remove-worktree ───────────────────────────────────────────
 
 def cmd_remove_worktree(args):
@@ -1982,7 +1950,6 @@ def cmd_remove_worktree(args):
         "branch_removed": branch_removed,
         "path": wt_path,
     }))
-
 
 # ── CLI Setup ────────────────────────────────────────────────────────────────
 
@@ -2140,7 +2107,6 @@ def build_parser() -> argparse.ArgumentParser:
 
     return parser
 
-
 def main():
     parser = build_parser()
     is_hook = len(sys.argv) > 1 and sys.argv[1] == "hook"
@@ -2156,7 +2122,6 @@ def main():
             sys.exit(0)
         print(json.dumps({"error": str(e), "type": type(e).__name__}))
         sys.exit(1)
-
 
 if __name__ == "__main__":
     main()
