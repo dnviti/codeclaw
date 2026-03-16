@@ -436,6 +436,31 @@ def cmd_generate_changelog(args):
 
 # ── Release Plan Helpers ────────────────────────────────────────────────────
 
+def _uses_local_files() -> bool:
+    """Return True when local file tracking is active (local-only or dual-sync).
+
+    In platform-only mode (enabled=True, sync=False) local files like
+    to-do.txt, progressing.txt, done.txt and releases.json are NOT used.
+    """
+    root = get_main_repo_root()
+    for name in ("issues-tracker.json", "github-issues.json"):
+        fp = root / ".claude" / name
+        if fp.exists():
+            try:
+                with open(fp, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                enabled = data.get("enabled", False)
+                sync = data.get("sync", False)
+                # platform-only → no local files
+                if enabled and not sync:
+                    return False
+                return True
+            except (json.JSONDecodeError, OSError):
+                pass
+    # No config found → local-only (default)
+    return True
+
+
 def _releases_path() -> Path:
     """Return path to releases.json at project root."""
     return get_main_repo_root() / "releases.json"
@@ -479,6 +504,10 @@ def _sort_releases(releases: list[dict]) -> list[dict]:
 
 def cmd_release_plan_list(args):
     """List all releases with cross-referenced task statuses."""
+    if not _uses_local_files():
+        print(json.dumps({"releases": [], "next_release": None,
+                           "note": "releases.json is not used in platform-only mode"}))
+        return
     releases = _read_releases()
     if not releases:
         print(json.dumps({"releases": [], "next_release": None}))
@@ -538,6 +567,9 @@ def cmd_release_plan_list(args):
 
 def cmd_release_plan_create(args):
     """Create a new release entry in releases.json."""
+    if not _uses_local_files():
+        print(json.dumps({"error": "releases.json is not used in platform-only mode. Use platform milestones instead."}))
+        sys.exit(1)
     releases = _read_releases()
     version = args.version.lstrip("v")
 
@@ -566,6 +598,9 @@ def cmd_release_plan_create(args):
 
 def cmd_release_plan_add_task(args):
     """Add a task to a release's tasks array."""
+    if not _uses_local_files():
+        print(json.dumps({"error": "releases.json is not used in platform-only mode. Use platform milestones instead."}))
+        sys.exit(1)
     releases = _read_releases()
     version = args.version.lstrip("v")
     task_code = args.task.upper()
@@ -594,6 +629,9 @@ def cmd_release_plan_add_task(args):
 
 def cmd_release_plan_remove_task(args):
     """Remove a task from a release's tasks array."""
+    if not _uses_local_files():
+        print(json.dumps({"error": "releases.json is not used in platform-only mode. Use platform milestones instead."}))
+        sys.exit(1)
     releases = _read_releases()
     version = args.version.lstrip("v")
     task_code = args.task.upper()
@@ -622,6 +660,10 @@ def cmd_release_plan_remove_task(args):
 
 def cmd_release_plan_next(args):
     """Return the next planned or in-progress release."""
+    if not _uses_local_files():
+        print(json.dumps({"next_release": None,
+                           "note": "releases.json is not used in platform-only mode"}))
+        return
     releases = _read_releases()
     sorted_rels = _sort_releases(releases)
 
@@ -637,6 +679,9 @@ def cmd_release_plan_next(args):
 
 def cmd_release_plan_mark_released(args):
     """Mark a release as released."""
+    if not _uses_local_files():
+        print(json.dumps({"error": "releases.json is not used in platform-only mode. Use platform milestones instead."}))
+        sys.exit(1)
     releases = _read_releases()
     version = args.version.lstrip("v")
 
@@ -777,6 +822,9 @@ def cmd_release_state_clear(args):
 
 def cmd_release_plan_set_status(args):
     """Set a release's status in releases.json."""
+    if not _uses_local_files():
+        print(json.dumps({"error": "releases.json is not used in platform-only mode. Use platform milestones instead."}))
+        sys.exit(1)
     releases = _read_releases()
     version = args.version.lstrip("v")
 
@@ -1027,9 +1075,7 @@ def cmd_full_context(args):
     verify_command = claude_config.get("verify_command", "")
     package_paths = claude_config.get("package_json_paths", "")
 
-    # 7. Check releases.json for next planned release
-    releases = _read_releases()
-    sorted_rels = _sort_releases(releases)
+    # 7. Check releases.json for next planned release (only when using local files)
     release_plan = {
         "has_plan": False,
         "next_version": None,
@@ -1037,16 +1083,19 @@ def cmd_full_context(args):
         "next_theme": None,
         "next_task_count": 0,
     }
-    for rel in sorted_rels:
-        if rel["status"] in ("planned", "in-progress"):
-            release_plan = {
-                "has_plan": True,
-                "next_version": rel["version"],
-                "next_status": rel["status"],
-                "next_theme": rel.get("theme", ""),
-                "next_task_count": len(rel.get("tasks", [])),
-            }
-            break
+    if _uses_local_files():
+        releases = _read_releases()
+        sorted_rels = _sort_releases(releases)
+        for rel in sorted_rels:
+            if rel["status"] in ("planned", "in-progress"):
+                release_plan = {
+                    "has_plan": True,
+                    "next_version": rel["version"],
+                    "next_status": rel["status"],
+                    "next_theme": rel.get("theme", ""),
+                    "next_task_count": len(rel.get("tasks", [])),
+                }
+                break
 
     # 8. Check if release-state.json exists (resume detection)
     state_file = main_root / ".claude" / "release-state.json"

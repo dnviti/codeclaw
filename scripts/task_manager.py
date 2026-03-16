@@ -1615,6 +1615,29 @@ def cmd_pr_body(args):
 
 # ── Release-task helpers ─────────────────────────────────────────────────────
 
+def _uses_local_files() -> bool:
+    """Return True when local file tracking is active (local-only or dual-sync).
+
+    In platform-only mode (enabled=True, sync=False) local files like
+    to-do.txt, progressing.txt, done.txt and releases.json are NOT used.
+    """
+    root = get_main_repo_root()
+    for name in ("issues-tracker.json", "github-issues.json"):
+        fp = root / ".claude" / name
+        if fp.exists():
+            try:
+                with open(fp, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                enabled = data.get("enabled", False)
+                sync = data.get("sync", False)
+                if enabled and not sync:
+                    return False
+                return True
+            except (json.JSONDecodeError, OSError):
+                pass
+    return True
+
+
 def _releases_path() -> Path:
     """Return path to releases.json in the main repo root."""
     return get_main_repo_root() / "releases.json"
@@ -1645,6 +1668,9 @@ def _write_releases_local(releases: list[dict]) -> None:
 
 def cmd_list_release_tasks(args):
     """Cross-reference a release's task list with local task file statuses."""
+    if not _uses_local_files():
+        print(json.dumps({"error": "releases.json is not used in platform-only mode. Use platform milestones instead."}))
+        sys.exit(1)
     root = get_main_repo_root()
     version = args.version.lstrip("v")
 
@@ -1737,6 +1763,9 @@ def cmd_list_release_tasks(args):
 
 def cmd_create_patch_task(args):
     """Create a release patch task with auto-generated RPAT- code."""
+    if not _uses_local_files():
+        print(json.dumps({"error": "releases.json is not used in platform-only mode. Use platform issues instead."}))
+        sys.exit(1)
     root = get_main_repo_root()
     version = args.release.lstrip("v")
 
