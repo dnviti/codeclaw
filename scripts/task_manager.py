@@ -1374,6 +1374,8 @@ def cmd_platform_cmd(args):
             cmd += f' --head {params.get("head", "")}'
             cmd += f' --title "{params.get("title", "")}"'
             cmd += f' --body "{params.get("body", "")}"'
+            if params.get("milestone"):
+                cmd += f' --milestone "{params["milestone"]}"'
         elif op == "list-pr":
             cmd = f'gh pr list'
             cmd += f' --base {params.get("base", "main")}'
@@ -1447,6 +1449,8 @@ def cmd_platform_cmd(args):
             cmd += f' --source-branch {params.get("head", "")}'
             cmd += f' --title "{params.get("title", "")}"'
             cmd += f' --description "{params.get("body", "")}"'
+            if params.get("milestone"):
+                cmd += f' --milestone "{params["milestone"]}"'
         elif op == "list-pr":
             cmd = f'glab mr list'
             cmd += f' --target-branch {params.get("base", "main")}'

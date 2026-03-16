@@ -108,7 +108,11 @@ If the task has **no release assigned**:
 1. Run `RM release-plan-list` to get available releases.
 2. **Yolo mode:** Auto-assign to the current active release (from `RM release-state-get`). If no active release, use the next upcoming release. Log the auto-selection and proceed.
 3. **Normal mode:** Warn: "Task {CODE} has no release assigned. Every task must be tied to a release milestone." Present a GATE via `AskUserQuestion`: **"Assign to vX.Y.Z (recommended)"** | **"Assign to different release"** | **"Cancel"**. STOP until user responds.
+<<<<<<< HEAD
+4. Apply the assignment: `task_manager.py set-release`, `release_manager.py release-plan-add-task`, platform: add label + milestone.
+=======
 4. Apply the assignment: `TM set-release`, `RM release-plan-add-task`, platform: add label + milestone.
+>>>>>>> origin/develop
 5. If no releases exist at all, proceed without assignment (but warn).
 
 #### Step 2: Mark task as in-progress
