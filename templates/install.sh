@@ -141,12 +141,13 @@ parse_args() {
 detect_version() {
     local manifest="$SCRIPT_DIR/manifest.json"
     if [ -f "$manifest" ]; then
-        VERSION=$(python3 -c "import json; print(json.load(open('$manifest'))['version'])" 2>/dev/null || echo "")
+        # Use sys.argv to avoid shell injection via file path interpolation
+        VERSION=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['version'])" "$manifest" 2>/dev/null || echo "")
     fi
     if [ -z "$VERSION" ]; then
         local plugin_json="$SCRIPT_DIR/.claude-plugin/plugin.json"
         if [ -f "$plugin_json" ]; then
-            VERSION=$(python3 -c "import json; print(json.load(open('$plugin_json'))['version'])" 2>/dev/null || echo "unknown")
+            VERSION=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['version'])" "$plugin_json" 2>/dev/null || echo "unknown")
         else
             VERSION="unknown"
         fi

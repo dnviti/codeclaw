@@ -95,8 +95,31 @@ PLATFORM_TARGETS = [
 # Version detection regex
 VERSION_RE = re.compile(r'"version"\s*:\s*"([^"]+)"')
 
+# Allowed version string pattern (semver with optional pre-release/build metadata)
+SAFE_VERSION_RE = re.compile(r"^[0-9A-Za-z][0-9A-Za-z.\-+]{0,63}$")
+
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
+
+def validate_version(version: str) -> str:
+    """Validate that a version string is safe for use in file paths and ZIP entries.
+
+    Raises ValueError if the version contains path-traversal sequences or
+    characters that could be problematic in archive entry names.
+    """
+    if not version:
+        raise ValueError("Version string must not be empty")
+    if ".." in version or "/" in version or "\\" in version:
+        raise ValueError(
+            f"Version string contains path-traversal characters: {version!r}"
+        )
+    if not SAFE_VERSION_RE.match(version):
+        raise ValueError(
+            f"Version string contains disallowed characters: {version!r}. "
+            "Only alphanumeric, dots, hyphens, and plus signs are allowed."
+        )
+    return version
+
 
 def detect_version() -> str:
     """Detect the current version from plugin.json or CHANGELOG.md."""
@@ -137,7 +160,7 @@ def compute_sha256(file_path: Path) -> str:
     h = hashlib.sha256()
     with open(file_path, "rb") as f:
         while True:
-            chunk = f.read(8192)
+            chunk = f.read(131072)  # 128 KB for fewer syscalls
             if not chunk:
                 break
             h.update(chunk)
@@ -288,18 +311,31 @@ def build_archive(
             if verbose:
                 print(f"  + {rel_path}")
 
-        # Add bootstrap installers at the archive root (for easy access)
+        # Add bootstrap installers at the archive root (for easy access).
+        # These are already included under templates/ via INCLUDE_DIRS, so
+        # we use writestr with the file content to place a copy at the root
+        # without storing the same bytes twice (ZIP deduplication is not
+        # guaranteed, but having them at the root is needed for usability).
         if install_sh.exists():
-            zf.write(install_sh, f"{prefix}/install.sh")
-            if verbose:
-                print("  + install.sh")
+            # Only add root-level copy if not already present via templates/
+            root_sh = f"{prefix}/install.sh"
+            if root_sh not in zf.namelist():
+                zf.write(install_sh, root_sh)
+                if verbose:
+                    print("  + install.sh")
+            elif verbose:
+                print("  ~ install.sh (already included via templates/)")
         else:
             print("[warn] templates/install.sh not found, skipping", file=sys.stderr)
 
         if install_ps1.exists():
-            zf.write(install_ps1, f"{prefix}/install.ps1")
-            if verbose:
-                print("  + install.ps1")
+            root_ps1 = f"{prefix}/install.ps1"
+            if root_ps1 not in zf.namelist():
+                zf.write(install_ps1, root_ps1)
+                if verbose:
+                    print("  + install.ps1")
+            elif verbose:
+                print("  ~ install.ps1 (already included via templates/)")
         else:
             print("[warn] templates/install.ps1 not found, skipping", file=sys.stderr)
 
@@ -364,6 +400,15 @@ def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
 
     version = args.version or detect_version()
+    try:
+        version = validate_version(version)
+    except ValueError as exc:
+        if args.json_output:
+            print(json.dumps({"success": False, "error": str(exc)}))
+        else:
+            print(f"[error] {exc}", file=sys.stderr)
+        return 1
+
     output_dir = Path(args.output) if args.output else DEFAULT_OUTPUT_DIR
 
     if not args.json_output:
