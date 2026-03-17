@@ -214,20 +214,22 @@ def install_cli(provider: str) -> None:
     if provider == "ollama":
         print("  Ollama is not installed. Attempting installation...")
         scripts_dir = Path(__file__).resolve().parent
+        ollama_script = scripts_dir / "ollama_manager.py"
         try:
-            from importlib.util import spec_from_file_location, module_from_spec
-            spec = spec_from_file_location("ollama_manager", scripts_dir / "ollama_manager.py")
-            if spec and spec.loader:
-                mod = module_from_spec(spec)
-                spec.loader.exec_module(mod)
-                result = mod.install_ollama()
-                if result["success"]:
-                    print(f"  {result['message']}")
-                    return
-                else:
-                    print(f"Error: {result['message']}", file=sys.stderr)
-                    sys.exit(1)
-        except Exception as e:
+            result = subprocess.run(
+                [sys.executable, str(ollama_script), "install"],
+                capture_output=True, text=True, timeout=600,
+            )
+            if result.returncode == 0:
+                print(f"  Ollama installed successfully.")
+                return
+            else:
+                print(f"Error: Ollama installation failed:\n{result.stderr}", file=sys.stderr)
+                sys.exit(1)
+        except subprocess.TimeoutExpired:
+            print("Error: Ollama installation timed out after 10 minutes.", file=sys.stderr)
+            sys.exit(1)
+        except OSError as e:
             print(f"Error: Could not install Ollama: {e}", file=sys.stderr)
             sys.exit(1)
 
@@ -702,9 +704,11 @@ def build_shell_command(
         scripts_dir = Path(__file__).resolve().parent
         ollama_script = scripts_dir / "ollama_manager.py"
         model_name = model or "qwen2.5-coder:7b"
+        import shlex as _shlex
+        safe_model = _shlex.quote(model_name)
         return (
             f'{sys.executable} {ollama_script} query \\\n'
-            f'  --model {model_name} \\\n'
+            f'  --model {safe_model} \\\n'
             f'  --prompt "$(cat {prompt_file})"'
         )
 

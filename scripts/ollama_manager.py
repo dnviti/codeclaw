@@ -228,16 +228,36 @@ def recommend_model(ram_gb: float, vram_gb: float = 0.0) -> dict:
                 ),
             }
 
-    # Fallback to smallest model
-    fallback = MODEL_TIERS[-1]
+    # Unreachable: last tier has min_ram=0, so loop always matches.
+    # Defensive fallback kept for safety.
     return {
-        "model": fallback["name"],
-        "size_gb": fallback["size_gb"],
-        "description": fallback["description"],
-        "capabilities": fallback["capabilities"],
+        "model": MODEL_TIERS[-1]["name"],
+        "size_gb": MODEL_TIERS[-1]["size_gb"],
+        "description": MODEL_TIERS[-1]["description"],
+        "capabilities": MODEL_TIERS[-1]["capabilities"],
         "effective_memory_gb": effective_memory,
         "note": "Fallback to smallest model due to limited memory",
     }
+
+
+# ── Shared API Helper ──────────────────────────────────────────────────────
+
+def _fetch_model_list() -> tuple[bool, list[str]]:
+    """Fetch the list of available models from the Ollama API.
+
+    Returns:
+        Tuple of (server_running, model_names).
+    """
+    try:
+        req = urllib.request.Request(f"{OLLAMA_API_BASE}/api/tags", method="GET")
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            if resp.status == 200:
+                data = json.loads(resp.read().decode("utf-8"))
+                models = [m.get("name", "") for m in data.get("models", [])]
+                return True, models
+    except (urllib.error.URLError, OSError, json.JSONDecodeError):
+        pass
+    return False, []
 
 
 # ── Installation Check ──────────────────────────────────────────────────────
@@ -267,17 +287,9 @@ def check_install() -> dict:
         return result
 
     # Check running by hitting the API
-    try:
-        req = urllib.request.Request(f"{OLLAMA_API_BASE}/api/tags", method="GET")
-        with urllib.request.urlopen(req, timeout=5) as resp:
-            if resp.status == 200:
-                result["running"] = True
-                data = json.loads(resp.read().decode("utf-8"))
-                result["models"] = [
-                    m.get("name", "") for m in data.get("models", [])
-                ]
-    except (urllib.error.URLError, OSError, json.JSONDecodeError):
-        pass
+    running, models = _fetch_model_list()
+    result["running"] = running
+    result["models"] = models
 
     return result
 
@@ -304,6 +316,11 @@ def install_ollama(target_platform: str | None = None) -> dict:
 
     if target_platform == "linux":
         # Use the official install script
+        print(
+            "Warning: Installing via 'curl | sh' from https://ollama.com/install.sh. "
+            "Review the script at this URL if you have security concerns.",
+            file=sys.stderr,
+        )
         try:
             result = subprocess.run(
                 ["sh", "-c", "curl -fsSL https://ollama.com/install.sh | sh"],
@@ -344,6 +361,11 @@ def install_ollama(target_platform: str | None = None) -> dict:
             pass
 
         # Fallback to curl script
+        print(
+            "Warning: Installing via 'curl | sh' from https://ollama.com/install.sh. "
+            "Review the script at this URL if you have security concerns.",
+            file=sys.stderr,
+        )
         try:
             result = subprocess.run(
                 ["sh", "-c", "curl -fsSL https://ollama.com/install.sh | sh"],
@@ -395,6 +417,14 @@ def pull_model(model_name: str) -> dict:
     Returns:
         Dict with 'success', 'model', and 'message' keys.
     """
+    import re as _re
+    if not _re.match(r'^[a-zA-Z0-9._:/-]+$', model_name):
+        return {
+            "success": False,
+            "model": model_name,
+            "message": f"Invalid model name: '{model_name}'. "
+                       "Model names may only contain alphanumeric characters, dots, colons, hyphens, and slashes.",
+        }
     try:
         print(f"Pulling model '{model_name}'...", file=sys.stderr)
         result = subprocess.run(
@@ -447,6 +477,10 @@ def query_ollama(
     Returns:
         Dict with 'success', 'response', and optional 'error' keys.
     """
+    # Validate parameters
+    temperature = max(0.0, min(temperature, 2.0))
+    max_tokens = max(1, min(max_tokens, 128000))
+
     payload = {
         "model": model,
         "prompt": prompt,
@@ -521,25 +555,22 @@ def health_check(expected_model: str | None = None) -> dict:
     }
 
     # Check server
-    try:
-        req = urllib.request.Request(f"{OLLAMA_API_BASE}/api/tags", method="GET")
-        with urllib.request.urlopen(req, timeout=5) as resp:
-            if resp.status == 200:
-                result["server_running"] = True
-                data = json.loads(resp.read().decode("utf-8"))
-                result["models"] = [
-                    m.get("name", "") for m in data.get("models", [])
-                ]
-    except (urllib.error.URLError, OSError, json.JSONDecodeError):
+    running, models = _fetch_model_list()
+    if not running:
         result["message"] = "Ollama server is not running or not reachable."
         return result
 
+    result["server_running"] = True
+    result["models"] = models
+
     # Check model availability
     if expected_model:
-        # Normalize model name for comparison (strip tag if needed)
         available = result["models"]
+        # Exact match: compare full name (e.g., "qwen2.5-coder:7b")
+        # or match name without tag when expected_model has no tag
         model_available = any(
-            expected_model in m or m.startswith(expected_model.split(":")[0])
+            m == expected_model or
+            (":latest" not in expected_model and m == f"{expected_model}:latest")
             for m in available
         )
         result["model_available"] = model_available
