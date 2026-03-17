@@ -18,6 +18,7 @@
   "github_repo_url": "",
   "release_branch": "",
   "show_generated_footer": true,
+  "python_command": "",
   "ollama": {
     "enabled": false,
     "model": "",

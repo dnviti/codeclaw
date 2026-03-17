@@ -12,12 +12,20 @@ Zero external dependencies — stdlib only.
 import argparse
 import json
 import os
+import platform
 import re
 import shutil
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
+
+IS_WINDOWS = platform.system() == "Windows"
+
+# Add scripts/ to path so platform_utils can be imported
+_SCRIPT_DIR = Path(__file__).resolve().parent
+if str(_SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPT_DIR))
 
 
 # ── Constants ───────────────────────────────────────────────────────────────
@@ -283,11 +291,8 @@ def setup_plugin(provider: str) -> None:
     cache_dir = plugin_dir / "cache" / "dnviti-plugins" / "ctdf" / version
     cache_dir.mkdir(parents=True, exist_ok=True)
 
-    # Copy plugin files to cache
-    subprocess.run(
-        ["cp", "-r", f"{market_dir}/.", str(cache_dir)],
-        capture_output=True,
-    )
+    # Copy plugin files to cache (cross-platform: uses shutil instead of cp -r)
+    shutil.copytree(str(market_dir), str(cache_dir), dirs_exist_ok=True)
 
     # Write plugin registry files
     from datetime import datetime, timezone
@@ -599,6 +604,19 @@ def build_prompt(pipeline: str, provider: str, model: str, auto_pr: bool = True)
 
 # ── CLI Invocation Building ─────────────────────────────────────────────────
 
+def _read_prompt_file(prompt_file: str) -> str:
+    """Read prompt file contents directly (cross-platform, no shell expansion).
+
+    Delegates to ``platform_utils.read_file_for_prompt`` when available,
+    with a local fallback to keep the module self-contained.
+    """
+    try:
+        from platform_utils import read_file_for_prompt
+        return read_file_for_prompt(prompt_file)
+    except ImportError:
+        return Path(prompt_file).read_text(encoding="utf-8")
+
+
 def build_invocation(
     provider: str,
     prompt_file: str,
@@ -607,6 +625,10 @@ def build_invocation(
     pipeline: str,
 ) -> list[str]:
     """Build the CLI command to invoke the agent.
+
+    Uses direct file reading instead of ``$(cat ...)`` shell expansion,
+    so the returned list can be used with ``subprocess.run()`` without
+    ``shell=True`` on any OS (Windows, macOS, Linux).
 
     Args:
         provider: The AI provider name.
@@ -618,10 +640,12 @@ def build_invocation(
     Returns:
         A list of command-line arguments for subprocess.
     """
+    prompt_content = _read_prompt_file(prompt_file)
+
     if provider == "claude":
         cmd = [
             "claude", "-p",
-            f"$(cat {prompt_file})",
+            prompt_content,
         ]
         if model:
             cmd.extend(["--model", model])
@@ -638,13 +662,13 @@ def build_invocation(
         ]
         if model:
             cmd.extend(["-m", model])
-        cmd.append(f"$(cat {prompt_file})")
+        cmd.append(prompt_content)
         return cmd
 
     elif provider == "openclaw":
         cmd = [
             "openclaw", "agent",
-            "--message", f"$(cat {prompt_file})",
+            "--message", prompt_content,
             "--local",
         ]
         return cmd
@@ -656,7 +680,7 @@ def build_invocation(
             sys.executable, str(scripts_dir / "ollama_manager.py"),
             "query",
             "--model", model or "qwen2.5-coder:7b",
-            "--prompt", f"$(cat {prompt_file})",
+            "--prompt", prompt_content,
         ]
         return cmd
 
@@ -673,43 +697,57 @@ def build_shell_command(
 ) -> str:
     """Build a shell command string for the agent invocation.
 
-    Uses shell expansion $(cat ...) for prompt injection, so this must
-    be executed via shell=True.
+    On Unix (bash/zsh), uses ``$(cat ...)`` shell expansion.
+    On Windows, uses PowerShell ``$(Get-Content ...)`` syntax.
+    Both require ``shell=True`` when passed to ``subprocess.run()``.
     """
+    if IS_WINDOWS:
+        # Sanitize path for PowerShell: escape backticks and dollar signs
+        safe_path = prompt_file.replace("`", "``").replace("$", "`$")
+        cat_expr = f'$(Get-Content -Raw "{safe_path}")'
+        line_cont = " `\n  "
+    else:
+        cat_expr = f'"$(cat {prompt_file})"'
+        line_cont = " \\\n  "
+
     if provider == "claude":
-        parts = [f'claude -p "$(cat {prompt_file})"']
+        parts = [f"claude -p {cat_expr}"]
         if model:
             parts.append(f"--model {model}")
         if budget > 0:
             parts.append(f"--max-budget-usd {int(budget)}")
         tools = CLAUDE_ALLOWED_TOOLS.get(pipeline, "Bash,Read,Grep,Glob,Edit,Write")
         parts.append(f'--allowedTools "{tools}"')
-        return " \\\n  ".join(parts)
+        return line_cont.join(parts)
 
     elif provider == "openai":
         parts = ["codex -q -a full-auto"]
         if model:
             parts.append(f"-m {model}")
-        parts.append(f'"$(cat {prompt_file})"')
-        return " \\\n  ".join(parts)
+        parts.append(cat_expr)
+        return line_cont.join(parts)
 
     elif provider == "openclaw":
         return (
-            f'openclaw agent \\\n'
-            f'  --message "$(cat {prompt_file})" \\\n'
-            f'  --local'
+            f"openclaw agent{line_cont}"
+            f"--message {cat_expr}{line_cont}"
+            f"--local"
         )
 
     elif provider == "ollama":
         scripts_dir = Path(__file__).resolve().parent
         ollama_script = scripts_dir / "ollama_manager.py"
         model_name = model or "qwen2.5-coder:7b"
-        import shlex as _shlex
-        safe_model = _shlex.quote(model_name)
+        if IS_WINDOWS:
+            # On Windows, shlex.quote is not suitable; use basic quoting
+            safe_model = f'"{model_name}"'
+        else:
+            import shlex as _shlex
+            safe_model = _shlex.quote(model_name)
         return (
-            f'{sys.executable} {ollama_script} query \\\n'
-            f'  --model {safe_model} \\\n'
-            f'  --prompt "$(cat {prompt_file})"'
+            f"{sys.executable} {ollama_script} query{line_cont}"
+            f"--model {safe_model}{line_cont}"
+            f"--prompt {cat_expr}"
         )
 
     return ""
@@ -800,8 +838,8 @@ def run_agent(
         print(f"  Auto-PR: {'enabled' if auto_pr else 'disabled'}")
     prompt = build_prompt(pipeline, provider, model, auto_pr=auto_pr)
 
-    # Write prompt to temp file
-    prompt_file = "/tmp/agent-prompt.md"
+    # Write prompt to temp file (cross-platform temp directory)
+    prompt_file = str(Path(tempfile.gettempdir()) / "agent-prompt.md")
     if not dry_run:
         Path(prompt_file).write_text(prompt, encoding="utf-8")
         print(f"  Prompt written to {prompt_file} ({len(prompt)} chars)")
@@ -812,19 +850,20 @@ def run_agent(
 
     # 6. Invoke agent
     print("[4/4] Invoking agent...")
-    shell_cmd = build_shell_command(provider, prompt_file, model, budget, pipeline)
 
     if dry_run:
+        shell_cmd = build_shell_command(provider, prompt_file, model, budget, pipeline)
         print(f"\n  [dry-run] Would execute:\n")
         for line in shell_cmd.split("\n"):
             print(f"    {line}")
         print("\n  [dry-run] Complete. No agent was invoked.")
         return
 
-    print(f"\n  Executing:\n    {shell_cmd.split(chr(10))[0]}...")
+    # Use list-format invocation (no shell=True) for cross-platform safety
+    cmd_list = build_invocation(provider, prompt_file, model, budget, pipeline)
+    print(f"\n  Executing:\n    {cmd_list[0]} ...")
     result = subprocess.run(
-        shell_cmd,
-        shell=True,
+        cmd_list,
         cwd=os.getcwd(),
     )
 
