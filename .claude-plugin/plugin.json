@@ -21,5 +21,15 @@
     "testing",
     "test-coverage"
   ],
-  "skills": "./skills/"
+  "skills": "./skills/",
+  "platforms": [
+    "claude-code",
+    "opencode",
+    "openclaw",
+    "cursor",
+    "windsurf",
+    "continue",
+    "copilot",
+    "aider"
+  ]
 }
