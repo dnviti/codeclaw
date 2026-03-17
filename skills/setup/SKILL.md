@@ -205,6 +205,77 @@ STOP.
 
 **If "Yes":** Run the [Agentic Fleet Setup](#agentic-fleet-setup) flow inline, then return for Step 10.
 
+### Step 9.5: Local Model — Ollama (Optional)
+
+Use `AskUserQuestion`:
+- **"Yes, set up local AI model (Ollama)"**
+- **"No, skip"**
+
+STOP.
+
+**If "Yes":**
+
+1. Detect hardware:
+   ```bash
+   python3 ${CLAUDE_PLUGIN_ROOT}/scripts/ollama_manager.py detect-hardware
+   ```
+   Parse the JSON result: `ram_gb`, `vram_gb`, `gpu_vendor`, `cpu_cores`.
+
+2. Check if Ollama is installed:
+   ```bash
+   python3 ${CLAUDE_PLUGIN_ROOT}/scripts/ollama_manager.py check-install
+   ```
+
+3. **If not installed**, use `AskUserQuestion`:
+   - **"Yes, install Ollama now"**
+   - **"No, I will install it manually"**
+
+   STOP.
+
+   If "Yes":
+   ```bash
+   python3 ${CLAUDE_PLUGIN_ROOT}/scripts/ollama_manager.py install
+   ```
+
+4. Recommend a model based on detected hardware:
+   ```bash
+   python3 ${CLAUDE_PLUGIN_ROOT}/scripts/ollama_manager.py recommend-model --ram <RAM_GB> --vram <VRAM_GB>
+   ```
+
+   Present the recommendation:
+   > **Recommended model:** `<model_name>` (~<size>GB)
+   > **Reason:** <description>
+   > **Your hardware:** <ram>GB RAM, <vram>GB VRAM (<gpu_vendor>), <cpu_cores> CPU cores
+
+   Use `AskUserQuestion`:
+   - **"Use recommended model"**
+   - **"Choose a different model (I will specify)"** — wait for free-text model name
+   - **"Skip model pull (I will do it later)"**
+
+   STOP.
+
+5. **If a model was chosen**, pull it:
+   ```bash
+   python3 ${CLAUDE_PLUGIN_ROOT}/scripts/ollama_manager.py pull-model --name <MODEL_NAME>
+   ```
+
+6. Ask about task offloading:
+
+   Use `AskUserQuestion`:
+   - **"Enable automatic offloading (Claude routes simple tasks to Ollama)"**
+   - **"Manual only (I will decide when to use Ollama)"**
+
+   STOP.
+
+7. Save configuration:
+   ```bash
+   mkdir -p .claude
+   cp ${CLAUDE_PLUGIN_ROOT}/config/ollama-config.example.json .claude/ollama-config.json
+   ```
+   Update `.claude/ollama-config.json` with: `enabled: true`, detected hardware values, selected model, offloading preference.
+
+Then return here for Step 10.
+
 ### Step 10: Create Files
 
 Based on all answers collected:

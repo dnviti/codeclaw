@@ -4,7 +4,7 @@
 Abstracts provider-specific CLI details (install, plugin setup, prompt
 construction, invocation) so that CI/CD templates remain provider-agnostic.
 
-Supported providers: claude, openai, openclaw.
+Supported providers: claude, openai, openclaw, ollama.
 
 Zero external dependencies — stdlib only.
 """
@@ -12,6 +12,7 @@ Zero external dependencies — stdlib only.
 import argparse
 import json
 import os
+import platform
 import re
 import shutil
 import subprocess
@@ -19,10 +20,17 @@ import sys
 import tempfile
 from pathlib import Path
 
+IS_WINDOWS = platform.system() == "Windows"
+
+# Add scripts/ to path for sibling imports
+_SCRIPT_DIR = Path(__file__).resolve().parent
+if str(_SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPT_DIR))
+
 
 # ── Constants ───────────────────────────────────────────────────────────────
 
-VALID_PROVIDERS = ("claude", "openai", "openclaw")
+VALID_PROVIDERS = ("claude", "openai", "openclaw", "ollama")
 VALID_PIPELINES = ("task", "scout", "docs")
 
 CONFIG_FILE = ".claude/agentic-provider.json"
@@ -44,6 +52,10 @@ PROVIDER_DEFAULTS = {
         "model": {"task": "", "scout": "", "docs": ""},
         "budget": {"task": 0, "scout": 0, "docs": 0},
     },
+    "ollama": {
+        "model": {"task": "qwen2.5-coder:7b", "scout": "qwen2.5-coder:7b", "docs": "qwen2.5-coder:7b"},
+        "budget": {"task": 0, "scout": 0, "docs": 0},
+    },
 }
 
 # API key environment variable per provider
@@ -51,6 +63,7 @@ PROVIDER_ENV_KEYS = {
     "claude": "ANTHROPIC_API_KEY",
     "openai": "OPENAI_API_KEY",
     "openclaw": "OPENCLAW_API_KEY",
+    "ollama": "",  # No API key needed for local Ollama
 }
 
 # CLI binary name per provider
@@ -58,6 +71,7 @@ PROVIDER_CLI_BIN = {
     "claude": "claude",
     "openai": "codex",
     "openclaw": "openclaw",
+    "ollama": "ollama",
 }
 
 # npm package per provider
@@ -65,6 +79,7 @@ PROVIDER_NPM_PKG = {
     "claude": "@anthropic-ai/claude-code",
     "openai": "@openai/codex",
     "openclaw": "openclaw",
+    "ollama": None,  # Ollama is installed via its own installer, not npm
 }
 
 # Allowed tools per pipeline (Claude only)
@@ -79,6 +94,7 @@ INSTRUCTIONS_FILE = {
     "claude": "CLAUDE.md",
     "openai": "AGENTS.md",
     "openclaw": "CLAUDE.md",
+    "ollama": "CLAUDE.md",
 }
 
 # Co-Authored-By line templates
@@ -86,6 +102,7 @@ CO_AUTHORED_BY = {
     "claude": "Co-Authored-By: Claude {model} <noreply@anthropic.com>",
     "openai": "Co-Authored-By: OpenAI Codex ({model}) <noreply@openai.com>",
     "openclaw": "Co-Authored-By: OpenClaw Agent <noreply@openclaw.ai>",
+    "ollama": "Co-Authored-By: Ollama Local ({model}) <noreply@ollama.com>",
 }
 
 # CTDF plugin repo URL
@@ -177,6 +194,9 @@ def load_config(
 def validate_env(provider: str) -> None:
     """Check that the required API key environment variable is set."""
     env_key = PROVIDER_ENV_KEYS[provider]
+    if not env_key:
+        # Provider does not require an API key (e.g., ollama)
+        return
     if not os.environ.get(env_key):
         print(
             f"Error: {env_key} is not set. "
@@ -193,10 +213,34 @@ def install_cli(provider: str) -> None:
     """Install the provider's CLI tool via npm if not already present."""
     cli_bin = PROVIDER_CLI_BIN[provider]
     if shutil.which(cli_bin):
-        print(f"  {cli_bin} is already installed, skipping npm install.")
+        print(f"  {cli_bin} is already installed, skipping install.")
         return
 
     pkg = PROVIDER_NPM_PKG[provider]
+
+    # Ollama uses its own installer, not npm
+    if provider == "ollama":
+        print("  Ollama is not installed. Attempting installation...")
+        scripts_dir = Path(__file__).resolve().parent
+        ollama_script = scripts_dir / "ollama_manager.py"
+        try:
+            result = subprocess.run(
+                [sys.executable, str(ollama_script), "install"],
+                capture_output=True, text=True, timeout=600,
+            )
+            if result.returncode == 0:
+                print(f"  Ollama installed successfully.")
+                return
+            else:
+                print(f"Error: Ollama installation failed:\n{result.stderr}", file=sys.stderr)
+                sys.exit(1)
+        except subprocess.TimeoutExpired:
+            print("Error: Ollama installation timed out after 10 minutes.", file=sys.stderr)
+            sys.exit(1)
+        except OSError as e:
+            print(f"Error: Could not install Ollama: {e}", file=sys.stderr)
+            sys.exit(1)
+
     print(f"  Installing {pkg} via npm...")
     result = subprocess.run(
         ["npm", "install", "-g", pkg],
@@ -247,11 +291,8 @@ def setup_plugin(provider: str) -> None:
     cache_dir = plugin_dir / "cache" / "dnviti-plugins" / "ctdf" / version
     cache_dir.mkdir(parents=True, exist_ok=True)
 
-    # Copy plugin files to cache
-    subprocess.run(
-        ["cp", "-r", f"{market_dir}/.", str(cache_dir)],
-        capture_output=True,
-    )
+    # Copy plugin files to cache (cross-platform: uses shutil instead of cp -r)
+    shutil.copytree(str(market_dir), str(cache_dir), dirs_exist_ok=True)
 
     # Write plugin registry files
     from datetime import datetime, timezone
@@ -382,6 +423,46 @@ def _get_platform_placeholders(platform: str) -> dict:
         }
 
 
+def _get_mcp_server_info() -> str:
+    """Build an MCP server connection info snippet for agent prompts.
+
+    When the MCP server is configured and the ``mcp`` package is available,
+    this returns a markdown section that instructs spawned agents how to
+    connect to the shared vector memory MCP server.
+    """
+    mcp_script = Path(SCRIPTS_DIR) / "mcp_server.py"
+    if not mcp_script.exists():
+        return ""
+
+    # Check project config for mcp_server.enabled
+    for cfg_name in (".claude/project-config.json", "config/project-config.json"):
+        cfg_path = Path(cfg_name)
+        if cfg_path.exists():
+            try:
+                data = json.loads(cfg_path.read_text(encoding="utf-8"))
+                mcp_cfg = data.get("mcp_server", {})
+                if not mcp_cfg.get("enabled", False):
+                    return ""
+                break
+            except (json.JSONDecodeError, OSError):
+                pass
+    else:
+        return ""
+
+    return (
+        "\n\n## Vector Memory MCP Server\n\n"
+        "A shared vector memory MCP server is available for semantic code search,\n"
+        "memory storage, and task context retrieval.  The server uses stdio\n"
+        "transport and can be started with:\n\n"
+        "```bash\n"
+        f"python3 {mcp_script} --root .\n"
+        "```\n\n"
+        "Tools: `index_repository`, `semantic_search`, `store_memory`, "
+        "`get_task_context`\n"
+        "Resource: `memory://status`\n\n"
+    )
+
+
 def build_prompt(pipeline: str, provider: str, model: str, auto_pr: bool = True) -> str:
     """Construct the agent prompt for the given pipeline and provider.
 
@@ -392,6 +473,9 @@ def build_prompt(pipeline: str, provider: str, model: str, auto_pr: bool = True)
     co_authored_by = _make_co_authored_by(provider, model)
     platform = _detect_platform()
     platform_placeholders = _get_platform_placeholders(platform)
+
+    # MCP server connection info for agents
+    mcp_info = _get_mcp_server_info()
 
     if pipeline == "task":
         # Task prompt is self-contained (no skill references)
@@ -422,7 +506,7 @@ def build_prompt(pipeline: str, provider: str, model: str, auto_pr: bool = True)
                 prompt,
                 flags=_re.DOTALL,
             )
-        return prompt
+        return prompt + mcp_info
 
     elif pipeline == "scout":
         research_comment_instructions = (
@@ -457,6 +541,7 @@ def build_prompt(pipeline: str, provider: str, model: str, auto_pr: bool = True)
                 "@report-features.md "
                 "@report-quality.md"
                 + research_comment_instructions
+                + mcp_info
             )
         else:
             # Inline the idea-scout skill for non-Claude providers
@@ -500,7 +585,7 @@ def build_prompt(pipeline: str, provider: str, model: str, auto_pr: bool = True)
                 "- @report-quality.md — code quality analysis\n\n"
                 "## Skill Instructions\n\n"
             )
-            return preamble + skill_content + research_comment_instructions
+            return preamble + skill_content + research_comment_instructions + mcp_info
 
     elif pipeline == "docs":
         if provider == "claude":
@@ -517,7 +602,7 @@ def build_prompt(pipeline: str, provider: str, model: str, auto_pr: bool = True)
             prompt = prompt.replace("{{INSTRUCTIONS_FILE}}", instructions_file)
             prompt = prompt.replace("{{CO_AUTHORED_BY}}", co_authored_by)
             prompt = prompt.replace("{{RELEASE_BRANCH}}", platform_placeholders.get("{{RELEASE_BRANCH}}", "develop"))
-            return prompt
+            return prompt + mcp_info
         else:
             # For non-Claude providers, inline the docs skill
             skill_path = Path(SKILLS_DIR) / "docs" / "SKILL.md"
@@ -555,13 +640,26 @@ def build_prompt(pipeline: str, provider: str, model: str, auto_pr: bool = True)
                     "Use the following instructions as a guide for updating documentation:\n\n"
                     + skill_content
                 )
-            return prompt
+            return prompt + mcp_info
 
     print(f"Error: Unknown pipeline '{pipeline}'.", file=sys.stderr)
     sys.exit(1)
 
 
 # ── CLI Invocation Building ─────────────────────────────────────────────────
+
+def _read_prompt_file(prompt_file: str) -> str:
+    """Read prompt file contents directly (cross-platform, no shell expansion).
+
+    Delegates to ``platform_utils.read_file_for_prompt`` when available,
+    with a local fallback to keep the module self-contained.
+    """
+    try:
+        from platform_utils import read_file_for_prompt
+        return read_file_for_prompt(prompt_file)
+    except ImportError:
+        return Path(prompt_file).read_text(encoding="utf-8")
+
 
 def build_invocation(
     provider: str,
@@ -571,6 +669,10 @@ def build_invocation(
     pipeline: str,
 ) -> list[str]:
     """Build the CLI command to invoke the agent.
+
+    Uses direct file reading instead of ``$(cat ...)`` shell expansion,
+    so the returned list can be used with ``subprocess.run()`` without
+    ``shell=True`` on any OS (Windows, macOS, Linux).
 
     Args:
         provider: The AI provider name.
@@ -582,10 +684,12 @@ def build_invocation(
     Returns:
         A list of command-line arguments for subprocess.
     """
+    prompt_content = _read_prompt_file(prompt_file)
+
     if provider == "claude":
         cmd = [
             "claude", "-p",
-            f"$(cat {prompt_file})",
+            prompt_content,
         ]
         if model:
             cmd.extend(["--model", model])
@@ -602,14 +706,25 @@ def build_invocation(
         ]
         if model:
             cmd.extend(["-m", model])
-        cmd.append(f"$(cat {prompt_file})")
+        cmd.append(prompt_content)
         return cmd
 
     elif provider == "openclaw":
         cmd = [
             "openclaw", "agent",
-            "--message", f"$(cat {prompt_file})",
+            "--message", prompt_content,
             "--local",
+        ]
+        return cmd
+
+    elif provider == "ollama":
+        # Ollama is invoked via the ollama_manager.py query subcommand
+        scripts_dir = Path(__file__).resolve().parent
+        cmd = [
+            sys.executable, str(scripts_dir / "ollama_manager.py"),
+            "query",
+            "--model", model or "qwen2.5-coder:7b",
+            "--prompt", prompt_content,
         ]
         return cmd
 
@@ -626,34 +741,117 @@ def build_shell_command(
 ) -> str:
     """Build a shell command string for the agent invocation.
 
-    Uses shell expansion $(cat ...) for prompt injection, so this must
-    be executed via shell=True.
+    On Unix (bash/zsh), uses ``$(cat ...)`` shell expansion.
+    On Windows, uses PowerShell ``$(Get-Content ...)`` syntax.
+    Both require ``shell=True`` when passed to ``subprocess.run()``.
     """
+    if IS_WINDOWS:
+        # Sanitize path for PowerShell: escape backticks and dollar signs
+        safe_path = prompt_file.replace("`", "``").replace("$", "`$")
+        cat_expr = f'$(Get-Content -Raw "{safe_path}")'
+        line_cont = " `\n  "
+    else:
+        cat_expr = f'"$(cat {prompt_file})"'
+        line_cont = " \\\n  "
+
     if provider == "claude":
-        parts = [f'claude -p "$(cat {prompt_file})"']
+        parts = [f"claude -p {cat_expr}"]
         if model:
             parts.append(f"--model {model}")
         if budget > 0:
             parts.append(f"--max-budget-usd {int(budget)}")
         tools = CLAUDE_ALLOWED_TOOLS.get(pipeline, "Bash,Read,Grep,Glob,Edit,Write")
         parts.append(f'--allowedTools "{tools}"')
-        return " \\\n  ".join(parts)
+        return line_cont.join(parts)
 
     elif provider == "openai":
         parts = ["codex -q -a full-auto"]
         if model:
             parts.append(f"-m {model}")
-        parts.append(f'"$(cat {prompt_file})"')
-        return " \\\n  ".join(parts)
+        parts.append(cat_expr)
+        return line_cont.join(parts)
 
     elif provider == "openclaw":
         return (
-            f'openclaw agent \\\n'
-            f'  --message "$(cat {prompt_file})" \\\n'
-            f'  --local'
+            f"openclaw agent{line_cont}"
+            f"--message {cat_expr}{line_cont}"
+            f"--local"
+        )
+
+    elif provider == "ollama":
+        scripts_dir = Path(__file__).resolve().parent
+        ollama_script = scripts_dir / "ollama_manager.py"
+        model_name = model or "qwen2.5-coder:7b"
+        if IS_WINDOWS:
+            # On Windows, shlex.quote is not suitable; use basic quoting
+            safe_model = f'"{model_name}"'
+        else:
+            import shlex as _shlex
+            safe_model = _shlex.quote(model_name)
+        return (
+            f"{sys.executable} {ollama_script} query{line_cont}"
+            f"--model {safe_model}{line_cont}"
+            f"--prompt {cat_expr}"
         )
 
     return ""
+
+
+# ── Memory Protocol Integration ────────────────────────────────────────────
+
+def _register_agent(pipeline: str, task_code: str = "") -> tuple[str, str]:
+    """Register an agent with the memory consistency protocol.
+
+    Returns (agent_id, session_id).  If memory_protocol is not available,
+    returns empty strings (graceful degradation).
+    """
+    try:
+        from memory_protocol import MemoryProtocol, generate_agent_id
+
+        root = Path.cwd()
+        protocol = MemoryProtocol(root)
+        agent_id = generate_agent_id(prefix=pipeline)
+        session = protocol.register_agent(
+            agent_id=agent_id,
+            agent_type=pipeline,
+            task_code=task_code,
+        )
+        return agent_id, session.session_id
+    except (ImportError, Exception):
+        return "", ""
+
+
+def _deregister_agent(session_id: str):
+    """Deregister an agent session on completion."""
+    if not session_id:
+        return
+    try:
+        from memory_protocol import MemoryProtocol
+
+        root = Path.cwd()
+        protocol = MemoryProtocol(root)
+        protocol.deregister_agent(session_id)
+    except (ImportError, Exception):
+        pass
+
+
+# ── Ollama Offload Config ───────────────────────────────────────────────────
+
+def _load_ollama_offload_config() -> dict | None:
+    """Load Ollama offloading configuration if enabled.
+
+    Returns the config dict if Ollama offloading is enabled, None otherwise.
+    """
+    config_path = Path(".claude/ollama-config.json")
+    if not config_path.exists():
+        return None
+    try:
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+        if config.get("enabled") and config.get("offloading", {}).get("enabled"):
+            return config
+    except (json.JSONDecodeError, OSError):
+        pass
+    return None
 
 
 # ── Main Runner ─────────────────────────────────────────────────────────────
@@ -679,23 +877,34 @@ def run_agent(
     print(f"  Budget:   ${budget}" if budget > 0 else "  Budget:   (not applicable)")
     print()
 
+    # 1b. Check for Ollama offloading (when using a cloud provider)
+    ollama_offload = False
+    ollama_config = _load_ollama_offload_config()
+    if ollama_config and provider != "ollama":
+        ollama_offload = True
+        print(f"  Ollama offloading: enabled (model: {ollama_config.get('model', 'auto')})")
+
     # 2. Validate environment
     if not dry_run:
         validate_env(provider)
     else:
         env_key = PROVIDER_ENV_KEYS[provider]
-        if not os.environ.get(env_key):
+        if env_key and not os.environ.get(env_key):
             print(f"  [dry-run] Warning: {env_key} is not set (would fail in real run).")
 
     # 3. Install CLI
-    print("[1/4] Installing CLI...")
+    print("[1/5] Installing CLI...")
     if not dry_run:
         install_cli(provider)
     else:
-        print(f"  [dry-run] Would install: {PROVIDER_NPM_PKG[provider]}")
+        pkg = PROVIDER_NPM_PKG.get(provider)
+        if pkg:
+            print(f"  [dry-run] Would install: {pkg}")
+        else:
+            print(f"  [dry-run] Would install {provider} via its own installer.")
 
     # 4. Setup plugin
-    print("[2/4] Setting up plugin...")
+    print("[2/5] Setting up plugin...")
     if not dry_run:
         setup_plugin(provider)
     else:
@@ -704,15 +913,31 @@ def run_agent(
         else:
             print(f"  [dry-run] Skipping plugin setup (not needed for {provider}).")
 
-    # 5. Build prompt
-    print("[3/4] Building prompt...")
+    # 5. Register agent with memory protocol
+    print("[3/5] Registering agent with memory protocol...")
+    agent_id, session_id = "", ""
+    if not dry_run:
+        agent_id, session_id = _register_agent(pipeline)
+        if agent_id:
+            print(f"  Agent registered: {agent_id} (session={session_id})")
+            # Set env vars so child processes inherit agent identity
+            os.environ["CTDF_AGENT_ID"] = agent_id
+            os.environ["CTDF_SESSION_ID"] = session_id
+            os.environ["CTDF_AGENT_TYPE"] = pipeline
+        else:
+            print("  Memory protocol not available — running without coordination.")
+    else:
+        print("  [dry-run] Would register agent with memory protocol.")
+
+    # 6. Build prompt
+    print("[4/5] Building prompt...")
     auto_pr = config.get("auto_pr", True)
     if pipeline == "task":
         print(f"  Auto-PR: {'enabled' if auto_pr else 'disabled'}")
     prompt = build_prompt(pipeline, provider, model, auto_pr=auto_pr)
 
-    # Write prompt to temp file
-    prompt_file = "/tmp/agent-prompt.md"
+    # Write prompt to temp file (cross-platform temp directory)
+    prompt_file = str(Path(tempfile.gettempdir()) / "agent-prompt.md")
     if not dry_run:
         Path(prompt_file).write_text(prompt, encoding="utf-8")
         print(f"  Prompt written to {prompt_file} ({len(prompt)} chars)")
@@ -721,23 +946,27 @@ def run_agent(
         print(f"  [dry-run] Prompt preview (first 200 chars):")
         print(f"    {prompt[:200]}...")
 
-    # 6. Invoke agent
-    print("[4/4] Invoking agent...")
-    shell_cmd = build_shell_command(provider, prompt_file, model, budget, pipeline)
+    # 7. Invoke agent
+    print("[5/5] Invoking agent...")
 
     if dry_run:
+        shell_cmd = build_shell_command(provider, prompt_file, model, budget, pipeline)
         print(f"\n  [dry-run] Would execute:\n")
         for line in shell_cmd.split("\n"):
             print(f"    {line}")
         print("\n  [dry-run] Complete. No agent was invoked.")
         return
 
-    print(f"\n  Executing:\n    {shell_cmd.split(chr(10))[0]}...")
+    # Use list-format invocation (no shell=True) for cross-platform safety
+    cmd_list = build_invocation(provider, prompt_file, model, budget, pipeline)
+    print(f"\n  Executing:\n    {cmd_list[0]} ...")
     result = subprocess.run(
-        shell_cmd,
-        shell=True,
+        cmd_list,
         cwd=os.getcwd(),
     )
+
+    # Deregister agent from memory protocol
+    _deregister_agent(session_id)
 
     if result.returncode != 0:
         print(
@@ -759,6 +988,7 @@ def main() -> None:
             "Examples:\n"
             "  python3 agent_runner.py run --pipeline task\n"
             "  python3 agent_runner.py run --pipeline scout --provider openai --model o3\n"
+            "  python3 agent_runner.py run --pipeline task --provider ollama --model qwen2.5-coder:7b\n"
             "  python3 agent_runner.py run --pipeline docs --dry-run\n"
         ),
     )
