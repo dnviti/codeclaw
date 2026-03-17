@@ -66,5 +66,10 @@
         "post_url": "https://news.ycombinator.com/submit"
       }
     ]
+  },
+  "ollama": {
+    "enabled": false,
+    "model": "",
+    "offloading": false
   }
 }
