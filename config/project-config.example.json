@@ -18,5 +18,47 @@
   "github_repo_url": "",
   "release_branch": "",
   "show_generated_footer": true,
-  "python_command": ""
+  "python_command": "",
+  "social_announce": {
+    "platforms": {
+      "bluesky": {
+        "enabled": false
+      },
+      "mastodon": {
+        "enabled": false
+      },
+      "discord": {
+        "enabled": false
+      },
+      "slack": {
+        "enabled": false
+      }
+    },
+    "clipboard_platforms": [
+      {
+        "name": "twitter",
+        "enabled": false,
+        "max_length": 280,
+        "post_url": "https://twitter.com/compose/tweet"
+      },
+      {
+        "name": "linkedin",
+        "enabled": false,
+        "max_length": 3000,
+        "post_url": "https://www.linkedin.com/feed/"
+      },
+      {
+        "name": "reddit",
+        "enabled": false,
+        "max_length": 10000,
+        "post_url": ""
+      },
+      {
+        "name": "hackernews",
+        "enabled": false,
+        "max_length": 2000,
+        "post_url": "https://news.ycombinator.com/submit"
+      }
+    ]
+  }
 }
