@@ -1,8 +1,8 @@
 ---
 name: setup
-description: "Initialize and configure projects: create task/idea files, detect tech stack, scaffold new projects, configure branch strategy, or set up agentic fleet pipelines."
+description: "Initialize and configure projects: create task/idea files, detect tech stack, scaffold new projects, configure branch strategy, set up agentic fleet pipelines, or export skills to other AI coding platforms."
 disable-model-invocation: true
-argument-hint: "[project name] [env [section]] [init [purpose]] [branch-strategy] [agentic-fleet]"
+argument-hint: "[project name] [env [section]] [init [purpose]] [branch-strategy] [agentic-fleet] [platform [target]]"
 ---
 
 # Project Setup
@@ -41,6 +41,7 @@ Route based on `flow` in the JSON result:
 - `init` -> [Init Flow](#init-flow)
 - `branch-strategy` -> [Branch Strategy Flow](#branch-strategy-flow)
 - `agentic-fleet` -> [Agentic Fleet Flow](#agentic-fleet-setup)
+- `platform` -> [Platform Export Flow](#platform-export-flow)
 - `standard` -> [Standard Setup Flow](#standard-setup-flow)
 
 ---
@@ -604,6 +605,93 @@ Confirm all copied files exist — pipeline files, scripts, prompts, skills, and
 ### Step A7: Report
 
 Present: AI provider, enabled pipelines (with triggers and models), platform, all created file paths, required configuration (API key secret, `AGENTIC_PROVIDER` variable, optional `AGENTIC_AUTO_PR`), and how to change provider later (edit `.claude/agentic-provider.json`).
+
+---
+
+## Platform Export Flow
+
+Activated when `$ARGUMENTS` contains `platform`. Generates platform-specific configuration files from CTDF skill definitions so that other AI coding tools can consume the same skills.
+
+Shorthand for the exporter script:
+
+| Alias | Expands to |
+|-------|------------|
+| `PE`  | `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/platform_exporter.py` |
+
+### Step P1: Discover Skills
+
+Run: `PE list-skills`
+
+Present the list of discovered skills:
+> **Found N CTDF skills:** task, idea, release, setup, ...
+>
+> These skills will be exported to the selected platform format.
+
+### Step P2: Select Target Platform
+
+**If `$ARGUMENTS` specifies a target** (e.g., `platform cursor`), use it directly and skip to Step P3.
+
+**If `$ARGUMENTS` is just `platform`**, use `AskUserQuestion`:
+- **"OpenCode (opencode.json + JS wrappers)"**
+- **"OpenClaw (AgentSkills SKILL.md)"**
+- **"Cursor (.cursor/rules/*.mdc)"**
+- **"Windsurf (.windsurf/rules/*.md)"**
+- **"Continue (.continue/ assistants)"**
+- **"GitHub Copilot (.github/copilot-instructions.md)"**
+- **"AGENTS.md (universal standard)"**
+- **"All platforms"**
+- **"Cancel"**
+
+STOP.
+
+Map the choice to a target name: `opencode`, `openclaw`, `cursor`, `windsurf`, `continue`, `copilot`, `agents_md`, or `all`.
+
+### Step P3: Select Output Directory
+
+Use `AskUserQuestion`:
+- **"Current project directory (recommended)"** — use `.` (the project root)
+- **"Custom directory (I will specify)"** — wait for free-text input
+
+STOP.
+
+### Step P4: Run Export
+
+**If target is a single platform:**
+```bash
+PE export --target <target> --output <output_dir>
+```
+
+**If target is "all":**
+```bash
+PE export-all --output <output_dir>
+```
+
+Capture the JSON output.
+
+### Step P5: Report Results
+
+Parse the JSON result and present:
+> **Platform export complete:**
+> - **Target:** <platform name>
+> - **Skills exported:** N
+> - **Files created/updated:** list each file path
+> - **Files unchanged:** (already up to date)
+>
+> **Note:** The export is idempotent. Re-running will update files only when skill content changes.
+
+If errors occurred, present them and ask the user how to proceed.
+
+### Step P6: Post-Export Guidance
+
+Based on the target, provide platform-specific next steps:
+
+- **OpenCode:** "Add `opencode.json` to your project root. OpenCode will discover plugins from `.opencode/plugins/`."
+- **OpenClaw:** "Register skills with ClawHub if desired: `openclaw publish .openclaw/skills/<name>`"
+- **Cursor:** "Rules will be loaded automatically from `.cursor/rules/`. Set `alwaysApply: true` in the MDC frontmatter for rules you want active by default."
+- **Windsurf:** "Rules will be loaded from `.windsurf/rules/`. Restart Windsurf to pick up new rules."
+- **Continue:** "Assistants are available in `.continue/assistants/`. Restart Continue to load them."
+- **Copilot:** "Instructions file at `.github/copilot-instructions.md` will be used by Copilot in agent mode."
+- **AGENTS.md:** "The `AGENTS.md` file is read by multiple AI tools (Codex, OpenAI agents, etc.) as project context."
 
 ---
 

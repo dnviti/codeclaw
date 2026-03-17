@@ -53,6 +53,20 @@ jobs:
           # Write to file for the release step
           echo "$NOTES" > /tmp/release-notes.md
 
+      - name: Build .ccpkg package
+        id: ccpkg
+        run: |
+          TAG="${{ github.ref_name }}"
+          VERSION="${TAG#v}"
+          python3 scripts/build_ccpkg.py \
+            --version "$VERSION" \
+            --output dist \
+            --lock \
+            --json > /tmp/ccpkg-result.json
+          echo "archive=dist/ctdf-${VERSION}.ccpkg" >> "$GITHUB_OUTPUT"
+          echo "lock=dist/ccpkg-lock.json" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -61,6 +75,49 @@ jobs:
             --repo "${{ github.repository }}" \
             --title "${{ github.ref_name }}" \
             --notes-file /tmp/release-notes.md
+
+      - name: Upload .ccpkg release asset
+        if: ${{ steps.ccpkg.outputs.archive != '' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${{ github.ref_name }}" \
+            "${{ steps.ccpkg.outputs.archive }}" \
+            --repo "${{ github.repository }}" \
+            --clobber
+          if [ -f "${{ steps.ccpkg.outputs.lock }}" ]; then
+            gh release upload "${{ github.ref_name }}" \
+              "${{ steps.ccpkg.outputs.lock }}" \
+              --repo "${{ github.repository }}" \
+              --clobber
+          fi
+
+      - name: Build portable distribution
+        id: portable
+        run: |
+          TAG="${{ github.ref_name }}"
+          VERSION="${TAG#v}"
+          python3 scripts/build_portable.py \
+            --version "$VERSION" \
+            --output dist \
+            --json > /tmp/build-result.json
+          echo "archive=dist/ctdf-${VERSION}-portable.zip" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Upload portable distribution to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ARCHIVE="${{ steps.portable.outputs.archive }}"
+          if [ -f "$ARCHIVE" ]; then
+            gh release upload "${{ github.ref_name }}" \
+              "$ARCHIVE" \
+              --repo "${{ github.repository }}" \
+              --clobber
+            echo "Uploaded portable distribution: $ARCHIVE"
+          else
+            echo "::warning::Portable archive not found at $ARCHIVE, skipping upload"
+          fi
 
   docker-release:
     name: Build Docker (stable + versioned)
