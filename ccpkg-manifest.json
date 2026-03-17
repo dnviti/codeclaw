@@ -1,0 +1,208 @@
+{
+  "ccpkg_version": "1.0.0",
+  "name": "ctdf",
+  "version": "3.4.5",
+  "description": "Project-agnostic task and release management framework with 8 streamlined skills: /task, /idea, /release, /docs, /setup, /update, /tests, /help. Features a gated release pipeline with automatic subagent orchestration.",
+  "author": {
+    "name": "dnviti"
+  },
+  "repository": "https://github.com/dnviti/claude-task-development-framework",
+  "license": "MIT",
+  "keywords": [
+    "task-management",
+    "project-management",
+    "ideas",
+    "workflow",
+    "devops",
+    "release",
+    "ci-cd",
+    "release-pipeline",
+    "subagents",
+    "staging",
+    "testing",
+    "test-coverage"
+  ],
+  "components": [
+    {
+      "type": "skill",
+      "name": "docs",
+      "description": "Generate and manage project documentation",
+      "entry_point": "skills/docs/SKILL.md",
+      "slash_command": "/docs"
+    },
+    {
+      "type": "skill",
+      "name": "help",
+      "description": "Show framework help and available skills",
+      "entry_point": "skills/help/SKILL.md",
+      "slash_command": "/help"
+    },
+    {
+      "type": "skill",
+      "name": "idea",
+      "description": "Create, evaluate, approve or reject ideas",
+      "entry_point": "skills/idea/SKILL.md",
+      "slash_command": "/idea"
+    },
+    {
+      "type": "skill",
+      "name": "release",
+      "description": "Manage the gated release pipeline",
+      "entry_point": "skills/release/SKILL.md",
+      "slash_command": "/release"
+    },
+    {
+      "type": "skill",
+      "name": "setup",
+      "description": "Initialize and configure CTDF for a project",
+      "entry_point": "skills/setup/SKILL.md",
+      "slash_command": "/setup"
+    },
+    {
+      "type": "skill",
+      "name": "task",
+      "description": "Create, pick, implement and manage tasks",
+      "entry_point": "skills/task/SKILL.md",
+      "slash_command": "/task"
+    },
+    {
+      "type": "skill",
+      "name": "tests",
+      "description": "Run and manage test suites",
+      "entry_point": "skills/tests/SKILL.md",
+      "slash_command": "/tests"
+    },
+    {
+      "type": "skill",
+      "name": "update",
+      "description": "Update CTDF to the latest version",
+      "entry_point": "skills/update/SKILL.md",
+      "slash_command": "/update"
+    },
+    {
+      "type": "hook",
+      "event": "PostToolUse",
+      "matcher": "Edit|Write",
+      "handler_type": "command",
+      "command": "python3 ${CLAUDE_PLUGIN_ROOT}/scripts/task_manager.py hook \"$CLAUDE_FILE_PATH\""
+    },
+    {
+      "type": "agent",
+      "name": "agent_runner",
+      "description": "Subagent orchestrator for parallel task execution",
+      "entry_point": "scripts/agent_runner.py",
+      "runtime": "python3"
+    }
+  ],
+  "config_schema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "dev_ports": {
+        "type": "string",
+        "description": "Port(s) the dev server listens on",
+        "default": ""
+      },
+      "start_command": {
+        "type": "string",
+        "description": "Command to start the dev server",
+        "default": ""
+      },
+      "predev_command": {
+        "type": "string",
+        "description": "Optional pre-start setup command",
+        "default": ""
+      },
+      "verify_command": {
+        "type": "string",
+        "description": "Quality gate command (lint + test + build)",
+        "default": ""
+      },
+      "test_framework": {
+        "type": "string",
+        "description": "Testing framework name (e.g., pytest, vitest)",
+        "default": ""
+      },
+      "test_command": {
+        "type": "string",
+        "description": "Command to run the test suite",
+        "default": ""
+      },
+      "test_file_pattern": {
+        "type": "string",
+        "description": "Glob pattern for test files",
+        "default": ""
+      },
+      "ci_runtime_setup": {
+        "type": "string",
+        "description": "GitHub Actions setup step YAML",
+        "default": ""
+      },
+      "show_generated_footer": {
+        "type": "boolean",
+        "description": "Show generated-by footer in outputs",
+        "default": true
+      }
+    },
+    "additionalProperties": false
+  },
+  "targets": {
+    "claude-code": {
+      "supported": true,
+      "instruction_format": "markdown",
+      "global_install_path": "~/.claude/packages/"
+    },
+    "opencode": {
+      "supported": true,
+      "instruction_format": "json+js",
+      "global_install_path": "~/.opencode/packages/"
+    },
+    "openclaw": {
+      "supported": true,
+      "instruction_format": "markdown"
+    },
+    "cursor": {
+      "supported": true,
+      "instruction_format": "mdc"
+    },
+    "windsurf": {
+      "supported": true,
+      "instruction_format": "markdown"
+    },
+    "continue": {
+      "supported": true,
+      "instruction_format": "json"
+    },
+    "copilot": {
+      "supported": true,
+      "instruction_format": "markdown"
+    },
+    "aider": {
+      "supported": true,
+      "instruction_format": "markdown"
+    },
+    "agents_md": {
+      "supported": true,
+      "instruction_format": "markdown"
+    },
+    "generic": {
+      "supported": true,
+      "instruction_format": "markdown",
+      "global_install_path": "~/.config/ccpkg/packages/"
+    }
+  },
+  "install": {
+    "global_paths": {
+      "claude-code": "~/.claude/packages/",
+      "opencode": "~/.opencode/packages/",
+      "generic": "~/.config/ccpkg/packages/"
+    },
+    "project_path": ".ccpkg/packages/",
+    "post_install": null,
+    "network_required": false
+  },
+  "checksums": {
+    "algorithm": "sha256",
+    "manifest_version": "1.0.0"
+  }
+}
