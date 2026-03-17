@@ -718,13 +718,14 @@ def build_invocation(
         return cmd
 
     elif provider == "ollama":
-        # Ollama is invoked via the ollama_manager.py query subcommand
+        # Ollama is invoked via the ollama_manager.py query subcommand (tool-calling by default)
         scripts_dir = Path(__file__).resolve().parent
         cmd = [
             sys.executable, str(scripts_dir / "ollama_manager.py"),
             "query",
             "--model", model or "qwen2.5-coder:7b",
             "--prompt", prompt_content,
+            "--with-tools",
         ]
         return cmd
 
@@ -791,7 +792,8 @@ def build_shell_command(
         return (
             f"{sys.executable} {ollama_script} query{line_cont}"
             f"--model {safe_model}{line_cont}"
-            f"--prompt {cat_expr}"
+            f"--prompt {cat_expr}{line_cont}"
+            f"--with-tools"
         )
 
     return ""

@@ -11,9 +11,11 @@ import argparse
 import json
 import os
 import platform
+import re
 import subprocess
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -71,6 +73,170 @@ OFFLOADABLE_TASKS = [
     "generate-tests-simple",
     "explain-code",
     "variable-naming",
+]
+
+# Tool definitions for Ollama tool calling (OpenAI-compatible format, Ollama v0.3+)
+OLLAMA_TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "bash_execute",
+            "description": "Run a shell command and return stdout and stderr.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "command": {
+                        "type": "string",
+                        "description": "The shell command to execute.",
+                    },
+                },
+                "required": ["command"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "read_file",
+            "description": "Read the contents of a file at the given path.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "The file path to read.",
+                    },
+                },
+                "required": ["path"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "write_file",
+            "description": "Write content to a file, creating it if it does not exist.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "The file path to write to.",
+                    },
+                    "content": {
+                        "type": "string",
+                        "description": "The content to write to the file.",
+                    },
+                },
+                "required": ["path", "content"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "edit_file",
+            "description": "Replace an exact string in a file with a new string.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "The file path to edit.",
+                    },
+                    "old_string": {
+                        "type": "string",
+                        "description": "The exact string to find and replace.",
+                    },
+                    "new_string": {
+                        "type": "string",
+                        "description": "The replacement string.",
+                    },
+                },
+                "required": ["path", "old_string", "new_string"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "grep_search",
+            "description": "Search file contents for a regex pattern. Returns matching lines.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "pattern": {
+                        "type": "string",
+                        "description": "The regex pattern to search for.",
+                    },
+                    "path": {
+                        "type": "string",
+                        "description": "File or directory to search in. Defaults to current directory.",
+                    },
+                    "glob": {
+                        "type": "string",
+                        "description": "Optional glob filter for file names (e.g. '*.py').",
+                    },
+                },
+                "required": ["pattern"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "glob_search",
+            "description": "Find files matching a glob pattern.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "pattern": {
+                        "type": "string",
+                        "description": "The glob pattern (e.g. '**/*.py').",
+                    },
+                    "path": {
+                        "type": "string",
+                        "description": "The directory to search in. Defaults to current directory.",
+                    },
+                },
+                "required": ["pattern"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "web_fetch",
+            "description": "Fetch a URL and return the response body as plain text.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "description": "The URL to fetch.",
+                    },
+                },
+                "required": ["url"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "web_search",
+            "description": "Search the web and return top results with titles and URLs.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "The search query.",
+                    },
+                },
+                "required": ["query"],
+            },
+        },
+    },
 ]
 
 
@@ -535,6 +701,355 @@ def query_ollama(
         }
 
 
+# ── Tool Calling ──────────────────────────────────────────────────────────
+
+def _check_model_supports_tools(model: str) -> bool:
+    """Check if a model supports tool calling via /api/show.
+
+    Returns True if the model advertises tool support or if the check
+    is inconclusive (optimistic default for newer models).
+    """
+    try:
+        payload = json.dumps({"name": model}).encode("utf-8")
+        req = urllib.request.Request(
+            f"{OLLAMA_API_BASE}/api/show",
+            data=payload,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+
+        # Check capabilities list if present (Ollama v0.3+)
+        capabilities = data.get("capabilities", [])
+        if capabilities:
+            return "tools" in capabilities
+
+        # Check model template for tool support indicators
+        template = data.get("template", "")
+        if "tool_call" in template or ".ToolCalls" in template:
+            return True
+
+        # Optimistic: assume support and let /api/chat handle errors
+        return True
+    except (urllib.error.URLError, OSError, json.JSONDecodeError):
+        return True
+
+
+def execute_tool(name: str, arguments: dict) -> str:
+    """Execute a tool call and return the result as a string.
+
+    Dispatches to the appropriate implementation based on tool name.
+    Security posture matches Claude Code tool execution — no additional
+    sandboxing.
+
+    Args:
+        name: The tool function name.
+        arguments: The tool call arguments as a dict.
+
+    Returns:
+        The tool execution result as a string.
+    """
+    try:
+        if name == "bash_execute":
+            command = arguments.get("command", "")
+            if not command:
+                return "Error: no command provided."
+            result = subprocess.run(
+                command, shell=True, capture_output=True, text=True, timeout=120,
+            )
+            output_parts = []
+            if result.stdout:
+                output_parts.append(result.stdout)
+            if result.stderr:
+                output_parts.append(f"STDERR:\n{result.stderr}")
+            if result.returncode != 0:
+                output_parts.append(f"Exit code: {result.returncode}")
+            return "\n".join(output_parts) or "(no output)"
+
+        elif name == "read_file":
+            file_path = arguments.get("path", "")
+            if not file_path:
+                return "Error: no path provided."
+            return Path(file_path).read_text(encoding="utf-8")
+
+        elif name == "write_file":
+            file_path = arguments.get("path", "")
+            content = arguments.get("content", "")
+            if not file_path:
+                return "Error: no path provided."
+            p = Path(file_path)
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(content, encoding="utf-8")
+            return f"Written {len(content)} bytes to {file_path}"
+
+        elif name == "edit_file":
+            file_path = arguments.get("path", "")
+            old_string = arguments.get("old_string", "")
+            new_string = arguments.get("new_string", "")
+            if not file_path:
+                return "Error: no path provided."
+            if not old_string:
+                return "Error: no old_string provided."
+            p = Path(file_path)
+            content = p.read_text(encoding="utf-8")
+            if old_string not in content:
+                return f"Error: old_string not found in {file_path}"
+            count = content.count(old_string)
+            content = content.replace(old_string, new_string, 1)
+            p.write_text(content, encoding="utf-8")
+            return f"Replaced 1 occurrence in {file_path}" + (
+                f" ({count - 1} more occurrences remain)" if count > 1 else ""
+            )
+
+        elif name == "grep_search":
+            pattern = arguments.get("pattern", "")
+            search_path = arguments.get("path", ".")
+            file_glob = arguments.get("glob", "")
+            if not pattern:
+                return "Error: no pattern provided."
+            # Try ripgrep first
+            rg_cmd = ["rg", "-n", "--no-heading", pattern, search_path]
+            if file_glob:
+                rg_cmd.extend(["--glob", file_glob])
+            try:
+                result = subprocess.run(
+                    rg_cmd, capture_output=True, text=True, timeout=30,
+                )
+                if result.returncode <= 1:
+                    return result.stdout[:8192] or "(no matches)"
+            except (OSError, subprocess.TimeoutExpired):
+                pass
+            # Fallback: Python re search
+            matches = []
+            search_p = Path(search_path)
+            files = [search_p] if search_p.is_file() else search_p.rglob(file_glob or "*")
+            for fp in files:
+                if not fp.is_file():
+                    continue
+                try:
+                    for i, line in enumerate(
+                        fp.read_text(encoding="utf-8", errors="replace").splitlines(), 1
+                    ):
+                        if re.search(pattern, line):
+                            matches.append(f"{fp}:{i}:{line}")
+                            if len(matches) >= 200:
+                                break
+                except OSError:
+                    continue
+                if len(matches) >= 200:
+                    break
+            return "\n".join(matches)[:8192] or "(no matches)"
+
+        elif name == "glob_search":
+            pattern = arguments.get("pattern", "")
+            search_path = arguments.get("path", ".")
+            if not pattern:
+                return "Error: no pattern provided."
+            results = sorted(Path(search_path).glob(pattern))
+            if not results:
+                return "(no matches)"
+            return "\n".join(str(r) for r in results[:500])
+
+        elif name == "web_fetch":
+            url = arguments.get("url", "")
+            if not url:
+                return "Error: no url provided."
+            req = urllib.request.Request(
+                url,
+                headers={"User-Agent": "Mozilla/5.0 (compatible; CTDF/1.0)"},
+            )
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                raw = resp.read().decode("utf-8", errors="replace")
+            # Strip HTML tags for cleaner text
+            text = re.sub(r"<script[^>]*>.*?</script>", "", raw, flags=re.DOTALL | re.IGNORECASE)
+            text = re.sub(r"<style[^>]*>.*?</style>", "", text, flags=re.DOTALL | re.IGNORECASE)
+            text = re.sub(r"<[^>]+>", " ", text)
+            text = re.sub(r"\s+", " ", text).strip()
+            return text[:16384]
+
+        elif name == "web_search":
+            query = arguments.get("query", "")
+            if not query:
+                return "Error: no query provided."
+            encoded = urllib.parse.urlencode({"q": query})
+            url = f"https://lite.duckduckgo.com/lite/?{encoded}"
+            req = urllib.request.Request(
+                url,
+                headers={"User-Agent": "Mozilla/5.0 (compatible; CTDF/1.0)"},
+            )
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                html = resp.read().decode("utf-8", errors="replace")
+            # Parse DuckDuckGo lite results
+            results = []
+            links = re.findall(
+                r'<a[^>]+href="([^"]+)"[^>]*class="[^"]*result-link[^"]*"[^>]*>(.*?)</a>',
+                html, re.DOTALL | re.IGNORECASE,
+            )
+            if not links:
+                # Fallback: extract all external links
+                links = re.findall(
+                    r'<a[^>]+href="(https?://[^"]+)"[^>]*>(.*?)</a>',
+                    html, re.DOTALL | re.IGNORECASE,
+                )
+            for href, title in links[:10]:
+                clean_title = re.sub(r"<[^>]+>", "", title).strip()
+                if clean_title and "duckduckgo" not in href.lower():
+                    results.append(f"- {clean_title}\n  {href}")
+            return "\n".join(results) or "(no results found)"
+
+        else:
+            return f"Error: unknown tool '{name}'"
+
+    except OSError as e:
+        return f"Error executing {name}: {e}"
+    except Exception as e:
+        return f"Error executing {name}: {type(e).__name__}: {e}"
+
+
+def query_ollama_with_tools(
+    model: str,
+    messages: list[dict],
+    tools: list[dict] | None = None,
+    system_prompt: str | None = None,
+    temperature: float = 0.1,
+    max_tokens: int = 4096,
+    max_tool_rounds: int = 10,
+) -> dict:
+    """Send a chat request with tool definitions and execute a tool-calling loop.
+
+    Uses the /api/chat endpoint with the ``tools`` parameter (OpenAI-compatible
+    format, supported since Ollama v0.3). Runs a conversation loop: send
+    request with tool definitions -> receive tool_calls from the model ->
+    execute each tool locally -> send results back as tool role messages ->
+    repeat until the model produces a final content-only response.
+
+    Args:
+        model: The model name to query.
+        messages: Initial conversation messages (list of role/content dicts).
+        tools: Tool definitions in OpenAI-compatible format. Defaults to OLLAMA_TOOLS.
+        system_prompt: Optional system-level instruction.
+        temperature: Sampling temperature.
+        max_tokens: Maximum tokens per response.
+        max_tool_rounds: Maximum number of tool-calling round trips.
+
+    Returns:
+        Dict with 'success', 'response', 'tool_rounds', and optional 'error'.
+    """
+    if tools is None:
+        tools = OLLAMA_TOOLS
+
+    temperature = max(0.0, min(temperature, 2.0))
+    max_tokens = max(1, min(max_tokens, 128000))
+
+    msgs = []
+    if system_prompt:
+        msgs.append({"role": "system", "content": system_prompt})
+    msgs.extend(messages)
+
+    for round_num in range(max_tool_rounds):
+        payload = {
+            "model": model,
+            "messages": msgs,
+            "tools": tools,
+            "stream": False,
+            "options": {
+                "temperature": temperature,
+                "num_predict": max_tokens,
+            },
+        }
+
+        try:
+            data = json.dumps(payload).encode("utf-8")
+            req = urllib.request.Request(
+                f"{OLLAMA_API_BASE}/api/chat",
+                data=data,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=300) as resp:
+                result = json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as e:
+            body = ""
+            try:
+                body = e.read().decode("utf-8")
+            except Exception:
+                pass
+            return {
+                "success": False,
+                "response": "",
+                "tool_rounds": round_num,
+                "error": f"HTTP {e.code}: {body}",
+            }
+        except urllib.error.URLError as e:
+            return {
+                "success": False,
+                "response": "",
+                "tool_rounds": round_num,
+                "error": f"Connection error: {e.reason}. Is Ollama running?",
+            }
+        except (OSError, json.JSONDecodeError) as e:
+            return {
+                "success": False,
+                "response": "",
+                "tool_rounds": round_num,
+                "error": str(e),
+            }
+
+        message = result.get("message", {})
+        tool_calls = message.get("tool_calls")
+
+        if not tool_calls:
+            # Final response — model produced content without tool calls
+            return {
+                "success": True,
+                "response": message.get("content", ""),
+                "tool_rounds": round_num + 1,
+                "model": model,
+            }
+
+        # Append the assistant message (with tool_calls) to the conversation
+        msgs.append(message)
+
+        # Execute each tool call and append results
+        for tc in tool_calls:
+            fn = tc.get("function", {})
+            tool_name = fn.get("name", "")
+            tool_args = fn.get("arguments", {})
+            if isinstance(tool_args, str):
+                try:
+                    tool_args = json.loads(tool_args)
+                except json.JSONDecodeError:
+                    tool_args = {}
+
+            print(
+                f"  [tool round {round_num + 1}] {tool_name}("
+                f"{json.dumps(tool_args)[:120]})",
+                file=sys.stderr,
+            )
+
+            tool_result = execute_tool(tool_name, tool_args)
+            msgs.append({
+                "role": "tool",
+                "content": tool_result,
+            })
+
+    # Exhausted all rounds — return whatever content we have
+    last_content = ""
+    for m in reversed(msgs):
+        if m.get("role") == "assistant" and m.get("content"):
+            last_content = m["content"]
+            break
+
+    return {
+        "success": True,
+        "response": last_content,
+        "tool_rounds": max_tool_rounds,
+        "model": model,
+        "error": f"Reached maximum of {max_tool_rounds} tool-calling rounds.",
+    }
+
+
 # ── Health Check ────────────────────────────────────────────────────────────
 
 def health_check(expected_model: str | None = None) -> dict:
@@ -921,6 +1436,19 @@ def main() -> None:
     query_parser.add_argument("--system", default=None, help="System prompt")
     query_parser.add_argument("--temperature", type=float, default=0.1, help="Sampling temperature")
     query_parser.add_argument("--max-tokens", type=int, default=2048, help="Max tokens to generate")
+    tools_group = query_parser.add_mutually_exclusive_group()
+    tools_group.add_argument(
+        "--with-tools", action="store_true", default=None,
+        help="Enable tool calling via /api/chat (default when model supports it)",
+    )
+    tools_group.add_argument(
+        "--no-tools", action="store_true",
+        help="Disable tool calling, use /api/generate",
+    )
+    query_parser.add_argument(
+        "--max-tool-rounds", type=int, default=10,
+        help="Maximum tool-calling round trips (default 10)",
+    )
 
     # health
     health_parser = subparsers.add_parser("health", help="Check Ollama server health")
@@ -954,13 +1482,34 @@ def main() -> None:
             sys.exit(1)
 
     elif args.command == "query":
-        result = query_ollama(
-            model=args.model,
-            prompt=args.prompt,
-            system_prompt=args.system,
-            temperature=args.temperature,
-            max_tokens=args.max_tokens,
-        )
+        # Determine tool-calling mode
+        use_tools = None
+        if getattr(args, "with_tools", None):
+            use_tools = True
+        elif getattr(args, "no_tools", None):
+            use_tools = False
+
+        if use_tools is None:
+            use_tools = _check_model_supports_tools(args.model)
+
+        if use_tools:
+            messages = [{"role": "user", "content": args.prompt}]
+            result = query_ollama_with_tools(
+                model=args.model,
+                messages=messages,
+                system_prompt=args.system,
+                temperature=args.temperature,
+                max_tokens=args.max_tokens,
+                max_tool_rounds=getattr(args, "max_tool_rounds", 10),
+            )
+        else:
+            result = query_ollama(
+                model=args.model,
+                prompt=args.prompt,
+                system_prompt=args.system,
+                temperature=args.temperature,
+                max_tokens=args.max_tokens,
+            )
         print(json.dumps(result, indent=2))
         if not result["success"]:
             sys.exit(1)
