@@ -17,6 +17,12 @@ import subprocess
 import sys
 from pathlib import Path
 
+# ── Platform Adapter Support ───────────────────────────────────────────────
+# Add scripts/ to path so platform_adapter module can be found
+_SCRIPT_DIR = Path(__file__).resolve().parent
+if str(_SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPT_DIR))
+
 # ── Constants ───────────────────────────────────────────────────────────────
 
 SEPARATOR = "-" * 78
@@ -1151,6 +1157,57 @@ def cmd_detect_release_config(_args) -> dict:
 
 
 # ════════════════════════════════════════════════════════════════════════════
+# Subcommand: detect-platform
+# ════════════════════════════════════════════════════════════════════════════
+
+def cmd_detect_platform(_args) -> dict:
+    """Detect the current AI coding platform and return adapter info."""
+    from platform_adapter import detect_platform, get_adapter, ALL_PLATFORMS
+
+    platform = detect_platform()
+    adapter = get_adapter(platform)
+    skills = adapter.discover_skills()
+    config = adapter.get_config()
+
+    return {
+        "detected_platform": platform,
+        "adapter_class": type(adapter).__name__,
+        "project_root": str(adapter.get_project_root()),
+        "skills_found": len(skills),
+        "skills": [{"name": s["name"], "path": s["path"]} for s in skills],
+        "config": config,
+        "all_supported_platforms": ALL_PLATFORMS,
+    }
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# Subcommand: adapter-invoke
+# ════════════════════════════════════════════════════════════════════════════
+
+def cmd_adapter_invoke(args) -> dict:
+    """Invoke a tool through the detected platform adapter."""
+    from platform_adapter import detect_platform, get_adapter
+
+    platform = getattr(args, "platform", "") or detect_platform()
+    tool = getattr(args, "tool", "")
+    raw_args = getattr(args, "tool_args", "")
+
+    if not tool:
+        return {"error": "Missing --tool argument"}
+
+    # Parse tool_args as key=value pairs
+    arguments: dict = {}
+    if raw_args:
+        for pair in raw_args.split(","):
+            if "=" in pair:
+                k, v = pair.split("=", 1)
+                arguments[k.strip()] = v.strip()
+
+    adapter = get_adapter(platform)
+    return adapter.invoke_tool(tool, arguments)
+
+
+# ════════════════════════════════════════════════════════════════════════════
 # CLI Entrypoint
 # ════════════════════════════════════════════════════════════════════════════
 
@@ -1198,6 +1255,15 @@ def main():
     # detect-release-config
     sub.add_parser("detect-release-config", help="Return all release configuration")
 
+    # detect-platform
+    sub.add_parser("detect-platform", help="Detect AI coding platform and return adapter info")
+
+    # adapter-invoke
+    p_adapter = sub.add_parser("adapter-invoke", help="Invoke a tool through the platform adapter")
+    p_adapter.add_argument("--platform", default="", help="Platform override (auto-detected if empty)")
+    p_adapter.add_argument("--tool", required=True, help="Tool/subcommand name to invoke")
+    p_adapter.add_argument("--tool-args", default="", help="Comma-separated key=value pairs")
+
     args = parser.parse_args()
     if not args.command:
         parser.print_help()
@@ -1213,6 +1279,8 @@ def main():
         "list-submodules": cmd_list_submodules,
         "status-report": cmd_status_report,
         "detect-release-config": cmd_detect_release_config,
+        "detect-platform": cmd_detect_platform,
+        "adapter-invoke": cmd_adapter_invoke,
     }
 
     handler = handlers.get(args.command)

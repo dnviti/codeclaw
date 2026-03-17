@@ -1,0 +1,43 @@
+{
+  "_comment": "Platform adapter configuration for CTDF multi-agent compatibility. Copy to .claude/platform-adapters.json and customize.",
+  "default_platform": "",
+  "adapters": {
+    "claude-code": {
+      "enabled": true,
+      "skills_dir": "./skills/",
+      "plugin_json": ".claude-plugin/plugin.json"
+    },
+    "opencode": {
+      "enabled": false,
+      "skills_dir": "./skills/",
+      "bridge_script": "scripts/skill_helper.py",
+      "workdir_env": "OPENCODE_WORKDIR"
+    },
+    "openclaw": {
+      "enabled": false,
+      "skills_dir": "./skills/",
+      "clawhub_registry": "",
+      "clawhub_publish": false
+    },
+    "cursor": {
+      "enabled": false,
+      "instruction_files": [".cursor/rules", ".cursorrules"]
+    },
+    "windsurf": {
+      "enabled": false,
+      "instruction_files": [".windsurf/rules", ".windsurfrules"]
+    },
+    "continue": {
+      "enabled": false,
+      "instruction_files": [".continue/config.json"]
+    },
+    "copilot": {
+      "enabled": false,
+      "instruction_files": [".github/copilot-instructions.md"]
+    },
+    "aider": {
+      "enabled": false,
+      "instruction_files": [".aider.conf.yml"]
+    }
+  }
+}

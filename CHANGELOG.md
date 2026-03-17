@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.4.6] - 2026-03-17
+
+### Added
+- ZIP-based portable distribution (DIST-0014) (#59)
+- universal platform abstraction layer (XPLAT-0013) (#57)
+- cross-platform config generator (XPLAT-0015) (#58)
+- ccpkg-compatible packaging (DIST-0016) (#60)
+- add show_generated_footer toggle to project config (CFG-0012) (#41)
+
 ## [3.2.4] - 2026-03-17
 
 ### Added
