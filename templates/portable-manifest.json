@@ -1,0 +1,32 @@
+{
+  "name": "ctdf",
+  "description": "Claude Task Development Framework - Portable Distribution",
+  "license": "MIT",
+  "repository": "https://github.com/dnviti/claude-task-development-framework",
+  "author": {
+    "name": "dnviti"
+  },
+  "keywords": [
+    "task-management",
+    "project-management",
+    "release-pipeline",
+    "ai-coding",
+    "multi-platform",
+    "portable"
+  ],
+  "platform_targets": [
+    "claude-code",
+    "opencode",
+    "openclaw",
+    "cursor",
+    "windsurf",
+    "continue",
+    "copilot",
+    "aider",
+    "generic"
+  ],
+  "installer": {
+    "posix": "install.sh",
+    "windows": "install.ps1"
+  }
+}

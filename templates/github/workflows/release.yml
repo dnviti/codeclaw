@@ -62,6 +62,33 @@ jobs:
             --title "${{ github.ref_name }}" \
             --notes-file /tmp/release-notes.md
 
+      - name: Build portable distribution
+        id: portable
+        run: |
+          TAG="${{ github.ref_name }}"
+          VERSION="${TAG#v}"
+          python3 scripts/build_portable.py \
+            --version "$VERSION" \
+            --output dist \
+            --json > /tmp/build-result.json
+          echo "archive=dist/ctdf-${VERSION}-portable.zip" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Upload portable distribution to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ARCHIVE="${{ steps.portable.outputs.archive }}"
+          if [ -f "$ARCHIVE" ]; then
+            gh release upload "${{ github.ref_name }}" \
+              "$ARCHIVE" \
+              --repo "${{ github.repository }}" \
+              --clobber
+            echo "Uploaded portable distribution: $ARCHIVE"
+          else
+            echo "::warning::Portable archive not found at $ARCHIVE, skipping upload"
+          fi
+
   docker-release:
     name: Build Docker (stable + versioned)
     needs: release
