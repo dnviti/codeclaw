@@ -4,7 +4,7 @@
 Abstracts provider-specific CLI details (install, plugin setup, prompt
 construction, invocation) so that CI/CD templates remain provider-agnostic.
 
-Supported providers: claude, openai, openclaw.
+Supported providers: claude, openai, openclaw, ollama.
 
 Zero external dependencies — stdlib only.
 """
@@ -30,7 +30,7 @@ if str(_SCRIPT_DIR) not in sys.path:
 
 # ── Constants ───────────────────────────────────────────────────────────────
 
-VALID_PROVIDERS = ("claude", "openai", "openclaw")
+VALID_PROVIDERS = ("claude", "openai", "openclaw", "ollama")
 VALID_PIPELINES = ("task", "scout", "docs")
 
 CONFIG_FILE = ".claude/agentic-provider.json"
@@ -52,6 +52,10 @@ PROVIDER_DEFAULTS = {
         "model": {"task": "", "scout": "", "docs": ""},
         "budget": {"task": 0, "scout": 0, "docs": 0},
     },
+    "ollama": {
+        "model": {"task": "qwen2.5-coder:7b", "scout": "qwen2.5-coder:7b", "docs": "qwen2.5-coder:7b"},
+        "budget": {"task": 0, "scout": 0, "docs": 0},
+    },
 }
 
 # API key environment variable per provider
@@ -59,6 +63,7 @@ PROVIDER_ENV_KEYS = {
     "claude": "ANTHROPIC_API_KEY",
     "openai": "OPENAI_API_KEY",
     "openclaw": "OPENCLAW_API_KEY",
+    "ollama": "",  # No API key needed for local Ollama
 }
 
 # CLI binary name per provider
@@ -66,6 +71,7 @@ PROVIDER_CLI_BIN = {
     "claude": "claude",
     "openai": "codex",
     "openclaw": "openclaw",
+    "ollama": "ollama",
 }
 
 # npm package per provider
@@ -73,6 +79,7 @@ PROVIDER_NPM_PKG = {
     "claude": "@anthropic-ai/claude-code",
     "openai": "@openai/codex",
     "openclaw": "openclaw",
+    "ollama": None,  # Ollama is installed via its own installer, not npm
 }
 
 # Allowed tools per pipeline (Claude only)
@@ -87,6 +94,7 @@ INSTRUCTIONS_FILE = {
     "claude": "CLAUDE.md",
     "openai": "AGENTS.md",
     "openclaw": "CLAUDE.md",
+    "ollama": "CLAUDE.md",
 }
 
 # Co-Authored-By line templates
@@ -94,6 +102,7 @@ CO_AUTHORED_BY = {
     "claude": "Co-Authored-By: Claude {model} <noreply@anthropic.com>",
     "openai": "Co-Authored-By: OpenAI Codex ({model}) <noreply@openai.com>",
     "openclaw": "Co-Authored-By: OpenClaw Agent <noreply@openclaw.ai>",
+    "ollama": "Co-Authored-By: Ollama Local ({model}) <noreply@ollama.com>",
 }
 
 # CTDF plugin repo URL
@@ -185,6 +194,9 @@ def load_config(
 def validate_env(provider: str) -> None:
     """Check that the required API key environment variable is set."""
     env_key = PROVIDER_ENV_KEYS[provider]
+    if not env_key:
+        # Provider does not require an API key (e.g., ollama)
+        return
     if not os.environ.get(env_key):
         print(
             f"Error: {env_key} is not set. "
@@ -201,10 +213,34 @@ def install_cli(provider: str) -> None:
     """Install the provider's CLI tool via npm if not already present."""
     cli_bin = PROVIDER_CLI_BIN[provider]
     if shutil.which(cli_bin):
-        print(f"  {cli_bin} is already installed, skipping npm install.")
+        print(f"  {cli_bin} is already installed, skipping install.")
         return
 
     pkg = PROVIDER_NPM_PKG[provider]
+
+    # Ollama uses its own installer, not npm
+    if provider == "ollama":
+        print("  Ollama is not installed. Attempting installation...")
+        scripts_dir = Path(__file__).resolve().parent
+        ollama_script = scripts_dir / "ollama_manager.py"
+        try:
+            result = subprocess.run(
+                [sys.executable, str(ollama_script), "install"],
+                capture_output=True, text=True, timeout=600,
+            )
+            if result.returncode == 0:
+                print(f"  Ollama installed successfully.")
+                return
+            else:
+                print(f"Error: Ollama installation failed:\n{result.stderr}", file=sys.stderr)
+                sys.exit(1)
+        except subprocess.TimeoutExpired:
+            print("Error: Ollama installation timed out after 10 minutes.", file=sys.stderr)
+            sys.exit(1)
+        except OSError as e:
+            print(f"Error: Could not install Ollama: {e}", file=sys.stderr)
+            sys.exit(1)
+
     print(f"  Installing {pkg} via npm...")
     result = subprocess.run(
         ["npm", "install", "-g", pkg],
@@ -387,6 +423,46 @@ def _get_platform_placeholders(platform: str) -> dict:
         }
 
 
+def _get_mcp_server_info() -> str:
+    """Build an MCP server connection info snippet for agent prompts.
+
+    When the MCP server is configured and the ``mcp`` package is available,
+    this returns a markdown section that instructs spawned agents how to
+    connect to the shared vector memory MCP server.
+    """
+    mcp_script = Path(SCRIPTS_DIR) / "mcp_server.py"
+    if not mcp_script.exists():
+        return ""
+
+    # Check project config for mcp_server.enabled
+    for cfg_name in (".claude/project-config.json", "config/project-config.json"):
+        cfg_path = Path(cfg_name)
+        if cfg_path.exists():
+            try:
+                data = json.loads(cfg_path.read_text(encoding="utf-8"))
+                mcp_cfg = data.get("mcp_server", {})
+                if not mcp_cfg.get("enabled", False):
+                    return ""
+                break
+            except (json.JSONDecodeError, OSError):
+                pass
+    else:
+        return ""
+
+    return (
+        "\n\n## Vector Memory MCP Server\n\n"
+        "A shared vector memory MCP server is available for semantic code search,\n"
+        "memory storage, and task context retrieval.  The server uses stdio\n"
+        "transport and can be started with:\n\n"
+        "```bash\n"
+        f"python3 {mcp_script} --root .\n"
+        "```\n\n"
+        "Tools: `index_repository`, `semantic_search`, `store_memory`, "
+        "`get_task_context`\n"
+        "Resource: `memory://status`\n\n"
+    )
+
+
 def build_prompt(pipeline: str, provider: str, model: str, auto_pr: bool = True) -> str:
     """Construct the agent prompt for the given pipeline and provider.
 
@@ -397,6 +473,9 @@ def build_prompt(pipeline: str, provider: str, model: str, auto_pr: bool = True)
     co_authored_by = _make_co_authored_by(provider, model)
     platform = _detect_platform()
     platform_placeholders = _get_platform_placeholders(platform)
+
+    # MCP server connection info for agents
+    mcp_info = _get_mcp_server_info()
 
     if pipeline == "task":
         # Task prompt is self-contained (no skill references)
@@ -427,7 +506,7 @@ def build_prompt(pipeline: str, provider: str, model: str, auto_pr: bool = True)
                 prompt,
                 flags=_re.DOTALL,
             )
-        return prompt
+        return prompt + mcp_info
 
     elif pipeline == "scout":
         research_comment_instructions = (
@@ -462,6 +541,7 @@ def build_prompt(pipeline: str, provider: str, model: str, auto_pr: bool = True)
                 "@report-features.md "
                 "@report-quality.md"
                 + research_comment_instructions
+                + mcp_info
             )
         else:
             # Inline the idea-scout skill for non-Claude providers
@@ -505,7 +585,7 @@ def build_prompt(pipeline: str, provider: str, model: str, auto_pr: bool = True)
                 "- @report-quality.md — code quality analysis\n\n"
                 "## Skill Instructions\n\n"
             )
-            return preamble + skill_content + research_comment_instructions
+            return preamble + skill_content + research_comment_instructions + mcp_info
 
     elif pipeline == "docs":
         if provider == "claude":
@@ -522,7 +602,7 @@ def build_prompt(pipeline: str, provider: str, model: str, auto_pr: bool = True)
             prompt = prompt.replace("{{INSTRUCTIONS_FILE}}", instructions_file)
             prompt = prompt.replace("{{CO_AUTHORED_BY}}", co_authored_by)
             prompt = prompt.replace("{{RELEASE_BRANCH}}", platform_placeholders.get("{{RELEASE_BRANCH}}", "develop"))
-            return prompt
+            return prompt + mcp_info
         else:
             # For non-Claude providers, inline the docs skill
             skill_path = Path(SKILLS_DIR) / "docs" / "SKILL.md"
@@ -560,7 +640,7 @@ def build_prompt(pipeline: str, provider: str, model: str, auto_pr: bool = True)
                     "Use the following instructions as a guide for updating documentation:\n\n"
                     + skill_content
                 )
-            return prompt
+            return prompt + mcp_info
 
     print(f"Error: Unknown pipeline '{pipeline}'.", file=sys.stderr)
     sys.exit(1)
@@ -637,6 +717,17 @@ def build_invocation(
         ]
         return cmd
 
+    elif provider == "ollama":
+        # Ollama is invoked via the ollama_manager.py query subcommand
+        scripts_dir = Path(__file__).resolve().parent
+        cmd = [
+            sys.executable, str(scripts_dir / "ollama_manager.py"),
+            "query",
+            "--model", model or "qwen2.5-coder:7b",
+            "--prompt", prompt_content,
+        ]
+        return cmd
+
     print(f"Error: Unknown provider '{provider}'.", file=sys.stderr)
     sys.exit(1)
 
@@ -687,6 +778,22 @@ def build_shell_command(
             f"--local"
         )
 
+    elif provider == "ollama":
+        scripts_dir = Path(__file__).resolve().parent
+        ollama_script = scripts_dir / "ollama_manager.py"
+        model_name = model or "qwen2.5-coder:7b"
+        if IS_WINDOWS:
+            # On Windows, shlex.quote is not suitable; use basic quoting
+            safe_model = f'"{model_name}"'
+        else:
+            import shlex as _shlex
+            safe_model = _shlex.quote(model_name)
+        return (
+            f"{sys.executable} {ollama_script} query{line_cont}"
+            f"--model {safe_model}{line_cont}"
+            f"--prompt {cat_expr}"
+        )
+
     return ""
 
 
@@ -728,6 +835,25 @@ def _deregister_agent(session_id: str):
         pass
 
 
+# ── Ollama Offload Config ───────────────────────────────────────────────────
+
+def _load_ollama_offload_config() -> dict | None:
+    """Load Ollama offloading configuration if enabled.
+
+    Returns the config dict if Ollama offloading is enabled, None otherwise.
+    """
+    config_path = Path(".claude/ollama-config.json")
+    if not config_path.exists():
+        return None
+    try:
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+        if config.get("enabled") and config.get("offloading", {}).get("enabled"):
+            return config
+    except (json.JSONDecodeError, OSError):
+        pass
+    return None
+
+
 # ── Main Runner ─────────────────────────────────────────────────────────────
 
 def run_agent(
@@ -751,12 +877,19 @@ def run_agent(
     print(f"  Budget:   ${budget}" if budget > 0 else "  Budget:   (not applicable)")
     print()
 
+    # 1b. Check for Ollama offloading (when using a cloud provider)
+    ollama_offload = False
+    ollama_config = _load_ollama_offload_config()
+    if ollama_config and provider != "ollama":
+        ollama_offload = True
+        print(f"  Ollama offloading: enabled (model: {ollama_config.get('model', 'auto')})")
+
     # 2. Validate environment
     if not dry_run:
         validate_env(provider)
     else:
         env_key = PROVIDER_ENV_KEYS[provider]
-        if not os.environ.get(env_key):
+        if env_key and not os.environ.get(env_key):
             print(f"  [dry-run] Warning: {env_key} is not set (would fail in real run).")
 
     # 3. Install CLI
@@ -764,7 +897,11 @@ def run_agent(
     if not dry_run:
         install_cli(provider)
     else:
-        print(f"  [dry-run] Would install: {PROVIDER_NPM_PKG[provider]}")
+        pkg = PROVIDER_NPM_PKG.get(provider)
+        if pkg:
+            print(f"  [dry-run] Would install: {pkg}")
+        else:
+            print(f"  [dry-run] Would install {provider} via its own installer.")
 
     # 4. Setup plugin
     print("[2/5] Setting up plugin...")
@@ -851,6 +988,7 @@ def main() -> None:
             "Examples:\n"
             "  python3 agent_runner.py run --pipeline task\n"
             "  python3 agent_runner.py run --pipeline scout --provider openai --model o3\n"
+            "  python3 agent_runner.py run --pipeline task --provider ollama --model qwen2.5-coder:7b\n"
             "  python3 agent_runner.py run --pipeline docs --dry-run\n"
         ),
     )

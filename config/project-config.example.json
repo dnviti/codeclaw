@@ -25,6 +25,12 @@
     "conflict_strategy": "auto",
     "enable_versioned_reads": false
   },
+  "mcp_server": {
+    "enabled": false,
+    "transport": "stdio",
+    "auto_start": false,
+    "_comment": "Set enabled=true to activate the MCP vector memory server. Requires: pip install mcp"
+  },
   "social_announce": {
     "platforms": {
       "bluesky": {
@@ -66,5 +72,10 @@
         "post_url": "https://news.ycombinator.com/submit"
       }
     ]
+  },
+  "ollama": {
+    "enabled": false,
+    "model": "",
+    "offloading": false
   }
 }

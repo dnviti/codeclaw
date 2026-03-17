@@ -22,6 +22,15 @@
     "test-coverage"
   ],
   "skills": "./skills/",
+  "mcp_servers": {
+    "ctdf-vector-memory": {
+      "command": "python3",
+      "args": ["./scripts/mcp_server.py"],
+      "transport": "stdio",
+      "description": "Vector memory MCP server providing semantic search, indexing, memory storage, and task context tools.",
+      "requires": ["mcp"]
+    }
+  },
   "platforms": [
     "claude-code",
     "opencode",
