@@ -317,7 +317,13 @@ Note: Staging is a mandatory validation gate. It mirrors production configuratio
 
 **5f.** Push: `git push origin <CTX.config.staging_branch>` — this triggers the `latest` Docker image build via CI.
 
-**Exit condition:** Staging stable and verified → proceed with OK.
+**5g.** Create staging tag with `-staging` suffix to mark the staging release point without conflicting with the production tag:
+```bash
+git tag -a <tag_prefix>X.X.X-staging -m "Staging release <tag_prefix>X.X.X-staging"
+git push origin <tag_prefix>X.X.X-staging
+```
+
+**Exit condition:** Staging stable, verified, and tagged → proceed with OK.
 
 ---
 
@@ -567,7 +573,7 @@ for every task worktree associated with this release.
 7. **Staging = Main minus public visibility.** If it wouldn't survive on main, it doesn't pass staging.
 8. **Every unresolved issue loops back to Stage 2.** No ad-hoc fixes in downstream stages. When RPAT tasks are created, the pipeline loops back to the Task Readiness Gate, which will stop if those tasks are not yet done — the user must implement them via `/task pick` before resuming.
 9. **The release branch is single source of truth** until merged into develop. Then develop → staging → main.
-10. **Tags are only created on the production branch** after full pipeline through staging.
+10. **Production tags (`vX.X.X`) are only created on the production branch** after full pipeline through staging. **Staging tags (`vX.X.X-staging`)** are created on the staging branch at Step 5g to mark the staging release point without conflicting with the production tag.
 11. **Use CTX values** — never hardcode branch names, paths, or commands.
 12. **All output in English.**
 13. **Every GATE includes an "Abort release" option** (except in yolo mode, where abort is never auto-selected).
@@ -576,3 +582,4 @@ for every task worktree associated with this release.
 16. **Version fields in all manifest files must be bumped before tagging.** Any file still holding the previous version when the tag is created forces a full tag-move cycle. Verify at Step 7d.
 17. **Remote CI monitoring only runs when platform integration is enabled** (`CTX.platform.enabled`). Without a connected platform, local build success is the sole pre-release gate.
 18. **Yolo mode auto-selects the recommended option** at every GATE. It never auto-selects "Abort". At loop counter >= 5, yolo pauses and asks.
+19. **Staging tags use a `-staging` suffix** (`vX.X.X-staging`) to avoid colliding with production tags (`vX.X.X`). The `get_latest_tag()` function in `release_manager.py` filters out `-staging` tags when determining the latest production version.
