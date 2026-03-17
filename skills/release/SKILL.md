@@ -465,6 +465,55 @@ Present:
 
 ---
 
+#### Stage 8.5 — Announce
+
+Social media announcement step. Skippable. Only runs if `social_announce` is configured in `project-config.json`.
+
+**8.5a.** Check if social announcements are configured:
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/social_announcer.py platforms
+```
+
+If no platforms are configured or all are disabled → skip with: "No social platforms configured — skipping announcement step."
+
+**8.5b.** Generate announcements:
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/social_announcer.py generate --version X.X.X --changelog-file <CTX.config.changelog_file> --repo-url <CTX.config.repo_url>
+```
+
+**8.5c.** Preview all announcements:
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/social_announcer.py preview --version X.X.X
+```
+
+Present the preview to the user showing each platform and its formatted announcement.
+
+**8.5d. GATE:** "Post to all configured platforms" / "Select specific platforms" / "Skip announcements".
+
+In yolo mode, auto-select "Post to all configured platforms".
+
+**8.5e.** For each selected platform with direct posting (Bluesky, Mastodon, Discord, Slack):
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/social_announcer.py post --platform <name> --message "<announcement>"
+```
+
+**8.5f.** For each clipboard platform (Twitter/X, LinkedIn, Reddit, Hacker News):
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/social_announcer.py post --platform clipboard --message "<announcement>"
+```
+
+Present: "Announcement copied to clipboard. Open [URL] to post."
+
+**8.5g.** Present posting results:
+
+| Platform | Status | URL |
+|----------|--------|-----|
+| bluesky | Posted | https://... |
+| discord | Posted | — |
+| twitter (clipboard) | Copied | Open https://twitter.com/compose/tweet |
+
+---
+
 #### Stage 9 — End
 
 **9a.** Mark released: `RM release-plan-mark-released --version X.X.X`
@@ -499,6 +548,7 @@ for every task worktree associated with this release.
 | 6. Integration Tests | All passed |
 | 7. Merge Main + Tag | <prefix>X.X.X |
 | 8. Users Testing | Live |
+| 8.5. Announce | N platforms posted / skipped |
 | 9. End | Pipeline cleared |
 
 Total loop iterations: N | Patch tasks created: N | Subagents spawned: N
