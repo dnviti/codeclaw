@@ -157,11 +157,7 @@ def build_shell_invocation(cmd_parts: list[str], *, shell: bool = False) -> dict
         Keys: ``args`` (list | str), ``shell`` (bool).
     """
     if shell:
-        if IS_WINDOWS:
-            # On Windows, join with spaces (cmd.exe / PowerShell)
-            return {"args": " ".join(cmd_parts), "shell": True}
-        else:
-            return {"args": " ".join(cmd_parts), "shell": True}
+        return {"args": " ".join(cmd_parts), "shell": True}
     return {"args": cmd_parts, "shell": False}
 
 

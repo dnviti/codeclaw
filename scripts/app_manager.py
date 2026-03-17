@@ -24,6 +24,11 @@ from pathlib import Path
 
 IS_WINDOWS = platform.system() == "Windows"
 
+# Add scripts/ to path so platform_utils can be imported
+_SCRIPT_DIR = Path(__file__).resolve().parent
+if str(_SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPT_DIR))
+
 
 # ── Port detection ─────────────────────────────────────────────────────────
 
@@ -282,9 +287,6 @@ def cmd_sleep(args):
 
 def cmd_platform_info(_args):
     """Print cross-platform diagnostics."""
-    # Try to use platform_utils if available
-    script_dir = Path(__file__).resolve().parent
-    sys.path.insert(0, str(script_dir))
     try:
         from platform_utils import detect_python_cmd, get_shell_info
         python_cmd = detect_python_cmd()

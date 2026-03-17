@@ -22,6 +22,11 @@ from pathlib import Path
 
 IS_WINDOWS = platform.system() == "Windows"
 
+# Add scripts/ to path so platform_utils can be imported
+_SCRIPT_DIR = Path(__file__).resolve().parent
+if str(_SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPT_DIR))
+
 
 # ── Constants ───────────────────────────────────────────────────────────────
 
@@ -564,8 +569,16 @@ def build_prompt(pipeline: str, provider: str, model: str, auto_pr: bool = True)
 # ── CLI Invocation Building ─────────────────────────────────────────────────
 
 def _read_prompt_file(prompt_file: str) -> str:
-    """Read prompt file contents directly (cross-platform, no shell expansion)."""
-    return Path(prompt_file).read_text(encoding="utf-8")
+    """Read prompt file contents directly (cross-platform, no shell expansion).
+
+    Delegates to ``platform_utils.read_file_for_prompt`` when available,
+    with a local fallback to keep the module self-contained.
+    """
+    try:
+        from platform_utils import read_file_for_prompt
+        return read_file_for_prompt(prompt_file)
+    except ImportError:
+        return Path(prompt_file).read_text(encoding="utf-8")
 
 
 def build_invocation(
@@ -642,7 +655,9 @@ def build_shell_command(
     Both require ``shell=True`` when passed to ``subprocess.run()``.
     """
     if IS_WINDOWS:
-        cat_expr = f'$(Get-Content -Raw "{prompt_file}")'
+        # Sanitize path for PowerShell: escape backticks and dollar signs
+        safe_path = prompt_file.replace("`", "``").replace("$", "`$")
+        cat_expr = f'$(Get-Content -Raw "{safe_path}")'
         line_cont = " `\n  "
     else:
         cat_expr = f'"$(cat {prompt_file})"'
