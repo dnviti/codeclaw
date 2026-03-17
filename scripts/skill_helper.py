@@ -560,6 +560,9 @@ def cmd_context(_args) -> dict:
     except (ImportError, Exception):
         pass
 
+    # ── vector_memory ──
+    vector_memory = _get_vector_memory_status(root)
+
     # ── mcp_server ──
     mcp_server = _detect_mcp_server_status(root)
 
@@ -586,9 +589,43 @@ def cmd_context(_args) -> dict:
         "branches": branches,
         "release_config": release_config,
         "memory_agents": memory_agents,
+        "vector_memory": vector_memory,
         "mcp_server": mcp_server,
         "os_info": os_info,
     }
+
+
+def _get_vector_memory_status(root: Path) -> dict:
+    """Get vector memory status for context JSON (non-fatal)."""
+    try:
+        from vector_memory import get_effective_config, load_stored_manifest, INDEX_META
+        from deps_check import check_vector_memory_deps
+        import json as _json
+
+        config = get_effective_config(root)
+        if not config.get("enabled"):
+            return {"status": "disabled"}
+
+        ok, missing = check_vector_memory_deps()
+        if not ok:
+            return {"status": "disabled", "reason": f"missing deps: {', '.join(missing)}"}
+
+        index_dir = root / config["index_path"]
+        meta_path = index_dir / INDEX_META
+        if not meta_path.exists():
+            return {"status": "not_indexed", "enabled": True}
+
+        meta = _json.loads(meta_path.read_text(encoding="utf-8"))
+        stored = load_stored_manifest(index_dir)
+        return {
+            "status": "indexed" if stored else "stale",
+            "enabled": True,
+            "last_indexed": meta.get("last_indexed", "unknown"),
+            "file_count": meta.get("file_count", 0),
+            "embedding_model": meta.get("embedding_model", ""),
+        }
+    except Exception:
+        return {"status": "disabled"}
 
 
 # ════════════════════════════════════════════════════════════════════════════

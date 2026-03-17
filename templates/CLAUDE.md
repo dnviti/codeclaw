@@ -166,6 +166,32 @@ All scripts and skills reference `python3`. On Windows where only `python` is av
 | `$(cat file)` fails in cmd.exe | CTDF uses direct file reading in Python. For manual commands, use PowerShell: `$(Get-Content -Raw file)` |
 | Port check fails | Ensure `netstat` is available (built into Windows). Run as Administrator if needed. |
 | Permission denied on kill | Run the terminal as Administrator for `taskkill` operations. |
+
+### Vector Memory (opt-in)
+
+CTDF includes an optional vector memory layer that indexes source code, tasks, and generated documents for semantic search. It is **disabled by default** and requires optional dependencies.
+
+| Component | Purpose |
+|-----------|---------|
+| `vector_memory.py index` | Build/update the semantic index |
+| `vector_memory.py search "query"` | Search indexed content semantically |
+| `vector_memory.py status` | Check index health and staleness |
+| `vector_memory.py clear --force` | Reset the vector index |
+
+**Setup:**
+1. Install dependencies: `pip install lancedb onnxruntime tokenizers numpy pyarrow`
+2. Enable in `project-config.json`: set `vector_memory.enabled` to `true`
+3. Run initial index: `python3 scripts/vector_memory.py index --full`
+
+**Configuration** (`project-config.json` > `vector_memory`):
+- `enabled`: Enable/disable vector memory (default: `false`)
+- `auto_index`: Auto-reindex on file Edit/Write hooks (default: `false`)
+- `embedding_provider`: `"local"` (default), `"openai"`, or `"voyage"`
+- `embedding_model`: Model name (default: `"all-MiniLM-L6-v2"`)
+- `chunk_size`: Max characters per chunk (default: `2000`)
+- `index_path`: Index storage path (default: `".claude/memory/vectors"`)
+
+Vectors are stored in `.claude/memory/vectors/` (auto-added to `.gitignore`).
 <!-- CTDF:END -->
 
 ### File Naming Conventions

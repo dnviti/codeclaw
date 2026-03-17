@@ -78,6 +78,9 @@ def analyze(root: Path, focus: list[str], output_dir: Path | None, output: Path 
         size = len(report.encode("utf-8"))
         print(f"  Written to {out_path} ({size:,} bytes)", file=sys.stderr)
 
+        # Optionally index report into vector memory store
+        _try_vector_index(root, report, default_filename)
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -131,6 +134,15 @@ def main():
             sys.exit(1)
 
         analyze(Path(args.root), focus, output_dir, output)
+
+
+def _try_vector_index(root: Path, content: str, doc_name: str):
+    """Attempt to index an analyzer report into vector store (opt-in, non-fatal)."""
+    try:
+        from vector_memory import try_vector_index
+        try_vector_index(root, content, doc_name, doc_type="report")
+    except Exception:
+        pass  # Vector indexing is opt-in; failures are non-fatal
 
 
 if __name__ == "__main__":

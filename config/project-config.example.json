@@ -25,6 +25,18 @@
     "conflict_strategy": "auto",
     "enable_versioned_reads": false
   },
+  "vector_memory": {
+    "enabled": false,
+    "auto_index": false,
+    "embedding_provider": "local",
+    "embedding_model": "all-MiniLM-L6-v2",
+    "embedding_api_key_env": "",
+    "chunk_size": 2000,
+    "index_path": ".claude/memory/vectors",
+    "batch_size": 64,
+    "include_patterns": [],
+    "exclude_patterns": []
+  },
   "mcp_server": {
     "enabled": false,
     "transport": "stdio",
