@@ -88,6 +88,7 @@
   "ollama": {
     "enabled": false,
     "model": "",
-    "offloading": false
+    "offloading": false,
+    "offloading_level": 5
   }
 }

@@ -9,7 +9,7 @@
     "cpu_cores": 0
   },
   "offloading": {
-    "enabled": false,
+    "level": 5,
     "auto_route": true,
     "offloadable_tasks": [
       "generate-boilerplate",
@@ -20,6 +20,18 @@
       "explain-code",
       "variable-naming"
     ],
+    "tool_calls": {
+      "enabled": false,
+      "include_tools": ["Bash", "Read", "Grep", "Glob", "Edit", "Write"],
+      "exclude_patterns": [
+        "git push",
+        "git reset",
+        "rm -rf",
+        "sudo",
+        "chmod",
+        "chown"
+      ]
+    },
     "max_tokens": 2048,
     "temperature": 0.1
   },
