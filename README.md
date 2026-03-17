@@ -4,10 +4,12 @@ A project-agnostic task and idea management plugin for [Claude Code](https://doc
 
 CTDF gives your AI-assisted development workflow a structured backbone: ideas are captured, evaluated, promoted to tasks, implemented with quality gates, and tracked to completion — all through plain-text files and Claude Code slash commands. A gated release pipeline with parallel sub-agent orchestration enforces strict development rules from branch creation to production tagging.
 
+> **[Full Documentation](docs/index.md)** — Architecture, API reference, configuration, deployment, troubleshooting, and more.
+
 ## Features
 
 - **Two-pipeline workflow** — separate idea evaluation from task execution
-- **6 streamlined skills** — unified slash commands (`/task`, `/idea`, `/release`, `/docs`, `/setup`, `/update`)
+- **8 streamlined skills** — unified slash commands (`/task`, `/idea`, `/release`, `/docs`, `/setup`, `/update`, `/tests`, `/help`)
 - **Gated release pipeline** — 9 sequential stages with user-confirmed gates, feedback loops, parallel sub-agents, and mandatory local build verification before every push
 - **Per-PR sub-agent analysis** — each PR gets an independent agent for code optimization, security scanning, fix application, and automated merge
 - **Post-tag CI monitoring** — parallel agents monitor remote CI after tagging, auto-fix failures, and move tags when needed (platform-only)

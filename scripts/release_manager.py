@@ -333,13 +333,18 @@ AUTO_DISCOVER_MANIFESTS = [
 
 
 def get_latest_tag(tag_prefix: str) -> str | None:
-    """Get the latest git tag matching the prefix."""
+    """Get the latest git tag matching the prefix.
+
+    Excludes environment-suffixed tags (e.g. -staging) so that only
+    production tags are considered when determining the latest version.
+    """
     try:
         result = subprocess.run(
             ["git", "tag", "-l", f"{tag_prefix}*", "--sort=-v:refname"],
             capture_output=True, text=True, check=True,
         )
-        tags = result.stdout.strip().splitlines()
+        tags = [t for t in result.stdout.strip().splitlines()
+                if not t.endswith("-staging")]
         return tags[0] if tags else None
     except (subprocess.CalledProcessError, FileNotFoundError):
         return None
