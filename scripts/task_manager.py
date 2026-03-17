@@ -1973,78 +1973,88 @@ def cmd_remove_worktree(args):
     # Merge task branch into development branch before removing worktree
     no_merge = getattr(args, "no_merge_to_develop", False)
     if not no_merge:
-        # Detect development branch: project config release_branch → "develop" → "main"
+        # Detect development branch: project config release_branch → fallback "develop"
         proj_cfg = _load_project_config()
         dev_branch = proj_cfg.get("release_branch", "").strip() or "develop"
 
-        # Verify task branch exists before attempting merge
-        branch_check = subprocess.run(
-            ["git", "branch", "--list", branch_name],
-            capture_output=True, text=True, cwd=cwd,
-        )
-        branch_exists = bool(branch_check.stdout.strip())
+        # Guard: reject branch names that look like flags (e.g. "--something")
+        if dev_branch.startswith("-"):
+            print(
+                f"Warning: skipping merge — dev_branch value {dev_branch!r} looks invalid",
+                file=sys.stderr,
+            )
+        else:
+            # Verify task branch exists before attempting merge
+            branch_check = subprocess.run(
+                ["git", "branch", "--list", branch_name],
+                capture_output=True, text=True, cwd=cwd, timeout=30,
+            )
+            branch_exists = bool(branch_check.stdout.strip())
 
-        if branch_exists:
-            try:
-                # Detect current branch
-                current_branch_result = subprocess.run(
-                    ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-                    capture_output=True, text=True, check=True, cwd=cwd,
-                )
-                original_branch = current_branch_result.stdout.strip()
-                need_switch = original_branch != dev_branch
-
-                stashed = False
-                if need_switch:
-                    # Stash dirty state if needed
-                    status_result = subprocess.run(
-                        ["git", "status", "--porcelain"],
-                        capture_output=True, text=True, cwd=cwd,
+            if branch_exists:
+                try:
+                    # Detect current branch
+                    current_branch_result = subprocess.run(
+                        ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+                        capture_output=True, text=True, check=True, cwd=cwd, timeout=30,
                     )
-                    if status_result.stdout.strip():
-                        subprocess.run(
-                            ["git", "stash", "--include-untracked"],
-                            capture_output=True, text=True, check=True, cwd=cwd,
+                    original_branch = current_branch_result.stdout.strip()
+                    need_switch = original_branch != dev_branch
+
+                    stashed = False
+                    if need_switch:
+                        # Stash dirty state if needed (includes untracked files)
+                        status_result = subprocess.run(
+                            ["git", "status", "--porcelain"],
+                            capture_output=True, text=True, cwd=cwd, timeout=30,
                         )
-                        stashed = True
-                    subprocess.run(
-                        ["git", "checkout", dev_branch],
-                        capture_output=True, text=True, check=True, cwd=cwd,
-                    )
-
-                # Perform the merge
-                merge_result = subprocess.run(
-                    ["git", "merge", "--no-ff", branch_name,
-                     "-m", f"chore: merge {branch_name} into {dev_branch} (local)"],
-                    capture_output=True, text=True, cwd=cwd,
-                )
-
-                if merge_result.returncode == 0:
-                    merged_to_develop = True
-                else:
-                    merge_warning = merge_result.stderr.strip() or merge_result.stdout.strip()
-                    # Abort failed merge to leave repo in clean state
-                    subprocess.run(
-                        ["git", "merge", "--abort"],
-                        capture_output=True, text=True, cwd=cwd,
-                    )
-                    print(f"Warning: could not merge {branch_name} into {dev_branch}: {merge_warning}",
-                          file=__import__("sys").stderr)
-
-                # Restore original branch and stash
-                if need_switch:
-                    subprocess.run(
-                        ["git", "checkout", original_branch],
-                        capture_output=True, text=True, cwd=cwd,
-                    )
-                    if stashed:
+                        if status_result.stdout.strip():
+                            subprocess.run(
+                                ["git", "stash", "--include-untracked"],
+                                capture_output=True, text=True, check=True, cwd=cwd, timeout=30,
+                            )
+                            stashed = True
                         subprocess.run(
-                            ["git", "stash", "pop"],
-                            capture_output=True, text=True, cwd=cwd,
+                            ["git", "checkout", dev_branch],
+                            capture_output=True, text=True, check=True, cwd=cwd, timeout=30,
                         )
-            except (subprocess.CalledProcessError, FileNotFoundError) as exc:
-                merge_warning = str(exc)
-                print(f"Warning: merge step failed: {merge_warning}", file=__import__("sys").stderr)
+
+                    # Perform the merge
+                    merge_result = subprocess.run(
+                        ["git", "merge", "--no-ff", branch_name,
+                         "-m", f"chore: merge {branch_name} into {dev_branch} (local)"],
+                        capture_output=True, text=True, cwd=cwd, timeout=30,
+                    )
+
+                    if merge_result.returncode == 0:
+                        merged_to_develop = True
+                    else:
+                        merge_warning = merge_result.stderr.strip() or merge_result.stdout.strip()
+                        # Abort failed merge to leave repo in clean state
+                        subprocess.run(
+                            ["git", "merge", "--abort"],
+                            capture_output=True, text=True, cwd=cwd, timeout=30,
+                        )
+                        print(f"Warning: could not merge {branch_name} into {dev_branch}: {merge_warning}",
+                              file=sys.stderr)
+
+                    # Restore original branch and stash
+                    if need_switch:
+                        subprocess.run(
+                            ["git", "checkout", original_branch],
+                            capture_output=True, text=True, cwd=cwd, timeout=30,
+                        )
+                        if stashed:
+                            pop_result = subprocess.run(
+                                ["git", "stash", "pop"],
+                                capture_output=True, text=True, cwd=cwd, timeout=30,
+                            )
+                            if pop_result.returncode != 0:
+                                pop_err = pop_result.stderr.strip() or pop_result.stdout.strip()
+                                print(f"Warning: stash pop failed: {pop_err}", file=sys.stderr)
+                except (subprocess.CalledProcessError, FileNotFoundError) as exc:
+                    merge_warning = str(exc)
+                    print(f"Warning: merge step failed: {merge_warning}", file=sys.stderr)
 
     # Try normal remove first, then force
     try:
