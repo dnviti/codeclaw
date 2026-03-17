@@ -23,6 +23,7 @@ A project-agnostic task and idea management plugin for [Claude Code](https://doc
 | [Deployment](deployment.md) | CI/CD pipelines, Docker, agentic fleet |
 | [Development](development.md) | Contributing, local dev, testing, conventions |
 | [Troubleshooting](troubleshooting.md) | Common errors, debugging, FAQ |
+| [MCP Vector Memory](mcp-vector-memory.md) | Semantic search, MCP server, embedding providers, multi-agent coordination |
 | [LLM Context](llm-context.md) | Consolidated reference for LLM/bot consumption |
 
 ## Quick Start
