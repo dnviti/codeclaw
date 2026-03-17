@@ -9,7 +9,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-_SCRIPT_DIR = Path(__file__).resolve().parent.parent
+from mcp_tools import SCRIPTS_DIR as _SCRIPT_DIR
 
 
 def register(server):
@@ -36,6 +36,14 @@ def register(server):
             JSON array of search results with file_path, name, chunk_type,
             score, and content fields.
         """
+        # Validate root path
+        resolved_root = Path(root).resolve()
+        if not resolved_root.is_dir():
+            return json.dumps({
+                "status": "error",
+                "message": f"Root is not a directory: {root!r}",
+            })
+
         vm_script = _SCRIPT_DIR / "vector_memory.py"
         if not vm_script.exists():
             return json.dumps({
@@ -46,7 +54,7 @@ def register(server):
         cmd = [
             sys.executable, str(vm_script), "search",
             query,
-            "--root", root,
+            "--root", str(resolved_root),
             "--top-k", str(top_k),
             "--json",
             "--full-content",

@@ -14,7 +14,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-_SCRIPT_DIR = Path(__file__).resolve().parent.parent
+from mcp_tools import SCRIPTS_DIR as _SCRIPT_DIR
 
 TASK_CODE_RE = re.compile(r"^[A-Z]{3,5}-\d{4}$")
 SEPARATOR = "-" * 78
@@ -74,7 +74,6 @@ def _parse_task_from_files(root: Path, task_id: str) -> dict | None:
                 content_end += 1
 
             content_lines = [l.rstrip() for l in lines[content_start:content_end]]
-            block_text = "\n".join(content_lines)
 
             # Extract structured fields
             title = header.split(" — ", 1)[1] if " — " in header else header
@@ -100,7 +99,6 @@ def _parse_task_from_files(root: Path, task_id: str) -> dict | None:
                 "description": "\n".join(description_lines).strip(),
                 "source_file": fname,
             }
-            i += 1
     return None
 
 

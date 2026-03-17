@@ -9,7 +9,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-_SCRIPT_DIR = Path(__file__).resolve().parent.parent
+from mcp_tools import SCRIPTS_DIR as _SCRIPT_DIR
 
 
 def register(server):
@@ -27,6 +27,14 @@ def register(server):
         Returns:
             JSON object with ``status``, ``message``, and optional diagnostics.
         """
+        # Validate that path resolves to a plausible project directory
+        resolved_path = Path(path).resolve()
+        if not resolved_path.is_dir():
+            return json.dumps({
+                "status": "error",
+                "message": f"Path is not a directory: {path!r}",
+            })
+
         vm_script = _SCRIPT_DIR / "vector_memory.py"
         if not vm_script.exists():
             return json.dumps({
@@ -34,7 +42,7 @@ def register(server):
                 "message": "vector_memory.py not found. VMEM-0017 must be installed.",
             })
 
-        cmd = [sys.executable, str(vm_script), "index", "--root", path]
+        cmd = [sys.executable, str(vm_script), "index", "--root", str(resolved_path)]
         if not incremental:
             cmd.append("--full")
 

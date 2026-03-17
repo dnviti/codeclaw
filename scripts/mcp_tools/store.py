@@ -8,12 +8,15 @@ so that future searches can retrieve it.
 
 import json
 import hashlib
+import re
 import subprocess
 import sys
 import time
 from pathlib import Path
 
-_SCRIPT_DIR = Path(__file__).resolve().parent.parent
+_SAFE_NAMESPACE_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
+
+from mcp_tools import SCRIPTS_DIR as _SCRIPT_DIR
 
 
 def register(server):
@@ -43,8 +46,24 @@ def register(server):
             JSON object with ``status``, ``path`` of stored file, and
             ``message``.
         """
+        # Validate namespace to prevent directory traversal
+        if not _SAFE_NAMESPACE_RE.match(namespace):
+            return json.dumps({
+                "status": "error",
+                "message": f"Invalid namespace: {namespace!r}. "
+                           f"Must contain only alphanumeric characters, "
+                           f"hyphens, and underscores.",
+            })
+
         root_path = Path(root).resolve()
         notes_dir = root_path / ".claude" / "memory" / "notes" / namespace
+        # Verify resolved path stays within expected directory
+        expected_base = root_path / ".claude" / "memory" / "notes"
+        if not str(notes_dir.resolve()).startswith(str(expected_base.resolve())):
+            return json.dumps({
+                "status": "error",
+                "message": "Namespace resolves outside the allowed directory.",
+            })
         notes_dir.mkdir(parents=True, exist_ok=True)
 
         # Generate a unique filename from timestamp + content hash
@@ -58,7 +77,11 @@ def register(server):
         if metadata:
             doc_lines.append("---")
             for k, v in metadata.items():
-                doc_lines.append(f"{k}: {v}")
+                # Sanitize: keys must be simple identifiers, values are
+                # single-line strings with special chars escaped.
+                safe_key = re.sub(r"[^a-zA-Z0-9_]", "_", str(k))
+                safe_val = str(v).replace("\n", " ").replace("---", "- -")
+                doc_lines.append(f"{safe_key}: {safe_val}")
             doc_lines.append("---")
             doc_lines.append("")
         doc_lines.append(content)
