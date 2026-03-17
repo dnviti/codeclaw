@@ -17,5 +17,6 @@
   "tag_prefix": "",
   "github_repo_url": "",
   "release_branch": "",
-  "show_generated_footer": true
+  "show_generated_footer": true,
+  "python_command": ""
 }

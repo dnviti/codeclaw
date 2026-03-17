@@ -111,9 +111,38 @@ Tasks are developed in isolated git worktrees instead of branch switching, enabl
 
 This framework supports **Windows, macOS, and Linux** with automatic OS detection.
 
-- **Python command:** All scripts and skills reference `python3`. On Windows where only `python` is available, substitute `python` for `python3` in all commands.
-- **Port management:** `app_manager.py` provides cross-platform port management — `lsof`/`ss` on Unix, `netstat`/`taskkill` on Windows. Used by generated Makefile/scripts.
-- **File search:** `task_manager.py find-files` provides cross-platform file discovery (replaces Unix `find`).
+### Python Command Auto-Detection
+
+All scripts and skills reference `python3`. On Windows where only `python` is available, CTDF auto-detects the correct command:
+
+- **Auto-detection:** `platform_utils.detect_python_cmd()` tries `python3` first, then `python`, verifying each is Python 3.x via `shutil.which()`.
+- **Manual override:** Set `python_command` in `config/project-config.json` to skip auto-detection (e.g., `"python_command": "python"`).
+- **CI/CD:** The CI workflow includes a `Detect Python command` step that sets the correct command per OS.
+
+### Cross-Platform Utilities
+
+| Utility | File | Purpose |
+|---------|------|---------|
+| `platform_utils.py` | `scripts/` | Python cmd detection, shell info, safe file copy, command runner |
+| `app_manager.py` | `scripts/` | Port/process management — `lsof`/`ss` on Unix, `netstat`/`taskkill` on Windows |
+| `task_manager.py find-files` | `scripts/` | Cross-platform file discovery (replaces Unix `find`) |
+
+### Windows Requirements
+
+- **PowerShell Core (pwsh):** Required for shell-expansion features (e.g., inline file reading in agent invocations). Install from https://github.com/PowerShell/PowerShell. The legacy `cmd.exe` has limited support — commands that rely on inline expansion will fall back to direct Python file reading.
+- **Long path support:** Enable long paths in the Windows registry or via Group Policy if your project has deeply nested directories. Run: `New-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem" -Name "LongPathsEnabled" -Value 1 -PropertyType DWORD -Force`
+- **Line endings:** Configure Git to handle line endings automatically: `git config --global core.autocrlf true`. CTDF text files use LF; Git will convert on checkout/commit.
+- **Symlink permissions:** If your project uses symlinks, enable Developer Mode in Windows Settings or grant `SeCreateSymbolicLinkPrivilege` to your user account.
+
+### Troubleshooting (Windows)
+
+| Issue | Solution |
+|-------|----------|
+| `python3` not found | Install Python 3 from python.org and ensure "Add to PATH" is checked. Or set `python_command` in project config. |
+| `cp -r` fails | All CTDF scripts use `shutil.copytree()` instead. If you see this error, update to the latest CTDF version. |
+| `$(cat file)` fails in cmd.exe | CTDF uses direct file reading in Python. For manual commands, use PowerShell: `$(Get-Content -Raw file)` |
+| Port check fails | Ensure `netstat` is available (built into Windows). Run as Administrator if needed. |
+| Permission denied on kill | Run the terminal as Administrator for `taskkill` operations. |
 <!-- CTDF:END -->
 
 ### File Naming Conventions

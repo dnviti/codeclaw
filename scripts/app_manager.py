@@ -16,11 +16,18 @@ import json
 import os
 import platform
 import signal
+import shutil
 import subprocess
 import sys
 import time
+from pathlib import Path
 
 IS_WINDOWS = platform.system() == "Windows"
+
+# Add scripts/ to path so platform_utils can be imported
+_SCRIPT_DIR = Path(__file__).resolve().parent
+if str(_SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPT_DIR))
 
 
 # ── Port detection ─────────────────────────────────────────────────────────
@@ -278,6 +285,28 @@ def cmd_sleep(args):
     print(json.dumps({"slept": args.seconds}))
 
 
+def cmd_platform_info(_args):
+    """Print cross-platform diagnostics."""
+    try:
+        from platform_utils import detect_python_cmd, get_shell_info
+        python_cmd = detect_python_cmd()
+        shell_info = get_shell_info()
+    except ImportError:
+        python_cmd = "python3" if shutil.which("python3") else "python"
+        shell_info = {"shell": "unknown", "path": None, "cat_cmd": None}
+
+    info = {
+        "system": platform.system(),
+        "release": platform.release(),
+        "machine": platform.machine(),
+        "python_command": python_cmd,
+        "python_version": platform.python_version(),
+        "is_windows": IS_WINDOWS,
+        "shell": shell_info,
+    }
+    print(json.dumps(info, indent=2))
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Application lifecycle manager for dev environments",
@@ -307,6 +336,10 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("sleep", help="Cross-platform sleep")
     p.add_argument("seconds", type=float, help="Seconds to sleep")
     p.set_defaults(func=cmd_sleep)
+
+    # platform-info
+    p = sub.add_parser("platform-info", help="Print cross-platform diagnostics")
+    p.set_defaults(func=cmd_platform_info)
 
     return parser
 
