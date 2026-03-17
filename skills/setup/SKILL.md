@@ -273,6 +273,8 @@ Scan manifests and config files for: package manager, commands (dev/build/test/l
 
 Examine: manifests (`package.json`, `pyproject.toml`, `Cargo.toml`, `go.mod`, etc.), lock files, config files (`vite.config.*`, `tsconfig.json`, `.eslintrc*`, `Makefile`, `Dockerfile`, etc.), env files (`.env.example`), and directory structure. Also detect pre-dev setup, CI runtime setup, and release config.
 
+**Version manifest discovery:** Explicitly discover all version-bearing manifest files (`package.json` outside `node_modules/`, `pyproject.toml`, `setup.cfg`, `Cargo.toml`, `pom.xml`, `build.gradle`) and store their space-separated paths for `PACKAGE_JSON_PATHS`.
+
 ### Env Step 3: Present Findings
 
 Present a summary covering: tech stack (runtime, framework, package manager, database), development commands table (install/dev/build/test/lint/verify), dev server (ports, pre-dev), test framework (framework, command, pattern, CI setup), release config (manifests, tag prefix, repo URL, branch), environment variables (names only), and architecture layers.
@@ -293,6 +295,8 @@ STOP.
 Update the Development Commands section with detected values, following the template format from Step 11.
 
 Only include commands that were actually detected. Omit lines for commands that don't exist.
+
+**`PACKAGE_JSON_PATHS`:** Set this to the space-separated list of version-bearing manifest file paths discovered in Env Step 2 (e.g., `package.json apps/api/package.json`). This tells the release pipeline where to auto-bump version numbers. If no manifests were found, leave it empty.
 
 ##### Environment Setup (section: `setup` or `all`)
 
@@ -404,7 +408,7 @@ STOP.
 
 ### Init Step 6: Configure the Project
 
-Scan the scaffolded project using Glob, Grep, and Read tools to detect: dev server command/ports, pre-dev command, verify/build command, test framework/command/pattern, CI runtime setup, release branch, manifest paths, changelog, tag prefix, repo URL, file naming conventions.
+Scan the scaffolded project using Glob, Grep, and Read tools to detect: dev server command/ports, pre-dev command, verify/build command, test framework/command/pattern, CI runtime setup, release branch, manifest paths, changelog, tag prefix, repo URL, file naming conventions. Also discover all version-bearing manifest files (`package.json` outside `node_modules/`, `pyproject.toml`, `setup.cfg`, `Cargo.toml`, `pom.xml`, `build.gradle`) and populate `PACKAGE_JSON_PATHS` in CLAUDE.md with their space-separated paths.
 
 #### 6b. Update CLAUDE.md
 
