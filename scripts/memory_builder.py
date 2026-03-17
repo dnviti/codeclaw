@@ -397,6 +397,74 @@ def main():
         else:
             print(output)
 
+        # Optionally index into vector memory store
+        _try_vector_index(root, output, "project-memory.md")
+
+
+def _try_vector_index(root: Path, content: str, doc_name: str):
+    """Attempt to index generated memory into vector store (opt-in, non-fatal)."""
+    try:
+        _script_dir = Path(__file__).resolve().parent
+        if str(_script_dir) not in sys.path:
+            sys.path.insert(0, str(_script_dir))
+        from vector_memory import get_effective_config, _check_deps, _open_db, _get_or_create_table
+        from chunkers import chunk_text_document
+        from embeddings import create_provider, EmbeddingCache
+
+        config = get_effective_config(root)
+        if not config.get("enabled"):
+            return
+
+        ok, _ = _check_deps()
+        if not ok:
+            return
+
+        index_dir = root / config["index_path"]
+        if not (index_dir / "lancedb").exists():
+            return  # No index yet — skip
+
+        chunks = chunk_text_document(doc_name, content, doc_type="memory",
+                                     max_chunk_size=config.get("chunk_size", 2000))
+        if not chunks:
+            return
+
+        emb_config = {
+            "provider": config["embedding_provider"],
+            "model": config["embedding_model"],
+            "api_key_env": config["embedding_api_key_env"],
+        }
+        provider = create_provider(emb_config)
+        cache = EmbeddingCache(index_dir / "embedding_cache")
+        db = _open_db(index_dir)
+        table = _get_or_create_table(db, provider.dimension())
+
+        # Remove old entries for this doc
+        try:
+            table.delete(f"file_path = '{doc_name}'")
+        except Exception:
+            pass
+
+        texts = [c.content for c in chunks]
+        embeddings = cache.embed_with_cache(provider, texts)
+        records = []
+        for chunk, emb in zip(chunks, embeddings):
+            records.append({
+                "vector": emb,
+                "content": chunk.content,
+                "file_path": chunk.file_path,
+                "chunk_type": chunk.chunk_type,
+                "name": chunk.name,
+                "start_line": chunk.start_line,
+                "end_line": chunk.end_line,
+                "language": chunk.language,
+                "file_role": chunk.file_role,
+                "content_hash": chunk.content_hash,
+            })
+        table.add(records)
+        print(f"  Indexed {len(chunks)} chunks into vector memory.", file=sys.stderr)
+    except Exception:
+        pass  # Vector indexing is opt-in; failures are non-fatal
+
 
 if __name__ == "__main__":
     main()

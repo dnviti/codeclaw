@@ -17,5 +17,17 @@
   "tag_prefix": "",
   "github_repo_url": "",
   "release_branch": "",
-  "show_generated_footer": true
+  "show_generated_footer": true,
+  "vector_memory": {
+    "enabled": false,
+    "auto_index": false,
+    "embedding_provider": "local",
+    "embedding_model": "all-MiniLM-L6-v2",
+    "embedding_api_key_env": "",
+    "chunk_size": 2000,
+    "index_path": ".claude/memory/vectors",
+    "batch_size": 64,
+    "include_patterns": [],
+    "exclude_patterns": []
+  }
 }
