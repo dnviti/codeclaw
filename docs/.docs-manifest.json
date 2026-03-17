@@ -1,0 +1,341 @@
+{
+  "version": "1.0",
+  "generated_at": "2026-03-17T00:35:32.328313Z",
+  "sections": [
+    {
+      "name": "index",
+      "file": "index.md",
+      "source_files": [
+        {
+          "path": "README.md",
+          "hash": "2d0f45bb43dfabc3348c35407ac3b93ca8f113440219400982dab49c024e7d38"
+        },
+        {
+          "path": ".claude-plugin/plugin.json",
+          "hash": "931e6a6a96d8727ad5b87f3f40b02f1dfecf9850c33f09a3829fea17a5fd256c"
+        }
+      ],
+      "generated_at": "2026-03-17T00:35:32.322282Z"
+    },
+    {
+      "name": "architecture",
+      "file": "architecture.md",
+      "source_files": [
+        {
+          "path": "scripts/task_manager.py",
+          "hash": "5782c4b645de9b766ddfa249a39aa3612e206bafc0ebd5788754e75256fe84e1"
+        },
+        {
+          "path": "scripts/release_manager.py",
+          "hash": "c2853f3a9c517ec6a345bbac5d16f11dca25bfe93046ac598dad2ed5b5a4d74a"
+        },
+        {
+          "path": "scripts/skill_helper.py",
+          "hash": "b0fcf5ed1974a59864f9a5ccd4378aaeea37359beb2434f58b5ce8e47b1b790e"
+        },
+        {
+          "path": "scripts/docs_manager.py",
+          "hash": "c8cbc0d6870389ee9b61637562821192e551b253789726ec47d6106adf4b0cb7"
+        },
+        {
+          "path": "scripts/agent_runner.py",
+          "hash": "add4500e32220e282b2b830abe8678ce54a70552f28340df6ca9e858c5df6e6d"
+        },
+        {
+          "path": "scripts/app_manager.py",
+          "hash": "4c95e038129b54969666d551bf223e5ad173e25c70feefa039765413594ccfb9"
+        },
+        {
+          "path": "scripts/codebase_analyzer.py",
+          "hash": "19c24c32a40591e098dcfc18b57b6691aee1a16c716e5781f1b19da5d88d485d"
+        },
+        {
+          "path": "scripts/memory_builder.py",
+          "hash": "e83d9ee2d5f625a1ed9789ca25d9b878f5ddf6ef332f0542953831b1ae85df42"
+        },
+        {
+          "path": "scripts/test_manager.py",
+          "hash": "1f9d5a3dec8ba604efe2e696d18a1550dff4aab163fe42656fdcd967a31cc6e8"
+        },
+        {
+          "path": "scripts/analyzers/__init__.py",
+          "hash": "83dad40337423d0da3f6bde453187c8c67f2b42edf4da68a85adc93459ee19d2"
+        },
+        {
+          "path": "hooks/hooks.json",
+          "hash": "63a84663b366ea7524d5da6f768b0fc3591e11303201cdfa45ab238411b8dcef"
+        },
+        {
+          "path": ".claude-plugin/plugin.json",
+          "hash": "931e6a6a96d8727ad5b87f3f40b02f1dfecf9850c33f09a3829fea17a5fd256c"
+        }
+      ],
+      "generated_at": "2026-03-17T00:35:32.323476Z"
+    },
+    {
+      "name": "getting-started",
+      "file": "getting-started.md",
+      "source_files": [
+        {
+          "path": "README.md",
+          "hash": "2d0f45bb43dfabc3348c35407ac3b93ca8f113440219400982dab49c024e7d38"
+        },
+        {
+          "path": ".claude-plugin/plugin.json",
+          "hash": "931e6a6a96d8727ad5b87f3f40b02f1dfecf9850c33f09a3829fea17a5fd256c"
+        },
+        {
+          "path": ".claude-plugin/marketplace.json",
+          "hash": "29cce7425f4446dce17315f68da242be246b593d20219b676682ddcd4ff030f3"
+        },
+        {
+          "path": "config/project-config.example.json",
+          "hash": "38c580190aea9937586774294e99359083e2440d80b5358046e5a47710c8a305"
+        },
+        {
+          "path": "config/issues-tracker.example.json",
+          "hash": "74c87715255ec7567cde8a2cd5c5a89b3b1218dfe49195a69594aa0f74de2f0b"
+        }
+      ],
+      "generated_at": "2026-03-17T00:35:32.323806Z"
+    },
+    {
+      "name": "configuration",
+      "file": "configuration.md",
+      "source_files": [
+        {
+          "path": "config/project-config.example.json",
+          "hash": "38c580190aea9937586774294e99359083e2440d80b5358046e5a47710c8a305"
+        },
+        {
+          "path": "config/issues-tracker.example.json",
+          "hash": "74c87715255ec7567cde8a2cd5c5a89b3b1218dfe49195a69594aa0f74de2f0b"
+        },
+        {
+          "path": "config/releases.example.json",
+          "hash": "e8b8eb2d0ea2d3eb4b0853cab232b671ff51edb87ec4367e52d7473bd6863254"
+        },
+        {
+          "path": "config/agentic-provider.example.json",
+          "hash": "10199cad6023cc67ccd5417df3b73105ed08744893d82ffc2493d0d9b2636f30"
+        },
+        {
+          "path": "config/github-issues.example.json",
+          "hash": "da19d0eeef0254fd420d0778b4b5c9eebf3f053b21e30efe8fa4b2b18fb19398"
+        },
+        {
+          "path": "scripts/skill_helper.py",
+          "hash": "b0fcf5ed1974a59864f9a5ccd4378aaeea37359beb2434f58b5ce8e47b1b790e"
+        },
+        {
+          "path": "scripts/agent_runner.py",
+          "hash": "add4500e32220e282b2b830abe8678ce54a70552f28340df6ca9e858c5df6e6d"
+        },
+        {
+          "path": "scripts/task_manager.py",
+          "hash": "5782c4b645de9b766ddfa249a39aa3612e206bafc0ebd5788754e75256fe84e1"
+        },
+        {
+          "path": "scripts/release_manager.py",
+          "hash": "c2853f3a9c517ec6a345bbac5d16f11dca25bfe93046ac598dad2ed5b5a4d74a"
+        }
+      ],
+      "generated_at": "2026-03-17T00:35:32.324590Z"
+    },
+    {
+      "name": "api-reference",
+      "file": "api-reference.md",
+      "source_files": [
+        {
+          "path": "scripts/task_manager.py",
+          "hash": "5782c4b645de9b766ddfa249a39aa3612e206bafc0ebd5788754e75256fe84e1"
+        },
+        {
+          "path": "scripts/release_manager.py",
+          "hash": "c2853f3a9c517ec6a345bbac5d16f11dca25bfe93046ac598dad2ed5b5a4d74a"
+        },
+        {
+          "path": "scripts/skill_helper.py",
+          "hash": "b0fcf5ed1974a59864f9a5ccd4378aaeea37359beb2434f58b5ce8e47b1b790e"
+        },
+        {
+          "path": "scripts/docs_manager.py",
+          "hash": "c8cbc0d6870389ee9b61637562821192e551b253789726ec47d6106adf4b0cb7"
+        },
+        {
+          "path": "scripts/agent_runner.py",
+          "hash": "add4500e32220e282b2b830abe8678ce54a70552f28340df6ca9e858c5df6e6d"
+        },
+        {
+          "path": "scripts/app_manager.py",
+          "hash": "4c95e038129b54969666d551bf223e5ad173e25c70feefa039765413594ccfb9"
+        },
+        {
+          "path": "scripts/codebase_analyzer.py",
+          "hash": "19c24c32a40591e098dcfc18b57b6691aee1a16c716e5781f1b19da5d88d485d"
+        },
+        {
+          "path": "scripts/memory_builder.py",
+          "hash": "e83d9ee2d5f625a1ed9789ca25d9b878f5ddf6ef332f0542953831b1ae85df42"
+        },
+        {
+          "path": "scripts/test_manager.py",
+          "hash": "1f9d5a3dec8ba604efe2e696d18a1550dff4aab163fe42656fdcd967a31cc6e8"
+        },
+        {
+          "path": "scripts/setup_labels.py",
+          "hash": "25389b648a0a79e3a6634b41c507c257c70d0ee0256bd660792699545a362b5d"
+        },
+        {
+          "path": "scripts/setup_protection.py",
+          "hash": "797034c7bd5b6639f97f207db709ebb27b9d3a67a2d404823078eea77da7fee9"
+        },
+        {
+          "path": "hooks/hooks.json",
+          "hash": "63a84663b366ea7524d5da6f768b0fc3591e11303201cdfa45ab238411b8dcef"
+        }
+      ],
+      "generated_at": "2026-03-17T00:35:32.325632Z"
+    },
+    {
+      "name": "deployment",
+      "file": "deployment.md",
+      "source_files": [
+        {
+          "path": ".github/workflows/ci.yml",
+          "hash": "f42340e78e6c1f68041cb60590ee2919dd6ba43f550ee76f61ffb507773b0e48"
+        },
+        {
+          "path": ".github/workflows/release.yml",
+          "hash": "e3295c0ae49440f2db9e173872560f7c6660491ff5311ea90acaaae6f56dd92b"
+        },
+        {
+          "path": "scripts/agent_runner.py",
+          "hash": "add4500e32220e282b2b830abe8678ce54a70552f28340df6ca9e858c5df6e6d"
+        }
+      ],
+      "generated_at": "2026-03-17T00:35:32.325856Z"
+    },
+    {
+      "name": "development",
+      "file": "development.md",
+      "source_files": [
+        {
+          "path": "README.md",
+          "hash": "2d0f45bb43dfabc3348c35407ac3b93ca8f113440219400982dab49c024e7d38"
+        },
+        {
+          "path": ".gitignore",
+          "hash": "de211b09d493edb85daf370bc65542395123a97d0d20479840b002275931c962"
+        },
+        {
+          "path": "scripts/task_manager.py",
+          "hash": "5782c4b645de9b766ddfa249a39aa3612e206bafc0ebd5788754e75256fe84e1"
+        },
+        {
+          "path": "scripts/release_manager.py",
+          "hash": "c2853f3a9c517ec6a345bbac5d16f11dca25bfe93046ac598dad2ed5b5a4d74a"
+        },
+        {
+          "path": "scripts/skill_helper.py",
+          "hash": "b0fcf5ed1974a59864f9a5ccd4378aaeea37359beb2434f58b5ce8e47b1b790e"
+        },
+        {
+          "path": "scripts/test_manager.py",
+          "hash": "1f9d5a3dec8ba604efe2e696d18a1550dff4aab163fe42656fdcd967a31cc6e8"
+        },
+        {
+          "path": "scripts/analyzers/__init__.py",
+          "hash": "83dad40337423d0da3f6bde453187c8c67f2b42edf4da68a85adc93459ee19d2"
+        },
+        {
+          "path": "hooks/hooks.json",
+          "hash": "63a84663b366ea7524d5da6f768b0fc3591e11303201cdfa45ab238411b8dcef"
+        },
+        {
+          "path": ".claude-plugin/plugin.json",
+          "hash": "931e6a6a96d8727ad5b87f3f40b02f1dfecf9850c33f09a3829fea17a5fd256c"
+        }
+      ],
+      "generated_at": "2026-03-17T00:35:32.326698Z"
+    },
+    {
+      "name": "troubleshooting",
+      "file": "troubleshooting.md",
+      "source_files": [
+        {
+          "path": "scripts/task_manager.py",
+          "hash": "5782c4b645de9b766ddfa249a39aa3612e206bafc0ebd5788754e75256fe84e1"
+        },
+        {
+          "path": "scripts/release_manager.py",
+          "hash": "c2853f3a9c517ec6a345bbac5d16f11dca25bfe93046ac598dad2ed5b5a4d74a"
+        },
+        {
+          "path": "scripts/skill_helper.py",
+          "hash": "b0fcf5ed1974a59864f9a5ccd4378aaeea37359beb2434f58b5ce8e47b1b790e"
+        },
+        {
+          "path": "scripts/agent_runner.py",
+          "hash": "add4500e32220e282b2b830abe8678ce54a70552f28340df6ca9e858c5df6e6d"
+        },
+        {
+          "path": "scripts/app_manager.py",
+          "hash": "4c95e038129b54969666d551bf223e5ad173e25c70feefa039765413594ccfb9"
+        },
+        {
+          "path": "hooks/hooks.json",
+          "hash": "63a84663b366ea7524d5da6f768b0fc3591e11303201cdfa45ab238411b8dcef"
+        }
+      ],
+      "generated_at": "2026-03-17T00:35:32.327378Z"
+    },
+    {
+      "name": "llm-context",
+      "file": "llm-context.md",
+      "source_files": [
+        {
+          "path": "README.md",
+          "hash": "2d0f45bb43dfabc3348c35407ac3b93ca8f113440219400982dab49c024e7d38"
+        },
+        {
+          "path": "scripts/task_manager.py",
+          "hash": "5782c4b645de9b766ddfa249a39aa3612e206bafc0ebd5788754e75256fe84e1"
+        },
+        {
+          "path": "scripts/release_manager.py",
+          "hash": "c2853f3a9c517ec6a345bbac5d16f11dca25bfe93046ac598dad2ed5b5a4d74a"
+        },
+        {
+          "path": "scripts/skill_helper.py",
+          "hash": "b0fcf5ed1974a59864f9a5ccd4378aaeea37359beb2434f58b5ce8e47b1b790e"
+        },
+        {
+          "path": "scripts/docs_manager.py",
+          "hash": "c8cbc0d6870389ee9b61637562821192e551b253789726ec47d6106adf4b0cb7"
+        },
+        {
+          "path": "scripts/agent_runner.py",
+          "hash": "add4500e32220e282b2b830abe8678ce54a70552f28340df6ca9e858c5df6e6d"
+        },
+        {
+          "path": "scripts/test_manager.py",
+          "hash": "1f9d5a3dec8ba604efe2e696d18a1550dff4aab163fe42656fdcd967a31cc6e8"
+        },
+        {
+          "path": ".claude-plugin/plugin.json",
+          "hash": "931e6a6a96d8727ad5b87f3f40b02f1dfecf9850c33f09a3829fea17a5fd256c"
+        },
+        {
+          "path": "config/issues-tracker.example.json",
+          "hash": "74c87715255ec7567cde8a2cd5c5a89b3b1218dfe49195a69594aa0f74de2f0b"
+        },
+        {
+          "path": "config/agentic-provider.example.json",
+          "hash": "10199cad6023cc67ccd5417df3b73105ed08744893d82ffc2493d0d9b2636f30"
+        }
+      ],
+      "generated_at": "2026-03-17T00:35:32.328301Z"
+    }
+  ]
+}
