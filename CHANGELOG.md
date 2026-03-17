@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.5.0] - 2026-03-17
+
+### Added
+- multi-agent memory consistency protocol (VMEM-0019) (#73)
+- local vector memory layer for semantic search (VMEM-0017) (#71)
+- Ollama local model integration (OLLAM-0022) (#69)
+- MCP server for vector memory access (VMEM-0018) (#72)
+- post-release social media announcement (REL-0021) (#68)
+- multiplatform support hardening (XPLAT-0020) (#70)
+
 ## [3.4.6] - 2026-03-17
 
 ### Added
