@@ -46,6 +46,23 @@ GITHUB_REPO_URL=""                       # HTTPS repo URL
 
 ## Environment Setup
 
+### Ollama Local Model (Optional)
+
+If configured via `/setup`, a local Ollama model can handle lightweight, repetitive tasks (boilerplate generation, docstrings, simple refactoring) to reduce API costs and latency. Configuration is stored in `.claude/ollama-config.json`.
+
+```bash
+# Check Ollama status
+python3 scripts/ollama_manager.py health
+
+# Query the local model directly
+python3 scripts/ollama_manager.py query --model <MODEL> --prompt "..."
+
+# Detect hardware capabilities
+python3 scripts/ollama_manager.py detect-hardware
+```
+
+When offloading is enabled, Claude Code acts as an orchestrator and automatically routes simple tasks to the local model. Complex tasks requiring frontier-level reasoning remain with the cloud provider.
+
 ## Architecture
 
 <!-- CTDF:START -->
