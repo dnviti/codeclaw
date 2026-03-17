@@ -34,6 +34,12 @@ CHANGELOG_FILE=""                        # e.g., CHANGELOG.md
 TAG_PREFIX=""                            # e.g., v
 GITHUB_REPO_URL=""                       # HTTPS repo URL
 
+# Social Announcements (optional)
+# Configure in project-config.json under "social_announce".
+# Credentials via env vars: CTDF_BLUESKY_HANDLE, CTDF_BLUESKY_APP_PASSWORD,
+# CTDF_MASTODON_INSTANCE, CTDF_MASTODON_TOKEN, CTDF_DISCORD_WEBHOOK,
+# CTDF_SLACK_WEBHOOK. Never store credentials in config files.
+
 # Common commands:
 # [install command]
 # [dev command]
