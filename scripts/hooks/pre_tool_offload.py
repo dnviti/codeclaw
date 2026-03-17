@@ -44,9 +44,25 @@ _OLLAMA_CONFIG_CANDIDATES = [
     "ollama-config.json",
 ]
 
+# Maximum number of characters inspected from tool_args to prevent DoS via
+# excessively large inputs.  Pattern matching is applied only on this prefix.
+_MAX_TOOL_ARGS_INSPECT = 65_536  # 64 KiB
+
+# Module-level cache: loaded once per process (hooks run as short-lived procs)
+_CONFIG_CACHE: dict | None = None
+_CONFIG_LOADED: bool = False
+
 
 def _load_config() -> dict:
-    """Load the Ollama config from the project root or current directory."""
+    """Load the Ollama config from the project root or current directory.
+
+    The result is cached for the lifetime of the process so that repeated
+    calls within the same hook invocation do not incur filesystem I/O.
+    """
+    global _CONFIG_CACHE, _CONFIG_LOADED  # noqa: PLW0603
+    if _CONFIG_LOADED:
+        return _CONFIG_CACHE or {}
+    _CONFIG_LOADED = True
     # Try CWD first, then relative to _PROJECT_ROOT
     search_roots = [Path.cwd(), _PROJECT_ROOT]
     for root in search_roots:
@@ -54,9 +70,11 @@ def _load_config() -> dict:
             cfg_path = root / candidate
             if cfg_path.exists():
                 try:
-                    return json.loads(cfg_path.read_text(encoding="utf-8"))
+                    _CONFIG_CACHE = json.loads(cfg_path.read_text(encoding="utf-8"))
+                    return _CONFIG_CACHE
                 except (json.JSONDecodeError, OSError):
                     pass
+    _CONFIG_CACHE = {}
     return {}
 
 
@@ -122,6 +140,9 @@ def evaluate(tool_name: str, tool_args: str) -> None:
     - Exit 0 with ``{"action": "proceed"}``   — do not offload
     - Exit 0 with ``{"action": "offload", ...}`` — offload to Ollama
     """
+    # Guard against excessively large inputs; truncate for pattern matching only
+    tool_args = tool_args[:_MAX_TOOL_ARGS_INSPECT]
+
     config = _load_config()
     level = _get_offload_level(config)
 

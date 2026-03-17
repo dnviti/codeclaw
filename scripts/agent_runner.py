@@ -837,33 +837,6 @@ def _deregister_agent(session_id: str):
 
 # ── Ollama Offload Config ───────────────────────────────────────────────────
 
-def _load_ollama_offload_config() -> dict | None:
-    """Load Ollama offloading configuration if enabled.
-
-    Supports both the legacy boolean ``offloading.enabled`` field and the
-    new numeric ``offloading.level`` field (0-10).  A boolean ``true`` is
-    treated as level 5; ``false`` is treated as level 0 (disabled).
-
-    Returns the config dict (with an injected ``_offload_level`` key) when
-    offloading is active (level > 0), otherwise None.
-    """
-    config_path = Path(".claude/ollama-config.json")
-    if not config_path.exists():
-        return None
-    try:
-        config = json.loads(config_path.read_text(encoding="utf-8"))
-        if not config.get("enabled"):
-            return None
-        offloading_cfg = config.get("offloading", {})
-        level = get_offload_level(offloading_cfg)
-        if level > 0:
-            config["_offload_level"] = level
-            return config
-    except (json.JSONDecodeError, OSError):
-        pass
-    return None
-
-
 def get_offload_level(offloading_cfg: dict) -> int:
     """Extract the numeric offload level from an offloading config section.
 
@@ -891,6 +864,33 @@ def get_offload_level(offloading_cfg: dict) -> int:
         return 5 if offloading_cfg["enabled"] else 0
 
     return 0
+
+
+def _load_ollama_offload_config() -> dict | None:
+    """Load Ollama offloading configuration if enabled.
+
+    Supports both the legacy boolean ``offloading.enabled`` field and the
+    new numeric ``offloading.level`` field (0-10).  A boolean ``true`` is
+    treated as level 5; ``false`` is treated as level 0 (disabled).
+
+    Returns the config dict (with an injected ``_offload_level`` key) when
+    offloading is active (level > 0), otherwise None.
+    """
+    config_path = Path(".claude/ollama-config.json")
+    if not config_path.exists():
+        return None
+    try:
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+        if not config.get("enabled"):
+            return None
+        offloading_cfg = config.get("offloading", {})
+        level = get_offload_level(offloading_cfg)
+        if level > 0:
+            config["_offload_level"] = level
+            return config
+    except (json.JSONDecodeError, OSError):
+        pass
+    return None
 
 
 # ── Main Runner ─────────────────────────────────────────────────────────────

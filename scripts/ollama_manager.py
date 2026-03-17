@@ -722,6 +722,15 @@ def should_offload(task_description: str, level: int) -> bool:
     return score >= level
 
 
+# Patterns that must never be offloaded regardless of level (destructive commands)
+_ALWAYS_EXCLUDED_PATTERNS = [
+    "git push --force", "git push -f",
+    "git reset --hard", "rm -rf /",
+    "sudo rm", "chmod 777", "chown root",
+    "format c:", "del /f /s /q",
+]
+
+
 def should_offload_tool_call(tool_name: str, tool_args: str, level: int) -> bool:
     """Determine if a tool call should be routed to the local Ollama model.
 
@@ -744,14 +753,8 @@ def should_offload_tool_call(tool_name: str, tool_args: str, level: int) -> bool
         return False
     if level >= 10:
         # Even at level 10, exclude dangerous destructive commands
-        _EXCLUDED_PATTERNS = [
-            "git push --force", "git push -f",
-            "git reset --hard", "rm -rf /",
-            "sudo rm", "chmod 777", "chown root",
-            "format c:", "del /f /s /q",
-        ]
         args_lower = tool_args.lower()
-        for pattern in _EXCLUDED_PATTERNS:
+        for pattern in _ALWAYS_EXCLUDED_PATTERNS:
             if pattern in args_lower:
                 return False
         return True
