@@ -718,13 +718,14 @@ def build_invocation(
         return cmd
 
     elif provider == "ollama":
-        # Ollama is invoked via the ollama_manager.py query subcommand
+        # Ollama is invoked via the ollama_manager.py query subcommand (tool-calling by default)
         scripts_dir = Path(__file__).resolve().parent
         cmd = [
             sys.executable, str(scripts_dir / "ollama_manager.py"),
             "query",
             "--model", model or "qwen2.5-coder:7b",
             "--prompt", prompt_content,
+            "--with-tools",
         ]
         return cmd
 
@@ -791,7 +792,8 @@ def build_shell_command(
         return (
             f"{sys.executable} {ollama_script} query{line_cont}"
             f"--model {safe_model}{line_cont}"
-            f"--prompt {cat_expr}"
+            f"--prompt {cat_expr}{line_cont}"
+            f"--with-tools"
         )
 
     return ""
@@ -837,17 +839,56 @@ def _deregister_agent(session_id: str):
 
 # ── Ollama Offload Config ───────────────────────────────────────────────────
 
+def get_offload_level(offloading_cfg: dict) -> int:
+    """Extract the numeric offload level from an offloading config section.
+
+    Handles backward compatibility:
+    - If ``level`` key is present and is an integer 0-10, use it directly.
+    - If legacy ``enabled`` boolean is present: ``True`` => 5, ``False`` => 0.
+    - Defaults to 0 (disabled) when neither key is found.
+
+    Args:
+        offloading_cfg: The ``offloading`` sub-dict from the Ollama config.
+
+    Returns:
+        Integer offload level in range [0, 10].
+    """
+    if "level" in offloading_cfg:
+        raw = offloading_cfg["level"]
+        if isinstance(raw, bool):
+            # bool is a subclass of int in Python — treat explicitly
+            return 5 if raw else 0
+        if isinstance(raw, (int, float)):
+            return max(0, min(10, int(raw)))
+
+    # Legacy boolean field
+    if "enabled" in offloading_cfg:
+        return 5 if offloading_cfg["enabled"] else 0
+
+    return 0
+
+
 def _load_ollama_offload_config() -> dict | None:
     """Load Ollama offloading configuration if enabled.
 
-    Returns the config dict if Ollama offloading is enabled, None otherwise.
+    Supports both the legacy boolean ``offloading.enabled`` field and the
+    new numeric ``offloading.level`` field (0-10).  A boolean ``true`` is
+    treated as level 5; ``false`` is treated as level 0 (disabled).
+
+    Returns the config dict (with an injected ``_offload_level`` key) when
+    offloading is active (level > 0), otherwise None.
     """
     config_path = Path(".claude/ollama-config.json")
     if not config_path.exists():
         return None
     try:
         config = json.loads(config_path.read_text(encoding="utf-8"))
-        if config.get("enabled") and config.get("offloading", {}).get("enabled"):
+        if not config.get("enabled"):
+            return None
+        offloading_cfg = config.get("offloading", {})
+        level = get_offload_level(offloading_cfg)
+        if level > 0:
+            config["_offload_level"] = level
             return config
     except (json.JSONDecodeError, OSError):
         pass
@@ -862,6 +903,7 @@ def run_agent(
     cli_model: str | None = None,
     cli_budget: float | None = None,
     dry_run: bool = False,
+    cli_offload_level: int | None = None,
 ) -> None:
     """Main orchestrator: load config, validate, install, build prompt, invoke."""
     print(f"=== Agentic Fleet — {pipeline.title()} Pipeline ===\n")
@@ -881,8 +923,37 @@ def run_agent(
     ollama_offload = False
     ollama_config = _load_ollama_offload_config()
     if ollama_config and provider != "ollama":
-        ollama_offload = True
-        print(f"  Ollama offloading: enabled (model: {ollama_config.get('model', 'auto')})")
+        # Determine effective offload level: CLI flag overrides config
+        effective_level = (
+            max(0, min(10, cli_offload_level))
+            if cli_offload_level is not None
+            else ollama_config.get("_offload_level", 0)
+        )
+        if effective_level > 0:
+            ollama_offload = True
+            print(
+                f"  Ollama offloading: enabled "
+                f"(level={effective_level}, model={ollama_config.get('model', 'auto')})"
+            )
+            # Decide whether the current pipeline task should be offloaded
+            task_desc = f"run {pipeline} pipeline"
+            try:
+                from ollama_manager import should_offload as _should_offload
+                if _should_offload(task_desc, effective_level):
+                    print(
+                        f"  Routing pipeline dispatch to Ollama "
+                        f"(offload score >= level {effective_level})."
+                    )
+                    provider = "ollama"
+                    model = ollama_config.get("model") or model
+                else:
+                    print(
+                        f"  Pipeline complexity exceeds offload level {effective_level} "
+                        f"— keeping primary provider."
+                    )
+                    ollama_offload = False
+            except ImportError:
+                pass
 
     # 2. Validate environment
     if not dry_run:
@@ -1024,6 +1095,17 @@ def main() -> None:
         action="store_true",
         help="Print the command that would be executed without running it",
     )
+    run_parser.add_argument(
+        "--offload-level",
+        type=int,
+        default=None,
+        metavar="N",
+        help=(
+            "Override Ollama offloading level for this run (0-10). "
+            "0=never offload, 10=offload everything. "
+            "Overrides the value in ollama-config.json."
+        ),
+    )
 
     args = parser.parse_args()
 
@@ -1038,6 +1120,7 @@ def main() -> None:
             cli_model=args.model,
             cli_budget=args.budget,
             dry_run=args.dry_run,
+            cli_offload_level=args.offload_level,
         )
 
 

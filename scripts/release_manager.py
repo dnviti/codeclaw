@@ -712,6 +712,140 @@ def _uses_local_files() -> bool:
     return True
 
 
+# ── Platform State Helpers ───────────────────────────────────────────────────
+
+def _get_platform_config() -> dict:
+    """Load platform config from .claude/issues-tracker.json or github-issues.json."""
+    root = get_main_repo_root()
+    for name in ("issues-tracker.json", "github-issues.json"):
+        fp = root / ".claude" / name
+        if fp.exists():
+            try:
+                with open(fp, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except (json.JSONDecodeError, OSError):
+                pass
+    return {}
+
+
+def _platform_cli(cfg: dict) -> str:
+    """Return 'gh' for GitHub or 'glab' for GitLab."""
+    platform = cfg.get("platform", "github").lower()
+    return "glab" if platform == "gitlab" else "gh"
+
+
+_REPO_RE = re.compile(r"^[A-Za-z0-9_.\-]+/[A-Za-z0-9_.\-]+$")
+
+
+def _validate_repo(repo: str) -> bool:
+    """Return True if repo matches the expected owner/name format."""
+    return bool(_REPO_RE.match(repo))
+
+
+def _platform_state_issue_number(cli: str, repo: str) -> "int | None":
+    """Find the open ctdf-release-state issue number, or None if not found."""
+    try:
+        result = subprocess.run(
+            [cli, "issue", "list", "--label", "ctdf-release-state",
+             "--state", "open", "--json", "number", "--limit", "1",
+             "--repo", repo],
+            capture_output=True, text=True, check=True, timeout=30,
+        )
+        issues = json.loads(result.stdout)
+        if issues:
+            return issues[0]["number"]
+    except (subprocess.CalledProcessError, FileNotFoundError, json.JSONDecodeError,
+            KeyError, subprocess.TimeoutExpired):
+        pass
+    return None
+
+
+def _platform_state_get() -> dict:
+    """Fetch release state from the platform ctdf-release-state issue body.
+
+    Returns an empty dict if no state issue exists or the body cannot be parsed.
+    """
+    cfg = _get_platform_config()
+    cli = _platform_cli(cfg)
+    repo = cfg.get("repo", "")
+    if not repo or not _validate_repo(repo):
+        return {}
+    num = _platform_state_issue_number(cli, repo)
+    if num is None:
+        return {}
+    try:
+        result = subprocess.run(
+            [cli, "issue", "view", str(num), "--repo", repo, "--json", "body"],
+            capture_output=True, text=True, check=True, timeout=30,
+        )
+        body = json.loads(result.stdout).get("body", "")
+        return json.loads(body)
+    except (subprocess.CalledProcessError, FileNotFoundError, json.JSONDecodeError,
+            subprocess.TimeoutExpired):
+        return {}
+
+
+def _platform_state_set(state: dict) -> None:
+    """Persist release state to the platform by creating or updating the state issue."""
+    cfg = _get_platform_config()
+    cli = _platform_cli(cfg)
+    repo = cfg.get("repo", "")
+    if not repo or not _validate_repo(repo):
+        return
+    body = json.dumps(state, indent=2)
+    num = _platform_state_issue_number(cli, repo)
+    try:
+        if num is None:
+            # Ensure the label exists before creating the issue; ignore errors
+            # (label may already exist or caller may lack label-create permission).
+            label_result = subprocess.run(
+                [cli, "label", "create", "ctdf-release-state",
+                 "--description", "CTDF platform release state", "--repo", repo],
+                capture_output=True, text=True, timeout=30,
+            )
+            if label_result.returncode not in (0, 1):
+                # returncode 1 typically means the label already exists — OK.
+                # Any other non-zero value is unexpected; log to stderr.
+                print(
+                    f"[ctdf] warning: label create exited {label_result.returncode}: "
+                    f"{label_result.stderr.strip()}",
+                    file=sys.stderr,
+                )
+            subprocess.run(
+                [cli, "issue", "create", "--repo", repo,
+                 "--label", "ctdf-release-state",
+                 "--title", "CTDF Release State",
+                 "--body", body],
+                capture_output=True, text=True, check=True, timeout=30,
+            )
+        else:
+            subprocess.run(
+                [cli, "issue", "edit", str(num), "--repo", repo, "--body", body],
+                capture_output=True, text=True, check=True, timeout=30,
+            )
+    except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
+        pass
+
+
+def _platform_state_clear() -> None:
+    """Close the ctdf-release-state issue on the platform."""
+    cfg = _get_platform_config()
+    cli = _platform_cli(cfg)
+    repo = cfg.get("repo", "")
+    if not repo or not _validate_repo(repo):
+        return
+    num = _platform_state_issue_number(cli, repo)
+    if num is None:
+        return
+    try:
+        subprocess.run(
+            [cli, "issue", "close", str(num), "--repo", repo],
+            capture_output=True, text=True, check=True, timeout=30,
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
+        pass
+
+
 def _releases_path() -> Path:
     """Return path to releases.json at project root."""
     return get_main_repo_root() / "releases.json"
@@ -1085,7 +1219,14 @@ def cmd_release_close(args):
 # ── Subcommand: release-state-get ──────────────────────────────────────────
 
 def cmd_release_state_get(args):
-    """Read and print .claude/release-state.json."""
+    """Read and print .claude/release-state.json (or platform issue in platform-only mode)."""
+    if not _uses_local_files():
+        state = _platform_state_get()
+        if not state:
+            print(json.dumps({"error": "No release state found"}))
+        else:
+            print(json.dumps(state, indent=2))
+        return
     root = get_main_repo_root()
     state_file = root / ".claude" / "release-state.json"
     if not state_file.exists():
@@ -1102,19 +1243,26 @@ def cmd_release_state_get(args):
 # ── Subcommand: release-state-set ──────────────────────────────────────────
 
 def cmd_release_state_set(args):
-    """Update .claude/release-state.json fields."""
-    root = get_main_repo_root()
-    state_file = root / ".claude" / "release-state.json"
+    """Update release state fields (local file or platform issue in platform-only mode)."""
+    platform_only = not _uses_local_files()
     now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
-    # Read existing or create default
-    if state_file.exists():
-        try:
-            with open(state_file, "r", encoding="utf-8") as f:
-                state = json.load(f)
-        except (json.JSONDecodeError, OSError):
-            state = {}
+    # Read existing state from the appropriate source
+    if platform_only:
+        state = _platform_state_get()
     else:
+        root = get_main_repo_root()
+        state_file = root / ".claude" / "release-state.json"
+        state = {}
+        if state_file.exists():
+            try:
+                with open(state_file, "r", encoding="utf-8") as f:
+                    state = json.load(f)
+            except (json.JSONDecodeError, OSError):
+                state = {}
+
+    # Create default state if none exists
+    if not state:
         state = {
             "version": args.version,
             "branch": "",
@@ -1178,6 +1326,11 @@ def cmd_release_state_set(args):
     # Always update timestamp
     state["updated_at"] = now
 
+    if platform_only:
+        _platform_state_set(state)
+        print(json.dumps(state, indent=2))
+        return
+
     # Ensure .claude directory exists
     state_file.parent.mkdir(parents=True, exist_ok=True)
     with open(state_file, "w", encoding="utf-8") as f:
@@ -1190,7 +1343,11 @@ def cmd_release_state_set(args):
 # ── Subcommand: release-state-clear ────────────────────────────────────────
 
 def cmd_release_state_clear(args):
-    """Delete .claude/release-state.json if it exists."""
+    """Delete .claude/release-state.json (or close platform issue in platform-only mode)."""
+    if not _uses_local_files():
+        _platform_state_clear()
+        print(json.dumps({"success": True}))
+        return
     root = get_main_repo_root()
     state_file = root / ".claude" / "release-state.json"
     if state_file.exists():

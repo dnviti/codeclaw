@@ -14,7 +14,8 @@
     }
   },
   "server_options": {
-    "_comment": "These are informational — actual config depends on client.",
+    "_comment": "Vector memory is always-on. MCP server starts automatically on setup.",
+    "enabled": true,
     "transport": "stdio",
     "auto_start": true,
     "restart_on_crash": true,

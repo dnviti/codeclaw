@@ -397,12 +397,16 @@ def main():
         else:
             print(output)
 
-        # Optionally index into vector memory store
+        # Always update vector index for generated memory document (always-on)
         _try_vector_index(root, output, "project-memory.md")
 
 
 def _try_vector_index(root: Path, content: str, doc_name: str):
-    """Attempt to index generated memory into vector store (opt-in, non-fatal)."""
+    """Index generated memory into vector store (always-on, non-fatal).
+
+    Vector memory is always-on by default. Failures are non-fatal so
+    the memory builder continues to work even without dependencies installed.
+    """
     try:
         _script_dir = Path(__file__).resolve().parent
         if str(_script_dir) not in sys.path:
@@ -410,7 +414,7 @@ def _try_vector_index(root: Path, content: str, doc_name: str):
         from vector_memory import try_vector_index
         try_vector_index(root, content, doc_name, doc_type="memory")
     except Exception:
-        pass  # Vector indexing is opt-in; failures are non-fatal
+        pass  # Failures are non-fatal; index when deps become available
 
 
 if __name__ == "__main__":

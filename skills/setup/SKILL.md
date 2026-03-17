@@ -274,6 +274,153 @@ STOP.
    ```
    Update `.claude/ollama-config.json` with: `enabled: true`, detected hardware values, selected model, offloading preference.
 
+Then return here for Step 9.7.
+
+### Step 9.7: Vector Memory Initialization (Mandatory — always runs)
+
+This step is mandatory and always runs without a user prompt.
+
+1. Enable vector memory in the project config:
+
+   Read `.claude/project-config.json` (or create from template if missing):
+   ```bash
+   mkdir -p .claude
+   [ -f .claude/project-config.json ] || cp ${CLAUDE_PLUGIN_ROOT}/config/project-config.example.json .claude/project-config.json
+   ```
+
+   Set the following fields in `.claude/project-config.json`:
+   - `vector_memory.enabled = true`
+   - `vector_memory.auto_index = true`
+   - `mcp_server.enabled = true`
+   - `mcp_server.auto_start = true`
+
+2. Auto-install dependencies if missing:
+
+   ```bash
+   python3 -c "import lancedb, sentence_transformers" 2>/dev/null || pip install "lancedb>=0.5.0,<1.0" "sentence-transformers>=2.7.0,<3.0"
+   ```
+
+   If `pip install` fails, display:
+   > **Action required:** Install vector memory dependencies manually:
+   > ```
+   > pip install "lancedb>=0.5.0,<1.0" "sentence-transformers>=2.7.0,<3.0"
+   > ```
+   > Then re-run: `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/vector_memory.py index --force-init`
+
+3. Build the initial index (log progress):
+
+   ```bash
+   python3 ${CLAUDE_PLUGIN_ROOT}/scripts/vector_memory.py index --force-init --root .
+   ```
+
+   - If the index succeeds, report: "Vector memory index built successfully."
+   - If it fails with exit code 2 (missing deps), show the install message above.
+   - If it fails for any other reason, show the error and continue setup.
+
+4. Start the MCP server in the background:
+
+   ```bash
+   python3 ${CLAUDE_PLUGIN_ROOT}/scripts/mcp_server.py --root . &
+   ```
+
+   After a brief moment, confirm reachability:
+   ```bash
+   python3 ${CLAUDE_PLUGIN_ROOT}/scripts/vector_memory.py status --root .
+   ```
+
+   Report the status result. If the MCP server could not start, log a warning and continue.
+
+Then return here for Step 10.
+
+### Step 9.6: Memory Configuration (Optional)
+
+Use `AskUserQuestion`:
+- **"Use defaults (recommended)"** — proceed to next step with default memory settings unchanged
+- **"Customize memory settings"** — proceed below
+
+STOP.
+
+**If "Customize":**
+
+Ask the following questions **one at a time** (each is a separate `AskUserQuestion` STOP):
+
+1. **GC TTL:** "How many days before stale memory entries are garbage collected? (default: 30)"
+   - Collect free-text integer input. Store as `gc_ttl_days`.
+
+2. **Conflict strategy:** "How should memory conflicts between agents be resolved?"
+   - **"Auto (recommended)"** — `conflict_strategy: "auto"`
+   - **"Latest wins"** — `conflict_strategy: "latest-wins"`
+   - **"Manual review"** — `conflict_strategy: "manual"`
+
+3. **Vector memory embedding provider:** "Which embedding provider should be used for semantic search?"
+   - **"Local — sentence-transformers (no API key needed, recommended)"** — `embedding_provider: "local"`
+   - **"OpenAI"** — `embedding_provider: "openai"`
+   - **"Voyage AI"** — `embedding_provider: "voyage"`
+
+   If "OpenAI" or "Voyage AI": ask "Enter the environment variable name that holds your API key (e.g. `OPENAI_API_KEY`):" and store as `embedding_api_key_env`.
+
+After collecting all inputs, write to `.claude/project-config.json`:
+- Under `memory_consistency`: set `gc_ttl_days` and `conflict_strategy`
+- Under `vector_memory`: set `embedding_provider` and `embedding_api_key_env` (if provided)
+
+If `.claude/project-config.json` does not exist, copy from example first:
+```bash
+mkdir -p .claude
+cp ${CLAUDE_PLUGIN_ROOT}/config/project-config.example.json .claude/project-config.json
+```
+
+Then return here for Step 9.8.
+
+### Step 9.8: Social Posting Configuration (Optional)
+
+Use `AskUserQuestion`:
+- **"Configure social media announcements"** — proceed below
+- **"Skip"** — proceed to Step 10
+
+STOP.
+
+**If "Configure":**
+
+1. Run to see current credential status:
+   ```bash
+   python3 ${CLAUDE_PLUGIN_ROOT}/scripts/social_announcer.py platforms
+   ```
+
+2. Ask which platforms to enable (multiSelect):
+   - **"Bluesky"**
+   - **"Mastodon"**
+   - **"Discord (webhook)"**
+   - **"Slack (webhook)"**
+   - **"Twitter / X (clipboard — no API key needed)"**
+   - **"LinkedIn (clipboard — no API key needed)"**
+   - **"Reddit (clipboard — no API key needed)"**
+   - **"Hacker News (clipboard — no API key needed)"**
+
+   STOP.
+
+3. **For each selected direct-posting platform** (Bluesky, Mastodon, Discord, Slack):
+
+   Ask for the required credentials **one platform at a time**:
+
+   - **Bluesky:** "Enter the env var name for your Bluesky handle (e.g. `CTDF_BLUESKY_HANDLE`):" and "Enter the env var name for your Bluesky app password (e.g. `CTDF_BLUESKY_APP_PASSWORD`):"
+   - **Mastodon:** "Enter the env var name for your Mastodon instance URL (e.g. `CTDF_MASTODON_INSTANCE`):" and "Enter the env var name for your Mastodon access token (e.g. `CTDF_MASTODON_ACCESS_TOKEN`):"
+   - **Discord:** "Enter the env var name for your Discord webhook URL (e.g. `CTDF_DISCORD_WEBHOOK`):"
+   - **Slack:** "Enter the env var name for your Slack webhook URL (e.g. `CTDF_SLACK_WEBHOOK`):"
+
+   > **Important:** Enter only the environment variable **name** (e.g. `CTDF_BLUESKY_HANDLE`), never the actual secret value. Storing secrets in project config would expose them to version control.
+
+   Store only the env var **names** (never the values) in project config. Inform: "Set `<ENV_VAR>=<value>` in your shell profile or `.env` file."
+
+   Set `"enabled": true` for each configured platform.
+
+4. **For each selected clipboard platform** (Twitter/X, LinkedIn, Reddit, Hacker News):
+   - In the `social_announce.clipboard_platforms` array, find the object whose `"name"` matches the selected platform (e.g. `"twitter"`, `"linkedin"`, `"reddit"`, `"hackernews"`) and set its `"enabled": true`
+   - No credentials needed
+
+5. Ensure `.claude/project-config.json` exists (copy from example if not — see Step 9.6), then update the `social_announce` section using the Edit or Write tool.
+
+6. Inform: "Social announcement configuration saved. Platforms will be used during `/release` pipeline (Stage 8.5)."
+
 Then return here for Step 10.
 
 ### Step 10: Create Files

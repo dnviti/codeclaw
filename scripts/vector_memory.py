@@ -14,11 +14,15 @@ Subcommands:
     agents     List active/historical agent sessions
     conflicts  Show flagged contradictions between agents
 
-This module is opt-in: all functionality gracefully degrades when optional
-dependencies (LanceDB, ONNX Runtime) are not installed.
+Vector memory is always-on by default. The index is built automatically
+during /setup and updated on every file write via the PostToolUse hook.
+Missing configuration is treated as enabled (always-on default).
 
-Zero required dependencies — stdlib only. Optional: lancedb, onnxruntime,
-tokenizers, numpy, pyarrow.
+Required dependencies: lancedb, sentence-transformers
+Install with: pip install "lancedb>=0.5.0,<1.0" "sentence-transformers>=2.7.0,<3.0"
+
+Zero stdlib dependencies — stdlib only for core logic. Required for indexing:
+lancedb, sentence-transformers (or onnxruntime+tokenizers), numpy, pyarrow.
 """
 
 import argparse
@@ -115,11 +119,15 @@ def load_consistency_config(root: Path) -> dict:
 
 
 def get_effective_config(root: Path) -> dict:
-    """Return effective config with defaults applied."""
+    """Return effective config with defaults applied.
+
+    Missing configuration is treated as always-on (enabled=True, auto_index=True)
+    to match the always-on default behavior introduced in VMEM-0024.
+    """
     user_cfg = load_config(root)
     return {
-        "enabled": user_cfg.get("enabled", False),
-        "auto_index": user_cfg.get("auto_index", False),
+        "enabled": user_cfg.get("enabled", True),
+        "auto_index": user_cfg.get("auto_index", True),
         "embedding_provider": user_cfg.get("embedding_provider", "local"),
         "embedding_model": user_cfg.get("embedding_model", "all-MiniLM-L6-v2"),
         "embedding_api_key_env": user_cfg.get("embedding_api_key_env", ""),
@@ -140,6 +148,69 @@ def get_effective_consistency_config(root: Path) -> dict:
         "conflict_strategy": user_cfg.get("conflict_strategy", "auto"),
         "enable_versioned_reads": user_cfg.get("enable_versioned_reads", False),
     }
+
+
+# ── Initialization Guard ──────────────────────────────────────────────────────
+
+def ensure_initialized(root: Path) -> bool:
+    """Check if vector index exists; if not, trigger auto-index with a warning.
+
+    Returns True if the index is ready (or was just built), False on failure.
+    This is called by commands that require an existing index to operate.
+
+    A lock file (.init_in_progress) prevents concurrent initialization races
+    when multiple agents or hook invocations run simultaneously before the
+    index exists.
+    """
+    config = get_effective_config(root)
+    index_dir = root / config["index_path"]
+
+    if (index_dir / "lancedb").exists():
+        return True
+
+    # Guard against concurrent initialization using an exclusive lock file
+    index_dir.mkdir(parents=True, exist_ok=True)
+    lock_file = index_dir / ".init_in_progress"
+    if lock_file.exists():
+        # Another process is already initializing — wait briefly then check
+        import time as _time
+        for _ in range(10):
+            _time.sleep(1)
+            if (index_dir / "lancedb").exists():
+                return True
+        return False
+
+    try:
+        lock_file.touch()
+
+        print(
+            "WARNING: Vector memory index not found. "
+            "Running initial index build now...",
+            file=sys.stderr,
+        )
+
+        ok, msg = _check_deps()
+        if not ok:
+            print(f"Cannot auto-initialize: {msg}", file=sys.stderr)
+            print(
+                'To install required dependencies run:\n'
+                '  pip install "lancedb>=0.5.0,<1.0" "sentence-transformers>=2.7.0,<3.0"',
+                file=sys.stderr,
+            )
+            return False
+
+        # Build the index using a minimal args namespace
+        try:
+            cmd_index(argparse.Namespace(root=str(root), full=True, force_init=True))
+            return True
+        except Exception as e:
+            print(f"Auto-initialization failed: {e}", file=sys.stderr)
+            return False
+    finally:
+        try:
+            lock_file.unlink(missing_ok=True)
+        except OSError:
+            pass
 
 
 # ── Merkle Hash Tree ────────────────────────────────────────────────────────
@@ -225,12 +296,41 @@ def diff_manifests(old: dict[str, str],
 # ── Vector Store Operations ──────────────────────────────────────────────────
 
 def _check_deps() -> tuple[bool, str]:
-    """Check if vector memory dependencies are available."""
-    from deps_check import check_vector_memory_deps, install_instructions
-    ok, missing = check_vector_memory_deps()
-    if not ok:
-        return False, install_instructions(missing)
-    return True, ""
+    """Check if vector memory dependencies are available.
+
+    Returns (ok, message). If dependencies are missing, message contains
+    an actionable install command.
+    """
+    try:
+        from deps_check import check_vector_memory_deps, install_instructions
+        ok, missing = check_vector_memory_deps()
+        if not ok:
+            msg = install_instructions(missing)
+            if not msg:
+                msg = (
+                    "Missing required dependencies for vector memory.\n"
+                    'Install with: pip install "lancedb>=0.5.0,<1.0" "sentence-transformers>=2.7.0,<3.0"'
+                )
+            return False, msg
+        return True, ""
+    except ImportError:
+        # Fallback: try importing the key packages directly
+        missing = []
+        try:
+            import lancedb  # noqa: F401
+        except ImportError:
+            missing.append("lancedb")
+        try:
+            import sentence_transformers  # noqa: F401
+        except ImportError:
+            missing.append("sentence-transformers")
+        if missing:
+            pkg_list = " ".join(missing)
+            return False, (
+                f"Missing required dependencies: {', '.join(missing)}\n"
+                f"Install with: pip install {pkg_list}"
+            )
+        return True, ""
 
 
 def _open_db(index_dir: Path):
@@ -282,7 +382,11 @@ def _dir_size_mb(path: Path) -> float:
 # ── Index Command ────────────────────────────────────────────────────────────
 
 def cmd_index(args):
-    """Full or incremental index of the repository."""
+    """Full or incremental index of the repository.
+
+    When --force-init is passed (used by setup and ensure_initialized),
+    the index is always built from scratch regardless of existing state.
+    """
     root = Path(args.root).resolve()
     config = get_effective_config(root)
     index_dir = root / config["index_path"]
@@ -291,7 +395,12 @@ def cmd_index(args):
     ok, msg = _check_deps()
     if not ok:
         print(f"Error: {msg}", file=sys.stderr)
-        sys.exit(1)
+        print(
+            'To install required dependencies run:\n'
+            '  pip install "lancedb>=0.5.0,<1.0" "sentence-transformers>=2.7.0,<3.0"',
+            file=sys.stderr,
+        )
+        sys.exit(2)
 
     # Import optional modules now that deps are confirmed
     from chunkers import chunk_file, chunk_text_document
@@ -316,10 +425,13 @@ def cmd_index(args):
     new_manifest = build_hash_manifest(root, gitignore_patterns, config)
 
     # Determine what needs indexing
-    if args.full:
+    # --force-init (used by setup) is equivalent to --full
+    force_full = args.full or getattr(args, "force_init", False)
+    if force_full:
         files_to_index = list(new_manifest.keys())
         files_to_remove: list[str] = []
-        print(f"  Mode: full rebuild ({len(files_to_index)} files)",
+        mode_label = "force-init" if getattr(args, "force_init", False) else "full rebuild"
+        print(f"  Mode: {mode_label} ({len(files_to_index)} files)",
               file=sys.stderr)
     else:
         old_manifest = load_stored_manifest(index_dir)
@@ -364,7 +476,7 @@ def cmd_index(args):
                     pass
 
         # Remove entries for modified files (will be re-added)
-        if not args.full:
+        if not force_full:
             for fp in files_to_index:
                 try:
                     table.delete(f"file_path = '{_sanitize_filter_value(fp)}'")
@@ -988,21 +1100,40 @@ def hook_file_changed(file_path: str):
 
     Performs incremental re-indexing of the single changed file.
     Designed to be fast and non-blocking.
+
+    Always-on: missing config is treated as enabled. The hook will run
+    unless explicitly disabled (enabled=false) in project-config.json.
     """
     root = _find_project_root()
     config = get_effective_config(root)
 
-    if not config.get("enabled") or not config.get("auto_index"):
+    # Only skip if explicitly disabled; missing config defaults to enabled
+    if config.get("enabled") is False:
+        return
+    if config.get("auto_index") is False:
         return
 
-    # Check deps silently
+    # Check deps silently — do not block on missing deps
     ok, _ = _check_deps()
     if not ok:
         return
 
     index_dir = root / config["index_path"]
     if not (index_dir / "lancedb").exists():
-        return  # No index yet — skip
+        # Index not yet built — trigger initialization once.
+        # Sentinel file prevents repeated full-repo scans on every hook call.
+        sentinel = index_dir / ".init_attempted"
+        if sentinel.exists():
+            return  # Already attempted; skip to avoid unbounded resource use
+        try:
+            index_dir.mkdir(parents=True, exist_ok=True)
+            sentinel.touch()
+            initialized = ensure_initialized(root)
+        except Exception:
+            return
+        if not initialized or not (index_dir / "lancedb").exists():
+            return
+        # Index now ready — fall through to index the changed file
 
     try:
         abs_path = Path(file_path).resolve()
@@ -1108,10 +1239,11 @@ def hook_file_changed(file_path: str):
 
 def try_vector_index(root: Path, content: str, doc_name: str,
                      doc_type: str = "report"):
-    """Attempt to index a text document into the vector store (opt-in, non-fatal).
+    """Index a text document into the vector store (always-on, non-fatal).
 
-    Shared helper used by codebase_analyzer and memory_builder to optionally
-    index their output into the vector memory layer.
+    Shared helper used by codebase_analyzer and memory_builder to index
+    their output into the vector memory layer. Always-on by default —
+    only skips if explicitly disabled in project-config.json.
 
     Args:
         root: Project root path.
@@ -1124,7 +1256,8 @@ def try_vector_index(root: Path, content: str, doc_name: str,
         from embeddings import create_provider, EmbeddingCache
 
         config = get_effective_config(root)
-        if not config.get("enabled"):
+        # Only skip if explicitly disabled; missing config defaults to enabled
+        if config.get("enabled") is False:
             return
 
         ok, _ = _check_deps()
@@ -1133,7 +1266,13 @@ def try_vector_index(root: Path, content: str, doc_name: str,
 
         index_dir = root / config["index_path"]
         if not (index_dir / "lancedb").exists():
-            return
+            # Try to initialize the index before indexing the document
+            try:
+                ensure_initialized(root)
+            except Exception:
+                return
+            if not (index_dir / "lancedb").exists():
+                return
 
         chunks = chunk_text_document(doc_name, content, doc_type=doc_type,
                                      max_chunk_size=config.get("chunk_size", 2000))
@@ -1176,7 +1315,7 @@ def try_vector_index(root: Path, content: str, doc_name: str,
         print(f"  Indexed {len(chunks)} {doc_type} chunks into vector memory.",
               file=sys.stderr)
     except Exception:
-        pass  # Vector indexing is opt-in; failures are non-fatal
+        pass  # Failures are non-fatal to avoid blocking callers
 
 
 # ── CLI ──────────────────────────────────────────────────────────────────────
@@ -1208,6 +1347,8 @@ Examples:
     idx.add_argument("--root", default=".", help="Project root directory")
     idx.add_argument("--full", action="store_true",
                      help="Full rebuild (ignore incremental hashes)")
+    idx.add_argument("--force-init", action="store_true", dest="force_init",
+                     help="Force initialization even if index already exists (used by setup)")
 
     # ── search ──
     srch = sub.add_parser("search", help="Semantic search over indexed content")

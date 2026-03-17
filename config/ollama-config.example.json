@@ -9,7 +9,7 @@
     "cpu_cores": 0
   },
   "offloading": {
-    "enabled": false,
+    "level": 5,
     "auto_route": true,
     "offloadable_tasks": [
       "generate-boilerplate",
@@ -20,8 +20,34 @@
       "explain-code",
       "variable-naming"
     ],
+    "tool_calls": {
+      "enabled": false,
+      "include_tools": ["Bash", "Read", "Grep", "Glob", "Edit", "Write"],
+      "exclude_patterns": [
+        "git push",
+        "git reset",
+        "rm -rf",
+        "sudo",
+        "chmod",
+        "chown"
+      ]
+    },
     "max_tokens": 2048,
     "temperature": 0.1
+  },
+  "tool_calling": {
+    "enabled": true,
+    "allowed_tools": [
+      "bash_execute",
+      "read_file",
+      "write_file",
+      "edit_file",
+      "grep_search",
+      "glob_search",
+      "web_fetch",
+      "web_search"
+    ],
+    "max_tool_rounds": 10
   },
   "installation": {
     "auto_start": false,
