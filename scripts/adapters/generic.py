@@ -126,9 +126,14 @@ class GenericAdapter(PlatformAdapter):
                 "error": f"skill_helper.py not found at {helper}",
             }
 
+        try:
+            safe_args = self.validate_tool_arguments(arguments)
+        except ValueError as exc:
+            return {"success": False, "output": "", "error": str(exc)}
+
         cmd = [sys.executable, str(helper), tool_name]
-        for key, value in arguments.items():
-            cmd.extend([f"--{key}", str(value)])
+        for key, value in safe_args.items():
+            cmd.extend([f"--{key}", value])
 
         result = self.run_command(cmd)
         if result["success"]:

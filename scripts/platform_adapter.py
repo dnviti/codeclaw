@@ -10,11 +10,15 @@ Zero external dependencies -- stdlib only.
 
 import json
 import os
+import re
 import subprocess
 import sys
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any
+
+# Regex for validating argument keys passed to subprocess commands
+_SAFE_ARG_KEY_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
 
 
 # ── Constants ───────────────────────────────────────────────────────────────
@@ -209,6 +213,37 @@ class PlatformAdapter(ABC):
         adapters = cfg.get("adapters", {})
         return adapters.get(self.platform_id, {})
 
+    @staticmethod
+    def validate_tool_arguments(arguments: dict[str, Any]) -> dict[str, str]:
+        """Validate and sanitize tool argument keys and values.
+
+        Ensures argument keys contain only safe characters (alphanumeric,
+        hyphens, underscores) and values contain no control characters.
+        Returns sanitized arguments dict.
+
+        Raises
+        ------
+        ValueError
+            If a key or value contains unsafe characters.
+        """
+        sanitized: dict[str, str] = {}
+        for key, value in arguments.items():
+            if not _SAFE_ARG_KEY_RE.match(key):
+                raise ValueError(
+                    f"Invalid argument key '{key}': must match [a-zA-Z0-9_-]+"
+                )
+            str_value = str(value)
+            # Reject control characters (except common whitespace)
+            if any(
+                c != "\n" and c != "\r" and c != "\t" and ord(c) < 32
+                for c in str_value
+            ):
+                raise ValueError(
+                    f"Invalid argument value for '{key}': contains control characters"
+                )
+            sanitized[key] = str_value
+        return sanitized
+
     # ── Private helpers ─────────────────────────────────────────────────
 
     @staticmethod
@@ -285,14 +320,13 @@ def detect_platform() -> str:
     # 3. Check config file for a forced platform
     try:
         root = PlatformAdapter._detect_project_root()
-        for name in (ADAPTER_CONFIG_FILE,):
-            for parent in (root / ".claude", root / "config"):
-                cfg_path = parent / name
-                if cfg_path.exists():
-                    data = json.loads(cfg_path.read_text(encoding="utf-8"))
-                    forced = data.get("default_platform", "").strip().lower()
-                    if forced and forced in ALL_PLATFORMS:
-                        return forced
+        for parent in (root / ".claude", root / "config"):
+            cfg_path = parent / ADAPTER_CONFIG_FILE
+            if cfg_path.exists():
+                data = json.loads(cfg_path.read_text(encoding="utf-8"))
+                forced = data.get("default_platform", "").strip().lower()
+                if forced and forced in ALL_PLATFORMS:
+                    return forced
     except (json.JSONDecodeError, OSError):
         pass
 

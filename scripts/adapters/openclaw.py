@@ -91,12 +91,17 @@ class OpenClawAdapter(PlatformAdapter):
         """
         root = self.get_project_root()
 
+        try:
+            safe_args = self.validate_tool_arguments(arguments)
+        except ValueError as exc:
+            return {"success": False, "output": "", "error": str(exc)}
+
         # Check if OpenClaw's native dispatcher is available
         openclaw_bin = os.environ.get("OPENCLAW_BIN", "")
         if openclaw_bin and Path(openclaw_bin).exists():
             cmd = [openclaw_bin, "invoke", tool_name]
-            for key, value in arguments.items():
-                cmd.extend([f"--{key}", str(value)])
+            for key, value in safe_args.items():
+                cmd.extend([f"--{key}", value])
             result = self.run_command(cmd)
         else:
             # Fallback: direct Python invocation
@@ -108,8 +113,8 @@ class OpenClawAdapter(PlatformAdapter):
                     "error": f"skill_helper.py not found at {helper}",
                 }
             cmd = [sys.executable, str(helper), tool_name]
-            for key, value in arguments.items():
-                cmd.extend([f"--{key}", str(value)])
+            for key, value in safe_args.items():
+                cmd.extend([f"--{key}", value])
             result = self.run_command(cmd)
 
         if result["success"]:
