@@ -734,18 +734,28 @@ def _platform_cli(cfg: dict) -> str:
     return "glab" if platform == "gitlab" else "gh"
 
 
+_REPO_RE = re.compile(r"^[A-Za-z0-9_.\-]+/[A-Za-z0-9_.\-]+$")
+
+
+def _validate_repo(repo: str) -> bool:
+    """Return True if repo matches the expected owner/name format."""
+    return bool(_REPO_RE.match(repo))
+
+
 def _platform_state_issue_number(cli: str, repo: str) -> "int | None":
     """Find the open ctdf-release-state issue number, or None if not found."""
     try:
         result = subprocess.run(
             [cli, "issue", "list", "--label", "ctdf-release-state",
-             "--state", "open", "--json", "number", "--repo", repo],
-            capture_output=True, text=True, check=True,
+             "--state", "open", "--json", "number", "--limit", "1",
+             "--repo", repo],
+            capture_output=True, text=True, check=True, timeout=30,
         )
         issues = json.loads(result.stdout)
         if issues:
             return issues[0]["number"]
-    except (subprocess.CalledProcessError, FileNotFoundError, json.JSONDecodeError, KeyError):
+    except (subprocess.CalledProcessError, FileNotFoundError, json.JSONDecodeError,
+            KeyError, subprocess.TimeoutExpired):
         pass
     return None
 
@@ -758,7 +768,7 @@ def _platform_state_get() -> dict:
     cfg = _get_platform_config()
     cli = _platform_cli(cfg)
     repo = cfg.get("repo", "")
-    if not repo:
+    if not repo or not _validate_repo(repo):
         return {}
     num = _platform_state_issue_number(cli, repo)
     if num is None:
@@ -766,11 +776,12 @@ def _platform_state_get() -> dict:
     try:
         result = subprocess.run(
             [cli, "issue", "view", str(num), "--repo", repo, "--json", "body"],
-            capture_output=True, text=True, check=True,
+            capture_output=True, text=True, check=True, timeout=30,
         )
         body = json.loads(result.stdout).get("body", "")
         return json.loads(body)
-    except (subprocess.CalledProcessError, FileNotFoundError, json.JSONDecodeError):
+    except (subprocess.CalledProcessError, FileNotFoundError, json.JSONDecodeError,
+            subprocess.TimeoutExpired):
         return {}
 
 
@@ -779,31 +790,40 @@ def _platform_state_set(state: dict) -> None:
     cfg = _get_platform_config()
     cli = _platform_cli(cfg)
     repo = cfg.get("repo", "")
-    if not repo:
+    if not repo or not _validate_repo(repo):
         return
     body = json.dumps(state, indent=2)
     num = _platform_state_issue_number(cli, repo)
     try:
         if num is None:
-            # Ensure the label exists before creating the issue
-            subprocess.run(
+            # Ensure the label exists before creating the issue; ignore errors
+            # (label may already exist or caller may lack label-create permission).
+            label_result = subprocess.run(
                 [cli, "label", "create", "ctdf-release-state",
                  "--description", "CTDF platform release state", "--repo", repo],
-                capture_output=True, text=True,
+                capture_output=True, text=True, timeout=30,
             )
+            if label_result.returncode not in (0, 1):
+                # returncode 1 typically means the label already exists — OK.
+                # Any other non-zero value is unexpected; log to stderr.
+                print(
+                    f"[ctdf] warning: label create exited {label_result.returncode}: "
+                    f"{label_result.stderr.strip()}",
+                    file=sys.stderr,
+                )
             subprocess.run(
                 [cli, "issue", "create", "--repo", repo,
                  "--label", "ctdf-release-state",
                  "--title", "CTDF Release State",
                  "--body", body],
-                capture_output=True, text=True, check=True,
+                capture_output=True, text=True, check=True, timeout=30,
             )
         else:
             subprocess.run(
                 [cli, "issue", "edit", str(num), "--repo", repo, "--body", body],
-                capture_output=True, text=True, check=True,
+                capture_output=True, text=True, check=True, timeout=30,
             )
-    except (subprocess.CalledProcessError, FileNotFoundError):
+    except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
         pass
 
 
@@ -812,7 +832,7 @@ def _platform_state_clear() -> None:
     cfg = _get_platform_config()
     cli = _platform_cli(cfg)
     repo = cfg.get("repo", "")
-    if not repo:
+    if not repo or not _validate_repo(repo):
         return
     num = _platform_state_issue_number(cli, repo)
     if num is None:
@@ -820,9 +840,9 @@ def _platform_state_clear() -> None:
     try:
         subprocess.run(
             [cli, "issue", "close", str(num), "--repo", repo],
-            capture_output=True, text=True, check=True,
+            capture_output=True, text=True, check=True, timeout=30,
         )
-    except (subprocess.CalledProcessError, FileNotFoundError):
+    except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
         pass
 
 
