@@ -387,6 +387,46 @@ def _get_platform_placeholders(platform: str) -> dict:
         }
 
 
+def _get_mcp_server_info() -> str:
+    """Build an MCP server connection info snippet for agent prompts.
+
+    When the MCP server is configured and the ``mcp`` package is available,
+    this returns a markdown section that instructs spawned agents how to
+    connect to the shared vector memory MCP server.
+    """
+    mcp_script = Path(SCRIPTS_DIR) / "mcp_server.py"
+    if not mcp_script.exists():
+        return ""
+
+    # Check project config for mcp_server.enabled
+    for cfg_name in (".claude/project-config.json", "config/project-config.json"):
+        cfg_path = Path(cfg_name)
+        if cfg_path.exists():
+            try:
+                data = json.loads(cfg_path.read_text(encoding="utf-8"))
+                mcp_cfg = data.get("mcp_server", {})
+                if not mcp_cfg.get("enabled", False):
+                    return ""
+                break
+            except (json.JSONDecodeError, OSError):
+                pass
+    else:
+        return ""
+
+    return (
+        "\n\n## Vector Memory MCP Server\n\n"
+        "A shared vector memory MCP server is available for semantic code search,\n"
+        "memory storage, and task context retrieval.  The server uses stdio\n"
+        "transport and can be started with:\n\n"
+        "```bash\n"
+        f"python3 {mcp_script} --root .\n"
+        "```\n\n"
+        "Tools: `index_repository`, `semantic_search`, `store_memory`, "
+        "`get_task_context`\n"
+        "Resource: `memory://status`\n\n"
+    )
+
+
 def build_prompt(pipeline: str, provider: str, model: str, auto_pr: bool = True) -> str:
     """Construct the agent prompt for the given pipeline and provider.
 
@@ -397,6 +437,9 @@ def build_prompt(pipeline: str, provider: str, model: str, auto_pr: bool = True)
     co_authored_by = _make_co_authored_by(provider, model)
     platform = _detect_platform()
     platform_placeholders = _get_platform_placeholders(platform)
+
+    # MCP server connection info for agents
+    mcp_info = _get_mcp_server_info()
 
     if pipeline == "task":
         # Task prompt is self-contained (no skill references)
@@ -427,7 +470,7 @@ def build_prompt(pipeline: str, provider: str, model: str, auto_pr: bool = True)
                 prompt,
                 flags=_re.DOTALL,
             )
-        return prompt
+        return prompt + mcp_info
 
     elif pipeline == "scout":
         research_comment_instructions = (
@@ -462,6 +505,7 @@ def build_prompt(pipeline: str, provider: str, model: str, auto_pr: bool = True)
                 "@report-features.md "
                 "@report-quality.md"
                 + research_comment_instructions
+                + mcp_info
             )
         else:
             # Inline the idea-scout skill for non-Claude providers
@@ -505,7 +549,7 @@ def build_prompt(pipeline: str, provider: str, model: str, auto_pr: bool = True)
                 "- @report-quality.md — code quality analysis\n\n"
                 "## Skill Instructions\n\n"
             )
-            return preamble + skill_content + research_comment_instructions
+            return preamble + skill_content + research_comment_instructions + mcp_info
 
     elif pipeline == "docs":
         if provider == "claude":
@@ -522,7 +566,7 @@ def build_prompt(pipeline: str, provider: str, model: str, auto_pr: bool = True)
             prompt = prompt.replace("{{INSTRUCTIONS_FILE}}", instructions_file)
             prompt = prompt.replace("{{CO_AUTHORED_BY}}", co_authored_by)
             prompt = prompt.replace("{{RELEASE_BRANCH}}", platform_placeholders.get("{{RELEASE_BRANCH}}", "develop"))
-            return prompt
+            return prompt + mcp_info
         else:
             # For non-Claude providers, inline the docs skill
             skill_path = Path(SKILLS_DIR) / "docs" / "SKILL.md"
@@ -560,7 +604,7 @@ def build_prompt(pipeline: str, provider: str, model: str, auto_pr: bool = True)
                     "Use the following instructions as a guide for updating documentation:\n\n"
                     + skill_content
                 )
-            return prompt
+            return prompt + mcp_info
 
     print(f"Error: Unknown pipeline '{pipeline}'.", file=sys.stderr)
     sys.exit(1)

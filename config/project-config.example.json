@@ -19,6 +19,12 @@
   "release_branch": "",
   "show_generated_footer": true,
   "python_command": "",
+  "mcp_server": {
+    "enabled": false,
+    "transport": "stdio",
+    "auto_start": false,
+    "_comment": "Set enabled=true to activate the MCP vector memory server. Requires: pip install mcp"
+  },
   "social_announce": {
     "platforms": {
       "bluesky": {

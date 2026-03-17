@@ -416,6 +416,65 @@ def detect_tag_prefix() -> str:
     return "v"
 
 
+def _detect_mcp_server_status(root: Path) -> dict:
+    """Detect MCP server availability and status.
+
+    Checks whether the MCP server script exists, whether the ``mcp``
+    Python package is installed, and whether the server is configured
+    as enabled in project config.
+    """
+    scripts_dir = _SCRIPT_DIR
+    mcp_script = scripts_dir / "mcp_server.py"
+
+    status: dict = {
+        "available": mcp_script.exists(),
+        "status": "stopped",
+        "sdk_installed": False,
+        "enabled": False,
+    }
+
+    if not mcp_script.exists():
+        status["status"] = "not_installed"
+        return status
+
+    # Check if mcp SDK is installed
+    try:
+        result = subprocess.run(
+            [sys.executable, str(mcp_script), "--check"],
+            capture_output=True, text=True, timeout=10,
+        )
+        if result.returncode == 0:
+            check_data = json.loads(result.stdout.strip())
+            status["sdk_installed"] = check_data.get("mcp_sdk", False)
+        else:
+            status["sdk_installed"] = False
+    except Exception:
+        status["sdk_installed"] = False
+
+    # Check project config for mcp_server.enabled
+    for cfg_name in [
+        root / ".claude" / "project-config.json",
+        root / "config" / "project-config.json",
+    ]:
+        if cfg_name.exists():
+            try:
+                data = json.loads(cfg_name.read_text(encoding="utf-8"))
+                mcp_cfg = data.get("mcp_server", {})
+                status["enabled"] = mcp_cfg.get("enabled", False)
+                break
+            except (json.JSONDecodeError, OSError):
+                pass
+
+    if status["sdk_installed"] and status["enabled"]:
+        status["status"] = "ready"
+    elif status["sdk_installed"]:
+        status["status"] = "disabled"
+    else:
+        status["status"] = "no_sdk"
+
+    return status
+
+
 # ════════════════════════════════════════════════════════════════════════════
 # Subcommand: context
 # ════════════════════════════════════════════════════════════════════════════
@@ -487,6 +546,9 @@ def cmd_context(_args) -> dict:
         "test_framework": md_vars.get("TEST_FRAMEWORK", ""),
     }
 
+    # ── mcp_server ──
+    mcp_server = _detect_mcp_server_status(root)
+
     # ── os_info ──
     try:
         from platform_utils import detect_python_cmd, get_shell_info
@@ -509,6 +571,7 @@ def cmd_context(_args) -> dict:
         "worktree": worktree,
         "branches": branches,
         "release_config": release_config,
+        "mcp_server": mcp_server,
         "os_info": os_info,
     }
 
