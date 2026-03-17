@@ -620,11 +620,210 @@ def save_ollama_config(config: dict, config_path: str | None = None) -> None:
 
 # ── Task Offloading Logic ──────────────────────────────────────────────────
 
+# Keyword sets used for scoring task complexity (0=trivial, 10=most complex)
+_TRIVIAL_KEYWORDS = [
+    "boilerplate", "docstring", "format", "rename",
+    "variable name", "import sort", "add comment",
+    "type annotation", "whitespace", "indentation",
+]
+
+_SIMPLE_KEYWORDS = [
+    "simple test", "unit test stub", "explain", "summarize",
+    "describe", "type hint", "simple refactor", "minor edit",
+]
+
+_MEDIUM_KEYWORDS = [
+    "refactor", "test generation", "code review", "review",
+    "generate test", "add test", "docstring update", "extract function",
+]
+
+_COMPLEX_KEYWORDS = [
+    "architect", "design", "migrate", "performance",
+    "optimize", "concurrency", "race condition", "overhaul",
+    "major refactor", "restructure",
+]
+
+_CRITICAL_KEYWORDS = [
+    "security", "vulnerability", "critical", "breaking change",
+    "debug critical", "production issue", "data loss",
+]
+
+
+def compute_offload_score(task_description: str) -> int:
+    """Compute an offloadability score (0-10) for a task description.
+
+    Higher scores indicate the task is MORE suitable for local model
+    offloading (i.e., simpler/more routine). Lower scores indicate
+    frontier-level reasoning is required.
+
+    Scoring:
+        0-2  — critical/security/architecture tasks (never offload at normal levels)
+        3-4  — complex tasks
+        5-6  — medium tasks
+        7-8  — simple tasks
+        9-10 — trivial tasks (boilerplate, formatting, docstrings)
+
+    Args:
+        task_description: A short description of the task.
+
+    Returns:
+        Integer score 0-10.
+    """
+    description_lower = task_description.lower()
+
+    # Critical overrides everything
+    for keyword in _CRITICAL_KEYWORDS:
+        if keyword in description_lower:
+            return 1
+
+    # Complex tasks
+    for keyword in _COMPLEX_KEYWORDS:
+        if keyword in description_lower:
+            return 3
+
+    # Medium tasks
+    for keyword in _MEDIUM_KEYWORDS:
+        if keyword in description_lower:
+            return 5
+
+    # Simple tasks
+    for keyword in _SIMPLE_KEYWORDS:
+        if keyword in description_lower:
+            return 7
+
+    # Trivial tasks
+    for keyword in _TRIVIAL_KEYWORDS:
+        if keyword in description_lower:
+            return 9
+
+    # Unknown/unclassified: treat as medium
+    return 5
+
+
+def should_offload(task_description: str, level: int) -> bool:
+    """Determine if a task should be offloaded to the local Ollama model.
+
+    Offloads when the task's computed score is >= the configured level.
+    A higher level allows more aggressive offloading.
+
+    Args:
+        task_description: A short description of the task.
+        level: Configured offloading level (0-10). Level 0 = never offload,
+               level 10 = offload everything.
+
+    Returns:
+        True if the task should be routed to Ollama.
+    """
+    if level <= 0:
+        return False
+    if level >= 10:
+        return True
+    score = compute_offload_score(task_description)
+    return score >= level
+
+
+def should_offload_tool_call(tool_name: str, tool_args: str, level: int) -> bool:
+    """Determine if a tool call should be routed to the local Ollama model.
+
+    Tool call routing rules:
+        Bash:       simple commands (ls, cat, git status) at level >= 3
+                    complex piped commands at level >= 7
+        Read/Grep/Glob: offload pattern generation at level >= 6
+        Edit/Write: simple edits (formatting, imports) at level >= 4
+                    structural edits at level >= 8
+
+    Args:
+        tool_name: Name of the tool (e.g., 'Bash', 'Read', 'Edit').
+        tool_args: The arguments/content passed to the tool.
+        level: Configured offloading level (0-10).
+
+    Returns:
+        True if the tool call should be routed to Ollama.
+    """
+    if level <= 0:
+        return False
+    if level >= 10:
+        # Even at level 10, exclude dangerous destructive commands
+        _EXCLUDED_PATTERNS = [
+            "git push --force", "git push -f",
+            "git reset --hard", "rm -rf /",
+            "sudo rm", "chmod 777", "chown root",
+            "format c:", "del /f /s /q",
+        ]
+        args_lower = tool_args.lower()
+        for pattern in _EXCLUDED_PATTERNS:
+            if pattern in args_lower:
+                return False
+        return True
+
+    tool_upper = tool_name.upper() if tool_name else ""
+    args_lower = tool_args.lower() if tool_args else ""
+
+    if tool_upper == "BASH":
+        # Excluded / dangerous patterns — never offload regardless of level
+        dangerous_patterns = [
+            "git push", "git reset", "rm -rf", "sudo", "chmod", "chown",
+        ]
+        for pattern in dangerous_patterns:
+            if pattern in args_lower:
+                return False
+
+        # Simple commands at level >= 3
+        simple_bash_keywords = [
+            "ls ", "ls\n", "cat ", "git status", "git log",
+            "git diff", "git branch", "pwd", "echo ", "which ",
+            "find ", "head ", "tail ",
+        ]
+        if level >= 7:
+            # Complex piped commands at level >= 7
+            return True
+        if level >= 3:
+            for kw in simple_bash_keywords:
+                if kw in args_lower:
+                    return True
+            # Single simple command (no pipes, redirects, semicolons)
+            if not any(c in tool_args for c in ["|", ">", "<", ";", "&&", "||"]):
+                return True
+        return False
+
+    elif tool_upper in ("READ", "GREP", "GLOB"):
+        # Pattern/search operations at level >= 6
+        return level >= 6
+
+    elif tool_upper in ("EDIT", "WRITE"):
+        # Structural edits at level >= 8
+        structural_indicators = [
+            "class ", "def ", "function ", "import ", "from ",
+            "struct ", "interface ", "module ",
+        ]
+        if level >= 8:
+            return True
+        if level >= 4:
+            # Simple edits: formatting, whitespace, comments, imports
+            simple_edit_indicators = [
+                "format", "whitespace", "indent", "comment",
+                "docstring", "type hint", "type annotation",
+            ]
+            for indicator in simple_edit_indicators:
+                if indicator in args_lower:
+                    return True
+            # Short edits (under 5 lines) heuristic
+            line_count = len(tool_args.splitlines())
+            if line_count <= 5 and not any(ind in args_lower for ind in structural_indicators):
+                return True
+        return False
+
+    # Unknown tools: conservative — do not offload
+    return False
+
+
 def is_offloadable(task_description: str) -> bool:
     """Determine if a task is suitable for local model offloading.
 
-    Simple heuristic: checks for keywords that indicate the task
-    is routine and does not require frontier-level reasoning.
+    .. deprecated::
+        Use :func:`should_offload` with an explicit level instead.
+        This function is kept for backward compatibility and is equivalent
+        to ``should_offload(task_description, level=5)``.
 
     Args:
         task_description: A short description of the task.
@@ -632,35 +831,7 @@ def is_offloadable(task_description: str) -> bool:
     Returns:
         True if the task can be offloaded to the local model.
     """
-    description_lower = task_description.lower()
-
-    # Keywords indicating simple/routine tasks
-    offload_keywords = [
-        "boilerplate", "docstring", "format", "rename",
-        "simple test", "unit test stub", "add comment",
-        "type annotation", "import sort", "variable name",
-        "explain", "summarize", "describe",
-    ]
-
-    # Keywords indicating complex tasks that need frontier models
-    frontier_keywords = [
-        "architect", "design", "security", "vulnerability",
-        "complex", "refactor entire", "migrate", "debug",
-        "performance", "optimize", "concurrency", "race condition",
-        "critical", "breaking change",
-    ]
-
-    # Check frontier keywords first (they override)
-    for keyword in frontier_keywords:
-        if keyword in description_lower:
-            return False
-
-    # Check offload keywords
-    for keyword in offload_keywords:
-        if keyword in description_lower:
-            return True
-
-    return False
+    return should_offload(task_description, level=5)
 
 
 # ── CLI Entry Point ─────────────────────────────────────────────────────────
