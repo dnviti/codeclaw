@@ -23,19 +23,34 @@ concurrency:
 
 jobs:
   lint-test-build:
-    name: Lint, Test & Build
-    runs-on: ubuntu-latest
-    # Uncomment for matrix builds:
-    # strategy:
-    #   matrix:
-    #     os: [ubuntu-latest, windows-latest, macos-latest]
-    #     node-version: [18, 20, 22]
-    # runs-on: ${{ matrix.os }}
+    name: Lint, Test & Build (${{ matrix.os }})
+    # Multi-OS matrix — runs on Windows, macOS, and Linux
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        # Uncomment for multi-version matrix:
+        # node-version: [18, 20, 22]
+    runs-on: ${{ matrix.os }}
 
     steps:
       - name: Checkout code
         # Pin to commit SHA — never use @main or @v4 tags for security
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      # ── Python command detection ───────────────────────────────────
+      # On Windows, `python3` may not exist — detect the correct command
+      - name: Detect Python command
+        id: detect-python
+        shell: bash
+        run: |
+          if command -v python3 &>/dev/null; then
+            echo "cmd=python3" >> "$GITHUB_OUTPUT"
+          elif command -v python &>/dev/null; then
+            echo "cmd=python" >> "$GITHUB_OUTPUT"
+          else
+            echo "cmd=python3" >> "$GITHUB_OUTPUT"
+          fi
 
       # ── Runtime setup ──────────────────────────────────────────────
       # [CI_RUNTIME_SETUP] — replaced by /setup init
