@@ -1,0 +1,46 @@
+{
+  "_comment": "CTDF Vector Memory MCP Server configuration template.",
+  "_comment2": "Copy this file to your project and adjust as needed.",
+  "mcpServers": {
+    "ctdf-vector-memory": {
+      "command": "python3",
+      "args": [
+        "${CTDF_SCRIPTS}/mcp_server.py",
+        "--root", "${PROJECT_ROOT}"
+      ],
+      "env": {
+        "CTDF_PROJECT_ROOT": "${PROJECT_ROOT}"
+      }
+    }
+  },
+  "server_options": {
+    "_comment": "These are informational — actual config depends on client.",
+    "transport": "stdio",
+    "auto_start": true,
+    "restart_on_crash": true,
+    "tools": [
+      {
+        "name": "index_repository",
+        "description": "Trigger full or incremental codebase indexing"
+      },
+      {
+        "name": "semantic_search",
+        "description": "Find relevant code and context via semantic similarity"
+      },
+      {
+        "name": "store_memory",
+        "description": "Persist agent learnings and discoveries"
+      },
+      {
+        "name": "get_task_context",
+        "description": "Retrieve comprehensive task-specific context"
+      }
+    ],
+    "resources": [
+      {
+        "uri": "memory://status",
+        "description": "Current index status and available namespaces"
+      }
+    ]
+  }
+}

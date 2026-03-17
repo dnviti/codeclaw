@@ -1,0 +1,30 @@
+{
+  "enabled": false,
+  "model": "",
+  "api_base": "http://localhost:11434",
+  "hardware": {
+    "ram_gb": 0,
+    "vram_gb": 0,
+    "gpu_vendor": "none",
+    "cpu_cores": 0
+  },
+  "offloading": {
+    "enabled": false,
+    "auto_route": true,
+    "offloadable_tasks": [
+      "generate-boilerplate",
+      "format-code",
+      "write-docstrings",
+      "simple-refactor",
+      "generate-tests-simple",
+      "explain-code",
+      "variable-naming"
+    ],
+    "max_tokens": 2048,
+    "temperature": 0.1
+  },
+  "installation": {
+    "auto_start": false,
+    "pull_on_setup": true
+  }
+}

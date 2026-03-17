@@ -1,0 +1,197 @@
+#!/usr/bin/env python3
+"""MCP stdio server for the CTDF vector memory layer.
+
+Exposes the vector memory subsystem (VMEM-0017) as an MCP (Model Context
+Protocol) server using the stdio transport.  Any MCP-compatible AI assistant
+(Claude Code, Cursor, Continue.dev, etc.) can connect and use the tools.
+
+Tools provided:
+    index_repository   — trigger codebase indexing (full or incremental)
+    semantic_search    — find relevant code and context
+    store_memory       — persist agent learnings and discoveries
+    get_task_context   — retrieve comprehensive task-specific context
+
+Resources provided:
+    memory://status    — current index status and available namespaces
+
+Requirements:
+    pip install mcp
+
+    The vector memory dependencies (lancedb, onnxruntime, etc.) are only
+    needed when tools are actually invoked — the server itself starts
+    without them.
+
+Usage:
+    python3 mcp_server.py                     # stdio transport (default)
+    python3 mcp_server.py --root /path/to/project
+
+Zero required heavy dependencies for startup — only the ``mcp`` package
+is needed.  Vector memory deps are loaded lazily by the tool handlers.
+"""
+
+import argparse
+import json
+import os
+import sys
+from pathlib import Path
+
+# Add scripts/ to path for sibling imports
+_SCRIPT_DIR = Path(__file__).resolve().parent
+if str(_SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPT_DIR))
+
+
+# ── Dependency Check ─────────────────────────────────────────────────────────
+
+def _check_mcp_sdk() -> bool:
+    """Return True if the ``mcp`` package is importable."""
+    try:
+        import mcp  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
+# ── Resource Helpers ─────────────────────────────────────────────────────────
+
+def _build_status(root: str) -> dict:
+    """Build a status dict describing the vector memory index."""
+    root_path = Path(root).resolve()
+
+    # Try to get status from vector_memory.py
+    vm_script = _SCRIPT_DIR / "vector_memory.py"
+    if vm_script.exists():
+        import subprocess
+        try:
+            result = subprocess.run(
+                [sys.executable, str(vm_script), "status", "--root", root, "--json"],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                status = json.loads(result.stdout.strip())
+                # Add namespace listing
+                status["namespaces"] = _list_namespaces(root_path)
+                return status
+        except Exception:
+            pass
+
+    # Fallback: basic status
+    return {
+        "enabled": False,
+        "dependencies_installed": False,
+        "index_exists": False,
+        "namespaces": _list_namespaces(root_path),
+        "message": "vector_memory.py not found or status check failed.",
+    }
+
+
+def _list_namespaces(root_path: Path) -> list[str]:
+    """List available memory note namespaces."""
+    notes_dir = root_path / ".claude" / "memory" / "notes"
+    if not notes_dir.exists():
+        return []
+    try:
+        return sorted(
+            d.name for d in notes_dir.iterdir()
+            if d.is_dir() and not d.name.startswith(".")
+        )
+    except OSError:
+        return []
+
+
+# ── Server Setup ─────────────────────────────────────────────────────────────
+
+def create_server(root: str = "."):
+    """Create and configure the MCP server instance.
+
+    Returns the ``Server`` object ready for ``run()``.
+    """
+    from mcp.server import Server
+
+    server = Server("ctdf-vector-memory")
+
+    # ── Register tools ──
+    from mcp_tools import index, search, store, task_context
+
+    index.register(server)
+    search.register(server)
+    store.register(server)
+    task_context.register(server)
+
+    # ── Register resources ──
+    @server.resource("memory://status")
+    async def resource_status() -> str:
+        """Current vector memory index status and available namespaces."""
+        return json.dumps(_build_status(root), indent=2)
+
+    return server
+
+
+async def run_server(root: str = "."):
+    """Run the MCP server with stdio transport."""
+    from mcp.server.stdio import stdio_server
+
+    server = create_server(root)
+
+    async with stdio_server() as (read_stream, write_stream):
+        await server.run(read_stream, write_stream, server.create_initialization_options())
+
+
+# ── CLI ──────────────────────────────────────────────────────────────────────
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="CTDF Vector Memory MCP Server",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""\
+Examples:
+  %(prog)s                          # Start MCP stdio server
+  %(prog)s --root /path/to/project  # Specify project root
+  %(prog)s --check                  # Check if MCP SDK is installed
+
+The server communicates via stdin/stdout using the MCP stdio protocol.
+Configure your MCP client to launch this script as a subprocess.
+""",
+    )
+    parser.add_argument(
+        "--root", default=".",
+        help="Project root directory (default: current directory)",
+    )
+    parser.add_argument(
+        "--check", action="store_true",
+        help="Check if the MCP SDK is installed and exit",
+    )
+
+    args = parser.parse_args()
+
+    if args.check:
+        if _check_mcp_sdk():
+            print(json.dumps({"mcp_sdk": True, "status": "ok"}))
+            sys.exit(0)
+        else:
+            print(json.dumps({
+                "mcp_sdk": False,
+                "status": "error",
+                "install": "pip install mcp",
+            }))
+            sys.exit(1)
+
+    if not _check_mcp_sdk():
+        print(
+            "Error: The 'mcp' Python package is not installed.\n"
+            "Install it with:  pip install mcp\n",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    # Set the project root in an env var so tool handlers can access it
+    os.environ.setdefault("CTDF_PROJECT_ROOT", str(Path(args.root).resolve()))
+
+    import asyncio
+    asyncio.run(run_server(args.root))
+
+
+if __name__ == "__main__":
+    main()

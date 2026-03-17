@@ -17,5 +17,77 @@
   "tag_prefix": "",
   "github_repo_url": "",
   "release_branch": "",
-  "show_generated_footer": true
+  "show_generated_footer": true,
+  "python_command": "",
+  "memory_consistency": {
+    "gc_ttl_days": 30,
+    "max_index_size_mb": 500,
+    "conflict_strategy": "auto",
+    "enable_versioned_reads": false
+  },
+  "vector_memory": {
+    "enabled": false,
+    "auto_index": false,
+    "embedding_provider": "local",
+    "embedding_model": "all-MiniLM-L6-v2",
+    "embedding_api_key_env": "",
+    "chunk_size": 2000,
+    "index_path": ".claude/memory/vectors",
+    "batch_size": 64,
+    "include_patterns": [],
+    "exclude_patterns": []
+  },
+  "mcp_server": {
+    "enabled": false,
+    "transport": "stdio",
+    "auto_start": false,
+    "_comment": "Set enabled=true to activate the MCP vector memory server. Requires: pip install mcp"
+  },
+  "social_announce": {
+    "platforms": {
+      "bluesky": {
+        "enabled": false
+      },
+      "mastodon": {
+        "enabled": false
+      },
+      "discord": {
+        "enabled": false
+      },
+      "slack": {
+        "enabled": false
+      }
+    },
+    "clipboard_platforms": [
+      {
+        "name": "twitter",
+        "enabled": false,
+        "max_length": 280,
+        "post_url": "https://twitter.com/compose/tweet"
+      },
+      {
+        "name": "linkedin",
+        "enabled": false,
+        "max_length": 3000,
+        "post_url": "https://www.linkedin.com/feed/"
+      },
+      {
+        "name": "reddit",
+        "enabled": false,
+        "max_length": 10000,
+        "post_url": ""
+      },
+      {
+        "name": "hackernews",
+        "enabled": false,
+        "max_length": 2000,
+        "post_url": "https://news.ycombinator.com/submit"
+      }
+    ]
+  },
+  "ollama": {
+    "enabled": false,
+    "model": "",
+    "offloading": false
+  }
 }

@@ -397,6 +397,21 @@ def main():
         else:
             print(output)
 
+        # Optionally index into vector memory store
+        _try_vector_index(root, output, "project-memory.md")
+
+
+def _try_vector_index(root: Path, content: str, doc_name: str):
+    """Attempt to index generated memory into vector store (opt-in, non-fatal)."""
+    try:
+        _script_dir = Path(__file__).resolve().parent
+        if str(_script_dir) not in sys.path:
+            sys.path.insert(0, str(_script_dir))
+        from vector_memory import try_vector_index
+        try_vector_index(root, content, doc_name, doc_type="memory")
+    except Exception:
+        pass  # Vector indexing is opt-in; failures are non-fatal
+
 
 if __name__ == "__main__":
     main()

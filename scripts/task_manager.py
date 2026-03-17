@@ -19,6 +19,11 @@ import subprocess
 import sys
 from pathlib import Path
 
+# Add scripts/ to path for sibling imports
+_SCRIPT_DIR = Path(__file__).resolve().parent
+if str(_SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPT_DIR))
+
 # ── Constants ───────────────────────────────────────────────────────────────
 
 SEPARATOR = "-" * 78
@@ -1998,6 +2003,88 @@ def cmd_remove_worktree(args):
         "path": wt_path,
     }))
 
+# ── Subcommand: register-agent ─────────────────────────────────────────────
+
+def cmd_register_agent(args):
+    """Register an agent with the memory consistency protocol.
+
+    Used by ``/task pick all`` and ``/release`` stage 4 when spawning
+    parallel sub-agents. Each agent receives a unique ID and session.
+    """
+    main_root = get_main_repo_root()
+    task_code = getattr(args, "task_code", "") or ""
+    agent_type = getattr(args, "agent_type", "task") or "task"
+
+    try:
+        from memory_protocol import MemoryProtocol, generate_agent_id
+
+        protocol = MemoryProtocol(main_root)
+        agent_id = generate_agent_id(prefix=agent_type)
+        session = protocol.register_agent(
+            agent_id=agent_id,
+            agent_type=agent_type,
+            task_code=task_code,
+        )
+        print(json.dumps({
+            "success": True,
+            "agent_id": agent_id,
+            "session_id": session.session_id,
+            "agent_type": agent_type,
+            "task_code": task_code,
+            "env_vars": {
+                "CTDF_AGENT_ID": agent_id,
+                "CTDF_SESSION_ID": session.session_id,
+                "CTDF_AGENT_TYPE": agent_type,
+                "CTDF_TASK_CODE": task_code,
+            },
+        }))
+    except ImportError:
+        # memory_protocol not available — return stub values
+        import uuid as _uuid
+        fallback_id = f"{agent_type}-{str(_uuid.uuid4())[:8]}-{os.getpid()}"
+        print(json.dumps({
+            "success": True,
+            "agent_id": fallback_id,
+            "session_id": "",
+            "agent_type": agent_type,
+            "task_code": task_code,
+            "env_vars": {
+                "CTDF_AGENT_ID": fallback_id,
+                "CTDF_SESSION_ID": "",
+                "CTDF_AGENT_TYPE": agent_type,
+                "CTDF_TASK_CODE": task_code,
+            },
+            "note": "memory_protocol not available — running without coordination",
+        }))
+
+
+def cmd_deregister_agent(args):
+    """Deregister an agent session on completion."""
+    main_root = get_main_repo_root()
+    session_id = getattr(args, "session_id", "") or ""
+
+    if not session_id:
+        print(json.dumps({"success": False, "error": "session_id required"}))
+        return
+
+    try:
+        from memory_protocol import MemoryProtocol
+
+        protocol = MemoryProtocol(main_root)
+        protocol.deregister_agent(session_id)
+        print(json.dumps({
+            "success": True,
+            "session_id": session_id,
+            "status": "completed",
+        }))
+    except ImportError:
+        print(json.dumps({
+            "success": True,
+            "session_id": session_id,
+            "note": "memory_protocol not available — no-op",
+        }))
+
+
 # ── CLI Setup ────────────────────────────────────────────────────────────────
 
 def build_parser() -> argparse.ArgumentParser:
@@ -2151,6 +2238,21 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--remove-branch", action="store_true", default=False,
                     help="Also delete the task branch")
     p.set_defaults(func=cmd_remove_worktree)
+
+    # register-agent
+    p = sub.add_parser("register-agent",
+                        help="Register an agent with the memory consistency protocol")
+    p.add_argument("--task-code", default="", help="Associated task code")
+    p.add_argument("--agent-type", default="task",
+                    choices=["task", "scout", "release", "docs", "pr-analysis", "monitor"],
+                    help="Type of agent being spawned")
+    p.set_defaults(func=cmd_register_agent)
+
+    # deregister-agent
+    p = sub.add_parser("deregister-agent",
+                        help="Deregister an agent session on completion")
+    p.add_argument("--session-id", required=True, help="Session ID to deregister")
+    p.set_defaults(func=cmd_deregister_agent)
 
     return parser
 
