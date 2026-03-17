@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import os
+import urllib.parse
 import urllib.request
 import urllib.error
 from typing import Any
@@ -37,6 +38,15 @@ class MastodonPlatform(SocialPlatform):
 
         instance = os.environ.get("CTDF_MASTODON_INSTANCE", "").rstrip("/")
         token = os.environ.get("CTDF_MASTODON_TOKEN", "")
+
+        # Validate instance URL scheme
+        parsed = urllib.parse.urlparse(instance)
+        if parsed.scheme != "https":
+            return {
+                "success": False,
+                "platform": self.name,
+                "error": f"Mastodon instance URL must use HTTPS, got: {parsed.scheme!r}",
+            }
 
         try:
             url = f"{instance}/api/v1/statuses"
@@ -70,7 +80,7 @@ class MastodonPlatform(SocialPlatform):
                 "platform": self.name,
                 "error": f"Mastodon API error ({e.code}): {body}",
             }
-        except Exception as e:
+        except (urllib.error.URLError, OSError, ValueError) as e:
             return {
                 "success": False,
                 "platform": self.name,

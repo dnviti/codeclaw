@@ -165,7 +165,6 @@ def _summarize_changes(changes: dict[str, list[str]], max_items: int = 3) -> str
         items = changes.get(category, [])
         if items:
             shown = items[:max_items]
-            label = category.lower()
             if len(items) > max_items:
                 parts.append(f"{category}: {', '.join(shown)} (+{len(items) - max_items} more)")
             else:
@@ -302,11 +301,11 @@ def cmd_post(args: argparse.Namespace) -> None:
 
 def cmd_preview(args: argparse.Namespace) -> None:
     """Handle the 'preview' subcommand."""
-    social_config = _get_social_config()
+    config = _load_project_config()
+    social_config = config.get("social_announce", {})
     enabled_platforms = social_config.get("platforms", {})
 
     # Determine changelog file and repo URL from config
-    config = _load_project_config()
     changelog_file = args.changelog_file or config.get("changelog_file", "CHANGELOG.md")
     repo_url = args.repo_url or config.get("github_repo_url", "")
 

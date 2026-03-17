@@ -14,7 +14,7 @@ import urllib.request
 import urllib.error
 from typing import Any
 
-from . import SocialPlatform, register
+from . import SocialPlatform, register, validate_webhook_url
 
 
 @register
@@ -35,6 +35,15 @@ class DiscordPlatform(SocialPlatform):
             }
 
         webhook_url = os.environ.get("CTDF_DISCORD_WEBHOOK", "")
+
+        try:
+            validate_webhook_url(webhook_url, ["discord.com", "discordapp.com"])
+        except ValueError as e:
+            return {
+                "success": False,
+                "platform": self.name,
+                "error": f"Invalid webhook URL: {e}",
+            }
 
         try:
             data = json.dumps({"content": message[:self.max_length]}).encode()
@@ -61,7 +70,7 @@ class DiscordPlatform(SocialPlatform):
                 "platform": self.name,
                 "error": f"Discord webhook error ({e.code}): {body}",
             }
-        except Exception as e:
+        except (urllib.error.URLError, OSError, ValueError) as e:
             return {
                 "success": False,
                 "platform": self.name,

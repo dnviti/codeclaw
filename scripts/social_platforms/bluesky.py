@@ -105,7 +105,7 @@ class BlueskyPlatform(SocialPlatform):
                 "platform": self.name,
                 "error": f"Bluesky API error ({e.code}): {body}",
             }
-        except Exception as e:
+        except (urllib.error.URLError, OSError, ValueError, KeyError) as e:
             return {
                 "success": False,
                 "platform": self.name,

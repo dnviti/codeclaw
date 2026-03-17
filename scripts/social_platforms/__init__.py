@@ -16,15 +16,30 @@ Zero external dependencies -- stdlib only.
 from __future__ import annotations
 
 import os
+import urllib.parse
 from abc import ABC, abstractmethod
 from typing import Any
+
+
+def validate_webhook_url(url: str, allowed_domains: list[str]) -> None:
+    """Validate that a webhook URL uses HTTPS and targets an allowed domain.
+
+    Raises ValueError if the URL is invalid or targets an unexpected domain.
+    """
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme != "https":
+        raise ValueError(f"Webhook URL must use HTTPS, got: {parsed.scheme!r}")
+    if not any(parsed.hostname and parsed.hostname.endswith(domain) for domain in allowed_domains):
+        raise ValueError(
+            f"Webhook URL domain {parsed.hostname!r} not in allowed list: {allowed_domains}"
+        )
 
 
 class SocialPlatform(ABC):
     """Base class for social media platform adapters."""
 
     name: str = ""
-    env_vars: list[str] = []
+    env_vars: list[str] = []  # Overridden by each subclass; do not mutate in base
     max_length: int = 0  # 0 = unlimited
 
     @abstractmethod
