@@ -680,6 +680,9 @@ def dispatch_task(parts: list[str]) -> dict:
         code = rest[0].upper() if rest else ""
         remaining = " ".join(rest[1:]) if len(rest) > 1 else ""
         return {**base, "flow": "continue", "task_code": code, "remaining_args": remaining}
+    elif first == "edit":
+        code = rest[0].upper() if rest else ""
+        return {**base, "flow": "edit", "task_code": code, "remaining_args": " ".join(rest[1:])}
     elif first == "schedule":
         # Parse: schedule CODE [CODE2 ...] to VERSION
         to_idx = None
@@ -726,6 +729,9 @@ def dispatch_idea(parts: list[str]) -> dict:
     elif first == "disapprove":
         code = rest[0].upper() if rest else ""
         return {**base, "flow": "disapprove", "task_code": code, "remaining_args": " ".join(rest[1:])}
+    elif first == "edit":
+        code = rest[0].upper() if rest else ""
+        return {**base, "flow": "edit", "task_code": code, "remaining_args": " ".join(rest[1:])}
     elif first == "refactor":
         return {**base, "flow": "refactor", "task_code": "", "remaining_args": " ".join(rest)}
     elif first == "scout":
@@ -792,6 +798,10 @@ def dispatch_release(parts: list[str]) -> dict:
     elif first == "close":
         version = rest[0] if rest and _is_version(rest[0]) else ""
         return {**base, "flow": "close", "version": version,
+                "remaining_args": " ".join(rest[1:]) if len(rest) > 1 else ""}
+    elif first == "edit":
+        version = rest[0] if rest and _is_version(rest[0]) else ""
+        return {**base, "flow": "edit", "version": version,
                 "remaining_args": " ".join(rest[1:]) if len(rest) > 1 else ""}
     elif first == "resume":
         return {**base, "flow": "resume", "remaining_args": " ".join(rest)}

@@ -2,7 +2,7 @@
 name: release
 description: "Unified release management: create milestones, generate roadmaps, continue the 9-stage pipeline, and close releases. Supports yolo mode for fully autonomous execution."
 disable-model-invocation: true
-argument-hint: "[create X.X.X] [generate] [continue X.X.X] [close X.X.X] [resume] [security-only] [optimize-only] [test-only] [yolo]"
+argument-hint: "[create X.X.X] [generate] [continue X.X.X] [close X.X.X] [edit X.X.X] [resume] [security-only] [optimize-only] [test-only] [yolo]"
 ---
 
 # Release Manager
@@ -49,6 +49,7 @@ Returns `flow` and `yolo`:
 - **`"generate"`**: Analyze tasks and propose a release roadmap.
 - **`"continue"`** + `version`: Run the full 9-stage pipeline.
 - **`"close"`** + `version`: Finalize and close a release.
+- **`"edit"`** + `version`: Edit an existing release milestone in-place.
 - **`"resume"`**: Load `CTX.release_state` and resume Continue Flow at saved stage.
 - **`"security-only"`**: Run Stage 4 sub-steps alone on current branch.
 - **`"optimize-only"`**: Run Stage 4 sub-steps alone on current branch.
@@ -621,6 +622,54 @@ for every task worktree associated with this release.
 > **Release X.X.X closed.**
 > Tasks: N done out of M total.
 > Status: released | Milestone: closed (or N/A)
+
+---
+
+## Edit Flow
+
+Modify fields of an existing release milestone in-place.
+
+**1.** Version from dispatch `version` field. If missing → list releases from `RM release-plan-list` and ask: "Which release do you want to edit?" STOP.
+
+**2.** Verify release exists: `RM release-plan-list`. If version not found → inform and stop.
+
+**3.** Present current milestone fields:
+
+| # | Field | Current Value |
+|---|-------|---------------|
+| 1 | Version | [X.X.X] |
+| 2 | Theme | [current theme or empty] |
+| 3 | Target Date | [YYYY-MM-DD or empty] |
+| 4 | Status | [planned/in-progress/released] |
+| 5 | Tasks | [list of assigned task codes] |
+
+**4.** `AskUserQuestion` multiSelect: "Which fields do you want to edit?" with options:
+- **"Theme"**
+- **"Target Date"**
+- **"Status"**
+- **"Cancel"**
+
+STOP.
+
+**5.** For each selected field, present the current value and ask for the new value.
+
+**6.** Confirm changes:
+
+Present a diff-style summary of old vs new values for each modified field.
+
+`AskUserQuestion`: **"Apply these changes"** | **"Needs adjustments"** | **"Cancel"**
+
+STOP.
+
+**7.** Apply changes:
+
+```bash
+RM release-plan-set-status --version X.X.X --status <new_status>
+```
+
+For theme and target date, update via `gh api PATCH /repos/{owner}/{repo}/milestones/{milestone_number}` with the appropriate JSON payload (if `CTX.platform.enabled`). Also update local `releases.json` via `RM release-plan-set-status` or direct edit.
+
+**8.** Report: "Release X.X.X updated. Fields changed: [list]." Include milestone URL if applicable.
 
 ---
 
