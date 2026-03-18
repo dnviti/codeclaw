@@ -1,15 +1,20 @@
 #!/usr/bin/env python3
 """Test manager for the CTDF /tests skill.
 
-Provides test discovery, gap analysis, suggestion, execution, and
-persistent coverage tracking with regression detection.
-All output is JSON. Zero external dependencies — stdlib only.
+Provides test discovery, gap analysis, suggestion, execution,
+persistent coverage tracking with regression detection, semantic
+gap analysis, and test pattern discovery via vector memory.
+All output is JSON. Zero external dependencies — stdlib only
+(vector memory features degrade gracefully when deps are missing).
 
 Usage:
     python3 test_manager.py discover --root /path/to/project
     python3 test_manager.py analyze-gaps --root /path/to/project [--target file]
     python3 test_manager.py suggest --root /path/to/project
     python3 test_manager.py run --root /path/to/project [--target file]
+    python3 test_manager.py semantic-gaps --root /path/to/project
+    python3 test_manager.py similar-tests --root /path/to/project --target file
+    python3 test_manager.py reindex-test --root /path/to/project --target file
     python3 test_manager.py coverage snapshot --root /path/to/project
     python3 test_manager.py coverage compare --root /path/to/project [--old FILE --new FILE]
     python3 test_manager.py coverage report --root /path/to/project
@@ -517,6 +522,394 @@ def cmd_coverage(args) -> dict:
 
     else:
         return {"error": f"Unknown coverage sub-command: {sub}"}
+
+
+# ── Semantic Gap Analysis ────────────────────────────────────────────────────
+
+# High-risk semantic patterns to search for untested critical paths
+SEMANTIC_RISK_PATTERNS: list[dict[str, str]] = [
+    {"query": "input validation sanitize", "category": "validation"},
+    {"query": "authentication authorization login token", "category": "auth"},
+    {"query": "error handling exception catch raise", "category": "error_handling"},
+    {"query": "payment billing charge transaction", "category": "payment"},
+    {"query": "password hash encrypt decrypt secret", "category": "security"},
+    {"query": "file upload download write delete", "category": "file_io"},
+    {"query": "database query insert update delete SQL", "category": "database"},
+    {"query": "rate limit throttle retry backoff", "category": "rate_limiting"},
+    {"query": "permission role access control", "category": "access_control"},
+    {"query": "parse deserialize decode unmarshal", "category": "parsing"},
+]
+
+
+def _vmem_search(root: Path, query: str, top_k: int = 10,
+                 file_filter: str | None = None,
+                 type_filter: str | None = None) -> list[dict]:
+    """Run a semantic search against the vector memory index.
+
+    Returns a list of result dicts or an empty list if vector memory
+    is unavailable (missing deps, no index, etc.).
+    """
+    try:
+        # Import vector_memory utilities
+        from vector_memory import (
+            get_effective_config, _check_deps, _open_db,
+            _sanitize_filter_value, TABLE_NAME,
+        )
+        from contextlib import nullcontext
+
+        config = get_effective_config(root)
+        if config.get("enabled") is False:
+            return []
+
+        ok, _ = _check_deps()
+        if not ok:
+            return []
+
+        index_dir = root / config["index_path"]
+        if not (index_dir / "lancedb").exists():
+            return []
+
+        from embeddings import create_provider
+
+        emb_config = {
+            "provider": config["embedding_provider"],
+            "model": config["embedding_model"],
+            "api_key_env": config["embedding_api_key_env"],
+        }
+        provider = create_provider(emb_config)
+        query_embedding = provider.embed([query])[0]
+
+        # Acquire read lock if available
+        lock = None
+        try:
+            from memory_lock import MemoryLock
+            import os as _os
+            agent_id = _os.environ.get("CTDF_AGENT_ID", f"agent-{_os.getpid()}")
+            lock = MemoryLock(index_dir, agent_id=agent_id)
+        except ImportError:
+            pass
+
+        _ctx = lock.read() if lock else nullcontext()
+        with _ctx:
+            db = _open_db(index_dir)
+            try:
+                table = db.open_table(TABLE_NAME)
+            except Exception:
+                return []
+
+            results = table.search(query_embedding).limit(top_k * 3)
+
+            if file_filter:
+                safe = _sanitize_filter_value(file_filter)
+                results = results.where(f"file_path LIKE '%{safe}%'")
+            if type_filter:
+                safe = _sanitize_filter_value(type_filter)
+                results = results.where(f"chunk_type = '{safe}'")
+
+            df = results.limit(top_k).to_pandas()
+
+        records = []
+        for _, row in df.iterrows():
+            records.append({
+                "file_path": row.get("file_path", ""),
+                "name": row.get("name", ""),
+                "chunk_type": row.get("chunk_type", ""),
+                "language": row.get("language", ""),
+                "start_line": int(row.get("start_line", 0)),
+                "end_line": int(row.get("end_line", 0)),
+                "score": float(row.get("_distance", 0.0)),
+                "content": row.get("content", "")[:500],
+            })
+        return records
+    except Exception:
+        return []
+
+
+def semantic_gap_analysis(root: Path) -> dict:
+    """Query the vector store for high-risk untested code patterns.
+
+    Searches for error handling, validation logic, authentication,
+    payment processing, and other security-sensitive code semantically,
+    then cross-references with existing test coverage to identify
+    critical paths that lack tests.
+
+    Returns a dict with ``semantic_risks`` entries grouped by category.
+    """
+    root = root.resolve()
+    gitignore = load_gitignore_patterns(root)
+
+    # Gather existing test files for cross-reference
+    test_files: list[str] = []
+    for rel, _fpath, ext, _size in walk_source_files(root, gitignore):
+        if ext not in SOURCE_EXTS:
+            continue
+        if is_test_file(rel):
+            test_files.append(rel)
+
+    risks: list[dict] = []
+    categories_found: dict[str, int] = {}
+
+    for pattern_info in SEMANTIC_RISK_PATTERNS:
+        query = pattern_info["query"]
+        category = pattern_info["category"]
+
+        results = _vmem_search(root, query, top_k=15)
+        if not results:
+            continue
+
+        for result in results:
+            file_path = result.get("file_path", "")
+            # Skip files that are themselves tests
+            if is_test_file(file_path):
+                continue
+            # Check if this source file has a matching test
+            has_test = find_matching_test(file_path, test_files) is not None
+            if not has_test:
+                risks.append({
+                    "file_path": file_path,
+                    "name": result.get("name", ""),
+                    "category": category,
+                    "chunk_type": result.get("chunk_type", ""),
+                    "start_line": result.get("start_line", 0),
+                    "end_line": result.get("end_line", 0),
+                    "score": result.get("score", 0.0),
+                    "content_preview": result.get("content", "")[:200],
+                })
+                categories_found[category] = categories_found.get(category, 0) + 1
+
+    # Deduplicate by (file_path, name) keeping highest score
+    seen: dict[tuple[str, str], dict] = {}
+    for risk in risks:
+        key = (risk["file_path"], risk["name"])
+        existing = seen.get(key)
+        if existing is None or risk["score"] < existing["score"]:
+            seen[key] = risk
+    unique_risks = sorted(seen.values(), key=lambda r: r["score"])
+
+    return {
+        "semantic_risks": unique_risks,
+        "total_risks": len(unique_risks),
+        "categories": categories_found,
+        "patterns_searched": len(SEMANTIC_RISK_PATTERNS),
+        "vector_memory_available": len(unique_risks) > 0 or _vmem_available(root),
+    }
+
+
+def _vmem_available(root: Path) -> bool:
+    """Check whether vector memory is available and has an index."""
+    try:
+        from vector_memory import get_effective_config, _check_deps
+        config = get_effective_config(root)
+        if config.get("enabled") is False:
+            return False
+        ok, _ = _check_deps()
+        if not ok:
+            return False
+        index_dir = root / config["index_path"]
+        return (index_dir / "lancedb").exists()
+    except Exception:
+        return False
+
+
+def find_similar_tests(target_file: str, root: Path) -> dict:
+    """Search for test files semantically similar to the target source file.
+
+    Before generating tests, discovers existing test files in the project
+    that cover similar domains, so the agent can replicate established
+    patterns, mocking strategies, and assertion styles.
+
+    Args:
+        target_file: Relative path to the source file being tested.
+        root: Project root directory.
+
+    Returns:
+        A dict with ``similar_tests`` listing relevant test files,
+        and ``patterns`` summarising discovered conventions.
+    """
+    root = root.resolve()
+
+    # Read the target file to build a semantic query from its content
+    target_path = root / target_file
+    content = read_file_safe(target_path)
+    if not content:
+        return {
+            "similar_tests": [],
+            "patterns": {},
+            "error": f"Could not read target file: {target_file}",
+        }
+
+    # Build a search query from the file stem and extracted function names
+    stem = Path(target_file).stem
+    # Extract clean function/method names from the raw regex matches
+    name_re = re.compile(r'\b(?:def|function|fn|func)\s+(\w+)', re.IGNORECASE)
+    raw_matches = FUNC_RE.findall(content)
+    func_names_list: list[str] = []
+    for match in raw_matches[:15]:
+        m = name_re.search(match)
+        if m:
+            func_names_list.append(m.group(1))
+    func_names = " ".join(func_names_list[:10])
+    query = f"test {stem} {func_names}".strip()
+
+    # Search for test files semantically
+    results = _vmem_search(root, query, top_k=20, file_filter="test")
+
+    similar_tests: list[dict] = []
+    seen_files: set[str] = set()
+
+    for result in results:
+        fp = result.get("file_path", "")
+        if not is_test_file(fp):
+            continue
+        if fp in seen_files:
+            continue
+        seen_files.add(fp)
+        similar_tests.append({
+            "test_file": fp,
+            "name": result.get("name", ""),
+            "score": result.get("score", 0.0),
+            "content_preview": result.get("content", "")[:300],
+        })
+
+    # Analyze discovered patterns from similar test files
+    patterns: dict[str, list[str]] = {
+        "frameworks": [],
+        "assertion_styles": [],
+        "mocking_libraries": [],
+        "naming_conventions": [],
+    }
+
+    for test_info in similar_tests[:5]:
+        test_path = root / test_info["test_file"]
+        test_content = read_file_safe(test_path)
+        if not test_content:
+            continue
+
+        # Detect assertion styles
+        if "assert " in test_content:
+            _add_unique(patterns["assertion_styles"], "plain assert")
+        if "assertEqual" in test_content or "self.assert" in test_content:
+            _add_unique(patterns["assertion_styles"], "unittest assert methods")
+        if "expect(" in test_content:
+            _add_unique(patterns["assertion_styles"], "expect()")
+        if "should." in test_content or "should(" in test_content:
+            _add_unique(patterns["assertion_styles"], "should-style")
+
+        # Detect mocking libraries
+        if "unittest.mock" in test_content or "from mock" in test_content:
+            _add_unique(patterns["mocking_libraries"], "unittest.mock")
+        if "pytest-mock" in test_content or "mocker" in test_content:
+            _add_unique(patterns["mocking_libraries"], "pytest-mock")
+        if "jest.mock" in test_content or "jest.fn" in test_content:
+            _add_unique(patterns["mocking_libraries"], "jest")
+        if "sinon" in test_content:
+            _add_unique(patterns["mocking_libraries"], "sinon")
+        if "@patch" in test_content:
+            _add_unique(patterns["mocking_libraries"], "unittest.mock @patch")
+
+        # Detect test frameworks
+        if "import pytest" in test_content or "@pytest" in test_content:
+            _add_unique(patterns["frameworks"], "pytest")
+        if "import unittest" in test_content:
+            _add_unique(patterns["frameworks"], "unittest")
+        if "describe(" in test_content:
+            _add_unique(patterns["frameworks"], "describe/it (BDD)")
+        if "import { test" in test_content or "import { it" in test_content:
+            _add_unique(patterns["frameworks"], "vitest/jest")
+
+        # Detect naming conventions
+        test_name = Path(test_info["test_file"]).name
+        if test_name.startswith("test_"):
+            _add_unique(patterns["naming_conventions"], "test_<module>.py")
+        elif test_name.endswith("_test.py"):
+            _add_unique(patterns["naming_conventions"], "<module>_test.py")
+        elif ".test." in test_name:
+            _add_unique(patterns["naming_conventions"], "<module>.test.<ext>")
+        elif ".spec." in test_name:
+            _add_unique(patterns["naming_conventions"], "<module>.spec.<ext>")
+
+    return {
+        "similar_tests": similar_tests[:10],
+        "patterns": patterns,
+        "target_file": target_file,
+        "query_used": query,
+        "vector_memory_available": len(similar_tests) > 0 or _vmem_available(root),
+    }
+
+
+def _add_unique(lst: list[str], item: str) -> None:
+    """Append item to list only if not already present."""
+    if item not in lst:
+        lst.append(item)
+
+
+def reindex_test(test_path: str, root: Path) -> dict:
+    """Incrementally index a newly created or modified test file.
+
+    Called after writing a test file so that subsequent scout or create
+    runs reflect the updated coverage in the vector index.
+
+    Args:
+        test_path: Relative path to the test file.
+        root: Project root directory.
+
+    Returns:
+        A dict indicating success/failure.
+    """
+    root = root.resolve()
+    abs_path = (root / test_path).resolve()
+
+    if not abs_path.exists():
+        return {"success": False, "error": f"File not found: {test_path}"}
+
+    try:
+        from vector_memory import hook_file_changed
+        hook_file_changed(str(abs_path))
+        return {
+            "success": True,
+            "file": test_path,
+            "message": f"Vector index updated for {test_path}",
+        }
+    except ImportError:
+        return {
+            "success": False,
+            "error": "Vector memory dependencies not available.",
+            "file": test_path,
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "file": test_path,
+        }
+
+
+# ── Subcommand wrappers for new semantic features ──────────────────────────
+
+def cmd_semantic_gaps(args) -> dict:
+    """CLI wrapper for semantic_gap_analysis."""
+    root = Path(args.root).resolve()
+    return semantic_gap_analysis(root)
+
+
+def cmd_similar_tests(args) -> dict:
+    """CLI wrapper for find_similar_tests."""
+    root = Path(args.root).resolve()
+    target = args.target
+    if not target:
+        return {"error": "No target file specified. Use --target <file>."}
+    return find_similar_tests(target, root)
+
+
+def cmd_reindex_test(args) -> dict:
+    """CLI wrapper for reindex_test."""
+    root = Path(args.root).resolve()
+    target = args.target
+    if not target:
+        return {"error": "No target file specified. Use --target <file>."}
+    return reindex_test(target, root)
+
+
 # ── CLI Entrypoint ──────────────────────────────────────────────────────────
 
 def output_json(data: dict) -> None:
@@ -548,6 +941,25 @@ def main():
     p_run = sub.add_parser("run", help="Execute tests via configured framework")
     p_run.add_argument("--root", default=".", help="Project root directory")
     p_run.add_argument("--target", default=None, help="Specific test file or pattern to run")
+
+    # semantic-gaps
+    p_sgaps = sub.add_parser("semantic-gaps",
+                             help="Semantic gap analysis via vector memory")
+    p_sgaps.add_argument("--root", default=".", help="Project root directory")
+
+    # similar-tests
+    p_sim = sub.add_parser("similar-tests",
+                           help="Find test files similar to a target source file")
+    p_sim.add_argument("--root", default=".", help="Project root directory")
+    p_sim.add_argument("--target", required=True,
+                       help="Source file to find similar tests for")
+
+    # reindex-test
+    p_reidx = sub.add_parser("reindex-test",
+                             help="Incrementally reindex a test file in vector memory")
+    p_reidx.add_argument("--root", default=".", help="Project root directory")
+    p_reidx.add_argument("--target", required=True,
+                         help="Test file to reindex")
 
     # coverage (with sub-commands)
     # Note: --root is added to each sub-sub-parser so argparse handles it
@@ -588,6 +1000,9 @@ def main():
         "analyze-gaps": cmd_analyze_gaps,
         "suggest": cmd_suggest,
         "run": cmd_run,
+        "semantic-gaps": cmd_semantic_gaps,
+        "similar-tests": cmd_similar_tests,
+        "reindex-test": cmd_reindex_test,
         "coverage": cmd_coverage,
     }
 
