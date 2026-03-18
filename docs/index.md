@@ -2,10 +2,11 @@
 title: CTDF Documentation
 description: Complete technical documentation for the Claude Task Development Framework
 generated-by: ctdf-docs
-generated-at: 2026-03-17T10:00:00Z
+generated-at: 2026-03-18T00:00:00Z
 source-files:
   - README.md
   - .claude-plugin/plugin.json
+  - .claude-plugin/marketplace.json
 ---
 
 # CTDF — Claude Task Development Framework
@@ -50,8 +51,9 @@ A project-agnostic task and idea management plugin for [Claude Code](https://doc
 | Host | Claude Code CLI |
 | Version Control | Git (worktrees, branches, tags) |
 | Platform | GitHub Actions / GitLab CI/CD |
-| AI Providers | Claude, OpenAI Codex, OpenClaw |
+| AI Providers | Claude, Ollama (local), OpenAI |
 | Data Format | Plain-text files (`.txt`) + JSON configs |
+| Vector Memory | LanceDB + sentence-transformers (optional) |
 
 ## Skills Overview
 
@@ -66,17 +68,26 @@ A project-agnostic task and idea management plugin for [Claude Code](https://doc
 | `/tests` | Test discovery, gaps, coverage, execution |
 | `/help` | Usage guide |
 
+## Feature Highlights (v3.5.1)
+
+- **Ollama local model integration** — Route tool calls and tasks to local LLMs with configurable offloading level (0–10) and full `/api/chat` tool-calling loop
+- **Mandatory vector memory** — Always-on semantic indexing of project files; MCP server for agent retrieval
+- **Platform release state sync** — `release-state.json` persisted as a GitHub/GitLab issue in platform-only mode, shared across all collaborators
+- **NFKC Unicode normalization** — Exclude patterns are NFKC-normalized to prevent fullwidth-space/homoglyph bypass
+- **PreToolUse hook** — Evaluate every tool call against the Ollama offloading policy before execution
+- **Gated release pipeline** — 9 sequential stages with parallel sub-agent PR analysis, CI monitoring, and mandatory local build verification
+
 ## Key Design Principles
 
 1. **Project-agnostic** — Works with any language, framework, or tech stack
-2. **Zero dependencies** — All scripts use Python 3 stdlib only
+2. **Zero dependencies** — All scripts use Python 3 stdlib only (vector memory and MCP are optional)
 3. **Human-in-the-loop** — AI assists, but users decide at every gate
 4. **Plain-text first** — Tasks and ideas in simple `.txt` files
 5. **Cross-platform** — Linux, macOS, Windows with auto OS detection
 
 ## Version
 
-Current plugin version: **3.2.1**
+Current plugin version: **3.5.1**
 
 Repository: [github.com/dnviti/claude-task-development-framework](https://github.com/dnviti/claude-task-development-framework)
 

@@ -2,7 +2,7 @@
 title: Deployment
 description: CI/CD pipelines, GitHub Actions workflows, GitLab CI templates, Docker tagging strategy, and production setup
 generated-by: ctdf-docs
-generated-at: 2026-03-17T10:00:00Z
+generated-at: 2026-03-18T00:00:00Z
 source-files:
   - .github/workflows/ci.yml
   - .github/workflows/release.yml
@@ -110,7 +110,7 @@ flowchart TD
 |----------|-----|------------|-------------------|--------|
 | Claude | `claude` | `claude-opus-4-6` | `claude-sonnet-4-6` | Configurable USD |
 | OpenAI | `codex` | `o3` | `o3-mini` | N/A |
-| OpenClaw | `openclaw` | Default | Default | N/A |
+| Ollama | local | Configured model | Configured model | N/A |
 
 ### Required Secrets
 
@@ -118,8 +118,37 @@ flowchart TD
 |--------|----------|---------|
 | `ANTHROPIC_API_KEY` | Claude | API authentication |
 | `OPENAI_API_KEY` | OpenAI | API authentication |
-| `OPENCLAW_API_KEY` | OpenClaw | API authentication |
 | `GH_TOKEN` / `GITHUB_TOKEN` | All | Repository access |
+
+## Hook System in Production
+
+Two hooks run on every file edit/write operation:
+
+```mermaid
+flowchart LR
+    subgraph "Claude Code Tool Call"
+        TC["Edit / Write tool"]
+    end
+
+    subgraph "PreToolUse"
+        PRE["pre_tool_offload.py<br>Ollama routing decision"]
+        OL["Ollama API<br>(if offloaded)"]
+    end
+
+    subgraph "PostToolUse"
+        TM["task_manager.py hook<br>File → task correlation"]
+        VM["vector_memory.py hook<br>Auto-index edited file"]
+    end
+
+    TC -->|"PreToolUse"| PRE
+    PRE -->|"offload"| OL
+    OL -->|"result"| TC
+    TC -->|"PostToolUse"| TM & VM
+```
+
+- **`pre_tool_offload.py`** — Routes eligible tool calls to a local Ollama model. Applies NFKC normalization to prevent Unicode bypass of exclude patterns.
+- **`task_manager.py hook`** — Correlates every edited file to the in-progress task for change tracking.
+- **`vector_memory.py hook`** — Re-embeds and upserts the modified file into the LanceDB vector index for semantic search.
 
 ## Docker Tagging Strategy
 
@@ -131,6 +160,10 @@ flowchart LR
         STG_TAG["Tag: latest"]
     end
 
+    subgraph "Staging Release Point"
+        STAG_TAG["Tag: vX.X.X-staging"]
+    end
+
     subgraph "Production Tag"
         PROD_TAG["Push tag v*"]
         PROD_BUILD["Build Docker image"]
@@ -138,13 +171,17 @@ flowchart LR
     end
 
     STG_PUSH --> STG_BUILD --> STG_TAG
+    STG_PUSH --> STAG_TAG
     PROD_TAG --> PROD_BUILD --> PROD_TAGS
 ```
 
 | Branch | Trigger | Docker Tags |
 |--------|---------|-------------|
 | `staging` | Push to staging | `latest` |
+| `staging` | Release pipeline Stage 5g | `vX.X.X-staging` (marks staging release point) |
 | `main` | Release tag push (`v*`) | `stable`, `vX.X.X` |
+
+> **Note:** Staging tags use a `-staging` suffix to avoid colliding with production tags. The `get_latest_tag()` function in `release_manager.py` filters out `-staging` tags when determining the latest production version.
 
 ## Release Pipeline Deployment Flow
 
@@ -155,19 +192,21 @@ flowchart TD
     S5["Stage 5: Merge to Staging"]
     S5_BUILD["Local Build Gate<br>verify_command"]
     S5_PUSH["Push to staging"]
+    S5_STAG["Tag vX.X.X-staging"]
     S5_DOCKER["CI builds 'latest' Docker"]
 
     S7["Stage 7: Merge to Main"]
-    S7_BUMP["Version Bump Gate"]
+    S7_BUMP["Version Bump Gate<br>(all manifests)"]
     S7_BUILD["Local Build Gate"]
     S7_TAG["Tag vX.X.X"]
     S7_PUSH["Push to main + tags"]
     S7_CI["CI Monitor Agents<br>(parallel, one per workflow)"]
     S7_DOCKER["CI builds 'stable' +<br>'vX.X.X' Docker"]
     S7_RELEASE["Create GitHub/GitLab Release"]
+    S7H["Stage 7h: Docs Sync<br>/docs sync"]
 
-    S5 --> S5_BUILD --> S5_PUSH --> S5_DOCKER
-    S7 --> S7_BUMP --> S7_BUILD --> S7_TAG --> S7_PUSH --> S7_CI --> S7_DOCKER --> S7_RELEASE
+    S5 --> S5_BUILD --> S5_PUSH --> S5_STAG --> S5_DOCKER
+    S7 --> S7_BUMP --> S7_BUILD --> S7_TAG --> S7_PUSH --> S7_CI --> S7_DOCKER --> S7_RELEASE --> S7H
 ```
 
 ### Local Build Gate
@@ -177,13 +216,15 @@ Before any push (staging or production), the release pipeline runs the configure
 - Post-merge compilation errors
 - Missing dependency issues
 
+If no `verify_command` is configured, the build gate is skipped (with a warning).
+
 ### CI Monitoring (Platform-Only)
 
 After tagging, parallel monitor agents watch each CI workflow:
 1. Detect workflow runs triggered by the tag push
-2. Poll for completion
-3. If a workflow fails: analyze the failure, create a fix PR, merge it
-4. Move the tag: delete old tag → pull fix → rebuild locally → re-tag → recreate release
+2. Poll for completion every 30 seconds
+3. If a workflow fails: analyze failure logs, create a fix, commit and push, open a PR, merge
+4. Move the tag: delete old tag → pull fix → run local build gate → re-tag at new HEAD → push → delete platform release → recreate release
 
 ## Setup Commands
 
@@ -202,7 +243,7 @@ Copies CI/CD templates to your project and replaces placeholders with detected s
 ```
 
 Guides you through:
-1. Selecting an AI provider
+1. Selecting an AI provider (Claude, OpenAI, Ollama)
 2. Configuring models and budgets
 3. Copying workflow files
 4. Setting up prompt templates
