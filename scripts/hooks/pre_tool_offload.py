@@ -80,11 +80,15 @@ def _load_config() -> dict:
 
 
 def _tool_calls_enabled(config: dict, tool_name: str) -> bool:
-    """Check whether tool call offloading is enabled for the given tool."""
+    """Check whether tool call offloading is enabled for the given tool.
+
+    Defaults to True when tool_calls section is absent or 'enabled' is not set,
+    so the offloading level (0-10) becomes the single control point.
+    """
     offloading_cfg = config.get("offloading", {})
     tool_calls_cfg = offloading_cfg.get("tool_calls", {})
 
-    if not tool_calls_cfg.get("enabled", False):
+    if not tool_calls_cfg.get("enabled", True):
         return False
 
     include_tools = tool_calls_cfg.get("include_tools", [])

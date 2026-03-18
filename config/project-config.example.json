@@ -26,8 +26,8 @@
     "enable_versioned_reads": false
   },
   "vector_memory": {
-    "enabled": true,
-    "auto_index": true,
+    "enabled": false,
+    "auto_index": false,
     "embedding_provider": "local",
     "embedding_model": "all-MiniLM-L6-v2",
     "embedding_api_key_env": "",
@@ -38,10 +38,10 @@
     "exclude_patterns": []
   },
   "mcp_server": {
-    "enabled": true,
+    "enabled": false,
     "transport": "stdio",
-    "auto_start": true,
-    "_comment": "Vector memory is always-on. MCP server starts automatically. Requires: pip install lancedb sentence-transformers mcp"
+    "auto_start": false,
+    "_comment": "Vector memory MCP is opt-in. Enable via /setup. Requires: pip install \"mcp>=1.0\" \"lancedb>=0.5.0,<1.0\" \"sentence-transformers>=2.7.0,<3.0\""
   },
   "social_announce": {
     "platforms": {
@@ -88,7 +88,6 @@
   "ollama": {
     "enabled": false,
     "model": "",
-    "offloading": false,
     "offloading_level": 5
   }
 }

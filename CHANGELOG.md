@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.5.2] - 2026-03-18
+
+### Added
+- opt-in vector memory MCP with seamless setup installation (VMEM-0029) (#105)
+
+### Fixed
+- migrate MCP server to FastMCP API and harden .gitignore entries
+- enable Ollama tool call offloading with 0-10 level control (OLLAM-0030)
+
 ## [3.5.1] - 2026-03-18
 
 ### Added
