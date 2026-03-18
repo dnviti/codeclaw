@@ -35,7 +35,15 @@
     "index_path": ".claude/memory/vectors",
     "batch_size": 64,
     "include_patterns": [],
-    "exclude_patterns": []
+    "exclude_patterns": [],
+    "rlm": {
+      "enabled": false,
+      "provider": "ollama",
+      "max_depth": 3,
+      "max_context_mb": 10,
+      "aggregation": "map-reduce",
+      "timeout_seconds": 120
+    }
   },
   "mcp_server": {
     "enabled": false,
