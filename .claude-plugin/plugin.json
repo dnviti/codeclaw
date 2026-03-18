@@ -1,6 +1,6 @@
 {
   "name": "ctdf",
-  "version": "3.5.0",
+  "version": "3.5.2",
   "description": "Project-agnostic task and release management framework with 8 streamlined skills: /task, /idea, /release, /docs, /setup, /update, /tests, /help. Features a gated release pipeline with automatic subagent orchestration.",
   "author": {
     "name": "dnviti"
@@ -25,10 +25,14 @@
   "mcp_servers": {
     "ctdf-vector-memory": {
       "command": "python3",
-      "args": ["./scripts/mcp_server.py"],
+      "args": [
+        "./scripts/mcp_server.py"
+      ],
       "transport": "stdio",
       "description": "Vector memory MCP server providing semantic search, indexing, memory storage, and task context tools.",
-      "requires": ["mcp"]
+      "requires": [
+        "mcp"
+      ]
     }
   },
   "platforms": [
