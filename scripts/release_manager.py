@@ -1661,6 +1661,7 @@ def cmd_full_context(args):
         "platform": None,
         "repo": None,
     }
+    branch_protection = {}
     for candidate in ["issues-tracker.json", "github-issues.json"]:
         fp = main_root / ".claude" / candidate
         if fp.exists():
@@ -1672,6 +1673,16 @@ def cmd_full_context(args):
                     "platform": pt_data.get("platform", "github"),
                     "repo": pt_data.get("repo", None),
                 }
+                # Read cached branch protection settings
+                cached_branches = pt_data.get("branches", {})
+                for bname, binfo in cached_branches.items():
+                    if isinstance(binfo, dict):
+                        branch_protection[bname] = {
+                            "role": binfo.get("role", ""),
+                            "protected": binfo.get("protected", False),
+                            "merge_strategy": binfo.get("merge_strategy", ""),
+                            "require_reviews": binfo.get("require_reviews", 0),
+                        }
             except (json.JSONDecodeError, OSError):
                 pass
             break
@@ -1705,6 +1716,7 @@ def cmd_full_context(args):
             "package_paths": package_paths,
         },
         "platform": platform_info,
+        "branch_protection": branch_protection,
         "release_plan": release_plan,
         "release_state": release_state,
     }
