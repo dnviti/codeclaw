@@ -21,7 +21,7 @@
       "variable-naming"
     ],
     "tool_calls": {
-      "enabled": false,
+      "enabled": true,
       "include_tools": ["Bash", "Read", "Grep", "Glob", "Edit", "Write"],
       "exclude_patterns": [
         "git push",

@@ -3,4 +3,6 @@ __pycache__/
 *.pyo
 .worktrees/
 dist/
-.claude/memory/vectors/
+.claude/memory/
+.claude/worktrees/
+.mcp.json
