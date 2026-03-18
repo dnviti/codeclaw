@@ -1364,6 +1364,163 @@ def hook_file_changed(file_path: str):
         pass  # Hook failures must be silent and non-blocking
 
 
+def hook_batch(file_paths: list[str]):
+    """Batch incremental re-indexing for multiple files at once.
+
+    More efficient than calling hook_file_changed per file because it
+    shares a single DB connection, embedding provider, and write lock
+    across all files. Designed for post-generation re-indexing (e.g.
+    after /docs generate writes multiple documentation files).
+
+    Failures are silent and non-blocking.
+    """
+    root = _find_project_root()
+    config = get_effective_config(root)
+
+    # Only skip if explicitly disabled
+    if config.get("enabled") is False:
+        return
+    if config.get("auto_index") is False:
+        return
+
+    ok, _ = _check_deps()
+    if not ok:
+        return
+
+    index_dir = root / config["index_path"]
+    if not (index_dir / "lancedb").exists():
+        sentinel = index_dir / ".init_attempted"
+        if sentinel.exists():
+            return
+        try:
+            index_dir.mkdir(parents=True, exist_ok=True)
+            sentinel.touch()
+            initialized = ensure_initialized(root)
+        except Exception:
+            return
+        if not initialized or not (index_dir / "lancedb").exists():
+            return
+
+    # Resolve and validate all file paths up front
+    valid_files: list[tuple[Path, str]] = []
+    for fp in file_paths:
+        try:
+            abs_path = Path(fp).resolve()
+            if not abs_path.exists():
+                continue
+            rel_path = str(abs_path.relative_to(root))
+            valid_files.append((abs_path, rel_path))
+        except ValueError:
+            continue  # File outside project root
+
+    if not valid_files:
+        return
+
+    try:
+        from chunkers import chunk_file, chunk_text_document
+        from embeddings import create_provider, EmbeddingCache
+
+        emb_config = {
+            "provider": config["embedding_provider"],
+            "model": config["embedding_model"],
+            "api_key_env": config["embedding_api_key_env"],
+        }
+        provider = create_provider(emb_config)
+        cache = EmbeddingCache(index_dir / "embedding_cache")
+
+        # Acquire write lock once for the entire batch
+        lock = None
+        try:
+            from memory_lock import MemoryLock
+            agent_id = os.environ.get("CTDF_AGENT_ID", f"agent-{os.getpid()}")
+            session_id = os.environ.get("CTDF_SESSION_ID", "")
+            lock = MemoryLock(index_dir, agent_id=agent_id,
+                              session_id=session_id, timeout=30.0)
+        except ImportError:
+            pass
+
+        _ctx = lock.write() if lock else nullcontext()
+        with _ctx:
+            db = _open_db(index_dir)
+            table = _get_or_create_table(db, provider.dimension())
+            manifest = load_stored_manifest(index_dir)
+
+            indexed_count = 0
+            for abs_path, rel_path in valid_files:
+                content = read_file_safe(abs_path)
+                if not content:
+                    continue
+
+                # Remove old entries for this file
+                try:
+                    table.delete(
+                        f"file_path = '{_sanitize_filter_value(rel_path)}'")
+                except Exception:
+                    pass
+
+                # Chunk based on file type
+                ext = abs_path.suffix.lower()
+                if ext in {".md", ".txt", ".rst"}:
+                    chunks = chunk_text_document(
+                        rel_path, content,
+                        max_chunk_size=config["chunk_size"])
+                else:
+                    chunks = chunk_file(
+                        rel_path, content,
+                        max_chunk_size=config["chunk_size"])
+
+                if not chunks:
+                    continue
+
+                texts = [c.content for c in chunks]
+                embeddings = cache.embed_with_cache(provider, texts)
+
+                # Agent metadata
+                agent_id = os.environ.get("CTDF_AGENT_ID", "")
+                agent_type = os.environ.get("CTDF_AGENT_TYPE", "task")
+                session_id_env = os.environ.get("CTDF_SESSION_ID", "")
+                task_code = os.environ.get("CTDF_TASK_CODE", "")
+
+                records = []
+                for chunk, emb in zip(chunks, embeddings):
+                    record = {
+                        "vector": emb,
+                        "content": chunk.content,
+                        "file_path": chunk.file_path,
+                        "chunk_type": chunk.chunk_type,
+                        "name": chunk.name,
+                        "start_line": chunk.start_line,
+                        "end_line": chunk.end_line,
+                        "language": chunk.language,
+                        "file_role": chunk.file_role,
+                        "content_hash": chunk.content_hash,
+                    }
+                    if agent_id:
+                        try:
+                            from memory_protocol import tag_entry
+                            tag_entry(record, agent_id, agent_type,
+                                      task_code, session_id_env)
+                        except ImportError:
+                            pass
+                    records.append(record)
+
+                table.add(records)
+                manifest[rel_path] = compute_file_hash(abs_path)
+                indexed_count += 1
+
+            save_manifest(index_dir, manifest)
+
+        print(json.dumps({
+            "success": True,
+            "indexed_count": indexed_count,
+            "total_files": len(file_paths),
+            "skipped": len(file_paths) - indexed_count,
+        }))
+
+    except Exception:
+        pass  # Batch hook failures must be silent and non-blocking
+
+
 # ── Shared Helper: Index a Document ──────────────────────────────────────────
 
 def try_vector_index(root: Path, content: str, doc_name: str,
@@ -1557,6 +1714,12 @@ Examples:
     hk = sub.add_parser("hook", help="Internal: incremental update hook")
     hk.add_argument("file_path", help="Path to the changed file")
 
+    # ── hook-batch (internal) ──
+    hkb = sub.add_parser("hook-batch",
+                         help="Internal: batch incremental update hook")
+    hkb.add_argument("file_paths", nargs="+",
+                     help="Paths to changed files")
+
     args = parser.parse_args()
 
     if args.command is None:
@@ -1583,6 +1746,8 @@ Examples:
         cmd_conflicts(args)
     elif args.command == "hook":
         hook_file_changed(args.file_path)
+    elif args.command == "hook-batch":
+        hook_batch(args.file_paths)
 
 
 if __name__ == "__main__":
