@@ -230,6 +230,12 @@ def build_hash_manifest(root: Path, gitignore_patterns: list[str],
     """Build a hash manifest of all indexable files.
 
     Returns {relative_path: content_sha256}.
+
+    All text files are included by default, including:
+    - Source code files (.py, .ts, .js, etc.)
+    - Documentation files (.md, .rst, .txt)
+    - Skill definitions (skills/*/SKILL.md)
+    - Project docs (docs/**/*.md)
     """
     manifest: dict[str, str] = {}
     exclude = set(config.get("exclude_patterns", []))
@@ -628,6 +634,7 @@ def cmd_search(args):
     query = args.query
     top_k = args.top_k
     file_filter = args.file_filter
+    file_globs = getattr(args, "file_glob", None) or []
     type_filter = args.type_filter
 
     # Initialize provider and embed query
@@ -673,7 +680,10 @@ def cmd_search(args):
                       file=sys.stderr)
                 sys.exit(1)
 
-        results = table.search(query_embedding).limit(top_k * 3)
+        # When glob patterns are requested, fetch extra results for
+        # client-side filtering to ensure we return up to top_k matches.
+        fetch_limit = top_k * 5 if file_globs else top_k * 3
+        results = table.search(query_embedding).limit(fetch_limit)
 
         # Apply filters (sanitized to prevent filter injection)
         if file_filter:
@@ -683,7 +693,17 @@ def cmd_search(args):
             safe_type = _sanitize_filter_value(type_filter)
             results = results.where(f"chunk_type = '{safe_type}'")
 
-        df = results.limit(top_k).to_pandas()
+        df = results.limit(fetch_limit).to_pandas()
+
+    # Apply glob-based file path filtering client-side
+    if file_globs and not df.empty:
+        from fnmatch import fnmatch
+        mask = df["file_path"].apply(
+            lambda fp: any(fnmatch(fp, pat) for pat in file_globs)
+        )
+        df = df[mask].head(top_k)
+    elif not file_globs:
+        df = df.head(top_k)
 
     # Format output
     if args.json_output:
@@ -1467,6 +1487,9 @@ Examples:
                       help="Number of results (default: 10)")
     srch.add_argument("--file-filter", "-f", default="",
                       help="Filter results by file path substring")
+    srch.add_argument("--file-glob", "-g", nargs="*", default=None,
+                      help="Filter results by glob patterns on file paths "
+                           "(e.g. 'skills/*/SKILL.md' 'docs/**/*.md')")
     srch.add_argument("--type-filter", "-t", default="",
                       help="Filter by chunk type (function, class, etc.)")
     srch.add_argument("--json", dest="json_output", action="store_true",
