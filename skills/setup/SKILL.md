@@ -259,11 +259,26 @@ STOP.
    python3 ${CLAUDE_PLUGIN_ROOT}/scripts/ollama_manager.py pull-model --name <MODEL_NAME>
    ```
 
-6. Ask about task offloading:
+6. Ask about offloading level:
+
+   Present the offloading scale:
+   > **Offloading Level (0-10):** Controls how aggressively tool calls are routed to the local Ollama model instead of the cloud.
+   >
+   > | Level | Behavior |
+   > |-------|----------|
+   > | 0 | Never offload — all tool calls go to the cloud |
+   > | 1-2 | Minimal — only trivial operations |
+   > | 3-4 | Light — simple bash commands (ls, cat, git status) |
+   > | 5 | Moderate (default) — simple commands + short edits |
+   > | 6-7 | Aggressive — includes read/grep/glob + complex bash |
+   > | 8-9 | Very aggressive — includes structural edits |
+   > | 10 | Always — all tool calls go to Ollama (except destructive commands) |
 
    Use `AskUserQuestion`:
-   - **"Enable automatic offloading (Claude routes simple tasks to Ollama)"**
-   - **"Manual only (I will decide when to use Ollama)"**
+   - **"Level 5 — Moderate (recommended)"** — good balance of token savings and quality
+   - **"Level 3 — Light"** — conservative, only simple commands
+   - **"Level 8 — Very aggressive"** — maximum token savings, requires capable local model
+   - **"Level 0 — Disabled"** — no offloading, all tool calls go to the cloud
 
    STOP.
 
@@ -272,7 +287,18 @@ STOP.
    mkdir -p .claude
    cp ${CLAUDE_PLUGIN_ROOT}/config/ollama-config.example.json .claude/ollama-config.json
    ```
-   Update `.claude/ollama-config.json` with: `enabled: true`, detected hardware values, selected model, offloading preference.
+   Update `.claude/ollama-config.json` with:
+   - `enabled: true`
+   - `model`: selected model name
+   - `hardware`: detected hardware values
+   - `offloading.level`: chosen level (0-10)
+   - `offloading.tool_calls.enabled: true` (so the level controls routing)
+   - `offloading.tool_calls.include_tools`: `["Bash", "Read", "Grep", "Glob", "Edit", "Write"]`
+
+   Also update `.claude/project-config.json`:
+   - `ollama.enabled: true`
+   - `ollama.model`: selected model name
+   - `ollama.offloading_level`: chosen level (0-10)
 
 Then return here for Step 9.7.
 
