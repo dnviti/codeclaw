@@ -42,6 +42,14 @@
       "hybrid_weight_vector": 0.7,
       "hybrid_weight_text": 0.3,
       "db_path": ".claude/memory/sqlite/memory.db"
+    },
+    "rlm": {
+      "enabled": false,
+      "provider": "ollama",
+      "max_depth": 3,
+      "max_context_mb": 10,
+      "aggregation": "map-reduce",
+      "timeout_seconds": 120
     }
   },
   "mcp_server": {

@@ -1236,6 +1236,75 @@ def hook_file_changed(file_path: str):
         pass  # Hook failures must be silent and non-blocking
 
 
+# ── RLM Context Export ───────────────────────────────────────────────────────
+
+def export_context(
+    file_paths: list[str],
+    fmt: str = "dict",
+    root: Optional[Path] = None,
+) -> dict:
+    """Export indexed content as structured context for RLM processing.
+
+    Reads file contents and returns them in a format suitable for the RLM
+    backend to process. Supports dict format (file path -> content mapping)
+    and flat format (concatenated text with file markers).
+
+    Args:
+        file_paths: List of file paths (relative to root or absolute) to export.
+        fmt: Output format — 'dict' (default) or 'flat'.
+        root: Project root for resolving relative paths. Auto-detected if None.
+
+    Returns:
+        Dict with 'success', 'context', 'files_loaded', and 'total_size_bytes'.
+    """
+    if root is None:
+        root = _find_project_root()
+
+    context_dict = {}
+    files_loaded = 0
+    total_size = 0
+
+    for fpath in file_paths:
+        abs_path = Path(fpath)
+        if not abs_path.is_absolute():
+            abs_path = root / fpath
+
+        if not abs_path.exists() or not abs_path.is_file():
+            continue
+
+        try:
+            content = abs_path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+
+        # Use relative path as key
+        try:
+            rel_key = str(abs_path.relative_to(root))
+        except ValueError:
+            rel_key = str(abs_path)
+
+        context_dict[rel_key] = content
+        files_loaded += 1
+        total_size += len(content.encode("utf-8"))
+
+    if fmt == "flat":
+        # Concatenate with file markers
+        parts = []
+        for path, content in context_dict.items():
+            parts.append(f"=== FILE: {path} ===\n{content}\n")
+        context_output = "\n".join(parts)
+    else:
+        context_output = context_dict
+
+    return {
+        "success": files_loaded > 0,
+        "context": context_output,
+        "files_loaded": files_loaded,
+        "files_requested": len(file_paths),
+        "total_size_bytes": total_size,
+    }
+
+
 # ── Shared Helper: Index a Document ──────────────────────────────────────────
 
 def try_vector_index(root: Path, content: str, doc_name: str,
@@ -1668,6 +1737,17 @@ Examples:
     cfl.add_argument("--json", dest="json_output", action="store_true",
                      help="Output as JSON")
 
+    # ── export-context ──
+    ec = sub.add_parser("export-context",
+                        help="Export file contents as structured context for RLM")
+    ec.add_argument("files", nargs="+", help="File paths to export")
+    ec.add_argument("--root", default=".", help="Project root directory")
+    ec.add_argument("--format", dest="export_format", default="dict",
+                    choices=["dict", "flat"],
+                    help="Output format: dict (JSON mapping) or flat (concatenated text)")
+    ec.add_argument("--json", dest="json_output", action="store_true",
+                    help="Output as JSON (default for dict format)")
+
     # ── hook (internal) ──
     hk = sub.add_parser("hook", help="Internal: incremental update hook")
     hk.add_argument("file_path", help="Path to the changed file")
@@ -1713,6 +1793,19 @@ Examples:
         cmd_agents(args)
     elif args.command == "conflicts":
         cmd_conflicts(args)
+    elif args.command == "export-context":
+        root = Path(args.root).resolve()
+        result = export_context(args.files, fmt=args.export_format, root=root)
+        if args.export_format == "flat" and not getattr(args, "json_output", False):
+            if result["success"]:
+                print(result["context"])
+            else:
+                print("No files could be loaded.", file=sys.stderr)
+                sys.exit(1)
+        else:
+            print(json.dumps(result, indent=2))
+            if not result["success"]:
+                sys.exit(1)
     elif args.command == "hook":
         hook_file_changed(args.file_path)
 
