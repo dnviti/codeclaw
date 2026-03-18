@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""MCP stdio server for the CTDF vector memory layer.
+"""MCP stdio server for the CodeClaw vector memory layer.
 
 Exposes the vector memory subsystem (VMEM-0017) as an MCP (Model Context
 Protocol) server using the stdio transport.  Any MCP-compatible AI assistant
@@ -110,7 +110,7 @@ def create_server(root: str = "."):
     """
     from mcp.server.fastmcp import FastMCP
 
-    server = FastMCP("ctdf-vector-memory")
+    server = FastMCP("claw-vector-memory")
 
     # ── Register tools ──
     from mcp_tools import index, search, store, task_context
@@ -139,7 +139,7 @@ def run_server(root: str = "."):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="CTDF Vector Memory MCP Server",
+        description="CodeClaw Vector Memory MCP Server",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""\
 Examples:
@@ -186,7 +186,7 @@ Configure your MCP client to launch this script as a subprocess.
         sys.exit(1)
 
     # Set the project root in an env var so tool handlers can access it
-    os.environ.setdefault("CTDF_PROJECT_ROOT", str(Path(args.root).resolve()))
+    os.environ.setdefault("CLAW_PROJECT_ROOT", str(Path(args.root).resolve()))
 
     run_server(args.root)
 

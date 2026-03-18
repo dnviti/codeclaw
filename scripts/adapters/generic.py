@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generic / fallback platform adapter for CTDF.
+"""Generic / fallback platform adapter for CodeClaw.
 
 Handles Cursor, Windsurf, Continue, Copilot, Aider, and any other
 AI coding tool that reads AGENTS.md or .github/copilot-instructions.md

@@ -1,9 +1,9 @@
 <#
 .SYNOPSIS
-    CTDF Portable Installer - PowerShell Bootstrap
+    CodeClaw Portable Installer - PowerShell Bootstrap
 
 .DESCRIPTION
-    Auto-detects the target AI coding platform and installs CTDF files into
+    Auto-detects the target AI coding platform and installs CodeClaw files into
     the correct locations. Supports Claude Code, OpenCode, OpenClaw, Cursor,
     Windsurf, Continue, Copilot, Aider, and generic setups.
 
@@ -83,8 +83,8 @@ function Get-CtdfVersion {
 function Detect-Platform {
     param([string]$TargetDir)
 
-    # Check CTDF_PLATFORM env var
-    $envPlatform = $env:CTDF_PLATFORM
+    # Check CLAW_PLATFORM env var
+    $envPlatform = $env:CLAW_PLATFORM
     if ($envPlatform) {
         return $envPlatform.ToLower()
     }
@@ -259,19 +259,19 @@ function Install-OpenCode {
     Install-Common -TargetDir $TargetDir
 
     Write-Step "Setting up OpenCode plugin directory..."
-    Place-Directory (Join-Path $ScriptRoot "skills") (Join-Path $TargetDir ".opencode" "plugins" "ctdf" "skills")
-    Place-Directory (Join-Path $ScriptRoot "scripts") (Join-Path $TargetDir ".opencode" "plugins" "ctdf" "scripts")
+    Place-Directory (Join-Path $ScriptRoot "skills") (Join-Path $TargetDir ".opencode" "plugins" "claw" "skills")
+    Place-Directory (Join-Path $ScriptRoot "scripts") (Join-Path $TargetDir ".opencode" "plugins" "claw" "scripts")
 
     if (-not $DryRun) {
-        $pluginDir = Join-Path $TargetDir ".opencode" "plugins" "ctdf"
+        $pluginDir = Join-Path $TargetDir ".opencode" "plugins" "claw"
         if (-not (Test-Path $pluginDir)) {
             New-Item -ItemType Directory -Path $pluginDir -Force | Out-Null
         }
         $pluginContent = @"
 {
-  "name": "ctdf",
+  "name": "claw",
   "version": "$Version",
-  "description": "Claude Task Development Framework",
+  "description": "CodeClaw",
   "entry": "scripts/skill_helper.py"
 }
 "@
@@ -300,12 +300,12 @@ function Install-Cursor {
         New-Item -ItemType Directory -Path $rulesDir -Force | Out-Null
     }
 
-    $rulesFile = Join-Path $rulesDir "ctdf.md"
+    $rulesFile = Join-Path $rulesDir "claw.md"
     if ((-not $DryRun) -and (-not (Test-Path $rulesFile))) {
         $rulesContent = @"
-# CTDF Integration
+# CodeClaw Integration
 
-This project uses the Claude Task Development Framework (CTDF).
+This project uses the CodeClaw.
 
 ## Available Commands
 - Task management: ``python3 scripts/task_manager.py``
@@ -319,7 +319,7 @@ See the ``skills/`` directory for available skill SKILL.md files.
 See ``config/`` for configuration templates.
 "@
         Set-Content -Path $rulesFile -Value $rulesContent -Encoding UTF8
-        Write-Ok "Created .cursor/rules/ctdf.md"
+        Write-Ok "Created .cursor/rules/claw.md"
     }
 }
 
@@ -334,12 +334,12 @@ function Install-Windsurf {
         New-Item -ItemType Directory -Path $rulesDir -Force | Out-Null
     }
 
-    $rulesFile = Join-Path $rulesDir "ctdf.md"
+    $rulesFile = Join-Path $rulesDir "claw.md"
     if ((-not $DryRun) -and (-not (Test-Path $rulesFile))) {
         $rulesContent = @"
-# CTDF Integration
+# CodeClaw Integration
 
-This project uses the Claude Task Development Framework (CTDF).
+This project uses the CodeClaw.
 
 ## Available Commands
 - Task management: ``python3 scripts/task_manager.py``
@@ -350,7 +350,7 @@ This project uses the Claude Task Development Framework (CTDF).
 See the ``skills/`` directory for available skill SKILL.md files.
 "@
         Set-Content -Path $rulesFile -Value $rulesContent -Encoding UTF8
-        Write-Ok "Created .windsurf/rules/ctdf.md"
+        Write-Ok "Created .windsurf/rules/claw.md"
     }
 }
 
@@ -370,8 +370,8 @@ function Install-Continue {
 {
   "customCommands": [
     {
-      "name": "ctdf-task",
-      "description": "Run CTDF task manager",
+      "name": "claw-task",
+      "description": "Run CodeClaw task manager",
       "command": "python3 scripts/task_manager.py"
     }
   ]
@@ -396,9 +396,9 @@ function Install-Copilot {
     $instrFile = Join-Path $ghDir "copilot-instructions.md"
     if ((-not $DryRun) -and (-not (Test-Path $instrFile))) {
         $instrContent = @"
-# CTDF Integration
+# CodeClaw Integration
 
-This project uses the Claude Task Development Framework (CTDF) for task
+This project uses the CodeClaw for task
 and release management.
 
 ## Scripts
@@ -423,7 +423,7 @@ function Install-Aider {
     $ignoreFile = Join-Path $TargetDir ".aiderignore"
     if ((-not $DryRun) -and (-not (Test-Path $ignoreFile))) {
         $ignoreContent = @"
-# CTDF generated files
+# CodeClaw generated files
 dist/
 .worktrees/
 __pycache__/
@@ -441,9 +441,9 @@ function Install-Generic {
     $agentsMd = Join-Path $TargetDir "AGENTS.md"
     if ((-not $DryRun) -and (-not (Test-Path $agentsMd))) {
         $agentsContent = @"
-# CTDF Agent Instructions
+# CodeClaw Agent Instructions
 
-This project uses the Claude Task Development Framework (CTDF).
+This project uses the CodeClaw.
 
 ## Available Scripts
 - ``python3 scripts/task_manager.py`` -- Task lifecycle management
@@ -509,7 +509,7 @@ function Main {
 
     # Banner
     Write-Host ""
-    Write-Host "CTDF Portable Installer v$Version" -ForegroundColor White
+    Write-Host "CodeClaw Portable Installer v$Version" -ForegroundColor White
     Write-Host ("=" * 50)
     Write-Info "Platform:  $Platform"
     Write-Info "Target:    $TargetDir"
@@ -540,7 +540,7 @@ function Main {
     Post-Install -TargetDir $TargetDir
 
     Write-Host ""
-    Write-Ok "CTDF installed successfully for platform: $Platform"
+    Write-Ok "CodeClaw installed successfully for platform: $Platform"
     Write-Host ""
     Write-Info "Next steps:"
     Write-Info "  1. Review configuration in config/"

@@ -66,8 +66,8 @@ jobs:
       - name: Create zip archive
         if: steps.check_tag.outputs.exists == 'false'
         run: |
-          ZIP_NAME="claude-task-development-framework-${{ steps.version.outputs.version }}.zip"
-          git archive --format=zip --prefix=claude-task-development-framework/ HEAD \
+          ZIP_NAME="codeclaw-${{ steps.version.outputs.version }}.zip"
+          git archive --format=zip --prefix=codeclaw/ HEAD \
             -o "/tmp/${ZIP_NAME}"
           echo "ZIP_NAME=${ZIP_NAME}" >> "$GITHUB_ENV"
 

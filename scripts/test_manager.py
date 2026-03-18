@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Test manager for the CTDF /tests skill.
+"""Test manager for the CodeClaw /tests skill.
 
 Provides test discovery, gap analysis, suggestion, execution, and
 persistent coverage tracking with regression detection.
@@ -527,7 +527,7 @@ def output_json(data: dict) -> None:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Test manager for CTDF /tests skill",
+        description="Test manager for CodeClaw /tests skill",
     )
     sub = parser.add_subparsers(dest="command")
 

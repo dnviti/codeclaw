@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Platform adapter base class for CTDF multi-agent compatibility.
+"""Platform adapter base class for CodeClaw multi-agent compatibility.
 
-Provides a platform-agnostic abstraction layer so CTDF skills can run on
+Provides a platform-agnostic abstraction layer so CodeClaw skills can run on
 Claude Code, OpenCode, OpenClaw, Cursor, Windsurf, Continue, Copilot,
 Aider, and any future platform that speaks the adapter interface.
 
@@ -27,7 +27,7 @@ ADAPTER_CONFIG_FILE = "platform-adapters.json"
 ADAPTER_CONFIG_EXAMPLE = "platform-adapters.example.json"
 
 # Environment variable that can force a specific platform
-PLATFORM_ENV_VAR = "CTDF_PLATFORM"
+PLATFORM_ENV_VAR = "CLAW_PLATFORM"
 
 # Known platform identifiers
 PLATFORM_CLAUDE_CODE = "claude-code"
@@ -58,7 +58,7 @@ ALL_PLATFORMS = [
 class PlatformAdapter(ABC):
     """Abstract base for platform-specific adapters.
 
-    Each concrete adapter translates CTDF's platform-neutral skill interface
+    Each concrete adapter translates CodeClaw's platform-neutral skill interface
     into the native mechanism of a specific AI coding tool.  The adapter is
     responsible for:
 
@@ -271,10 +271,10 @@ class PlatformAdapter(ABC):
 # ── Platform Detection ──────────────────────────────────────────────────────
 
 def detect_platform() -> str:
-    """Detect which AI coding platform is running CTDF.
+    """Detect which AI coding platform is running CodeClaw.
 
     Detection order:
-    1. Explicit CTDF_PLATFORM environment variable
+    1. Explicit CLAW_PLATFORM environment variable
     2. Platform-specific environment markers
     3. Config file override
     4. Fallback to "claude-code" (the original platform)
@@ -330,7 +330,7 @@ def detect_platform() -> str:
     except (json.JSONDecodeError, OSError):
         pass
 
-    # 4. Default: Claude Code (CTDF's original platform)
+    # 4. Default: Claude Code (CodeClaw's original platform)
     return PLATFORM_CLAUDE_CODE
 
 

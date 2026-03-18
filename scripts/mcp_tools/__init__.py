@@ -1,4 +1,4 @@
-"""MCP tool handler implementations for the CTDF vector memory MCP server.
+"""MCP tool handler implementations for the CodeClaw vector memory MCP server.
 
 Each submodule exposes a ``register(server)`` function that adds its tool(s)
 to the MCP ``Server`` instance.

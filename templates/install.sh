@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # ──────────────────────────────────────────────────────────────────────────────
-# CTDF Portable Installer — POSIX Bootstrap
+# CodeClaw Portable Installer — POSIX Bootstrap
 # ──────────────────────────────────────────────────────────────────────────────
 #
-# Auto-detects the target AI coding platform and installs CTDF files into
+# Auto-detects the target AI coding platform and installs CodeClaw files into
 # the correct locations. Supports Claude Code, OpenCode, OpenClaw, Cursor,
 # Windsurf, Continue, Copilot, Aider, and generic setups.
 #
@@ -56,7 +56,7 @@ step()  { printf "${BOLD}→${NC} %s\n" "$*"; }
 
 usage() {
     cat <<'USAGE'
-CTDF Portable Installer
+CodeClaw Portable Installer
 
 Usage:
   ./install.sh [OPTIONS]
@@ -161,9 +161,9 @@ detect_platform() {
         return
     fi
 
-    # Check CTDF_PLATFORM env var first
-    if [ -n "${CTDF_PLATFORM:-}" ]; then
-        PLATFORM="$CTDF_PLATFORM"
+    # Check CLAW_PLATFORM env var first
+    if [ -n "${CLAW_PLATFORM:-}" ]; then
+        PLATFORM="$CLAW_PLATFORM"
         return
     fi
 
@@ -215,7 +215,7 @@ detect_platform() {
         return
     fi
 
-    # Default: Claude Code (CTDF's native platform)
+    # Default: Claude Code (CodeClaw's native platform)
     PLATFORM="claude-code"
 }
 
@@ -342,17 +342,17 @@ install_opencode() {
 
     # OpenCode uses .opencode/plugins/
     step "Setting up OpenCode plugin directory..."
-    place_dir "$SCRIPT_DIR/skills" "$TARGET_DIR/.opencode/plugins/ctdf/skills"
-    place_dir "$SCRIPT_DIR/scripts" "$TARGET_DIR/.opencode/plugins/ctdf/scripts"
+    place_dir "$SCRIPT_DIR/skills" "$TARGET_DIR/.opencode/plugins/claw/skills"
+    place_dir "$SCRIPT_DIR/scripts" "$TARGET_DIR/.opencode/plugins/claw/scripts"
 
     # Create a minimal plugin descriptor for OpenCode
     if ! $DRY_RUN; then
-        mkdir -p "$TARGET_DIR/.opencode/plugins/ctdf"
-        cat > "$TARGET_DIR/.opencode/plugins/ctdf/plugin.json" <<OJSON
+        mkdir -p "$TARGET_DIR/.opencode/plugins/claw"
+        cat > "$TARGET_DIR/.opencode/plugins/claw/plugin.json" <<OJSON
 {
-  "name": "ctdf",
+  "name": "claw",
   "version": "$VERSION",
-  "description": "Claude Task Development Framework",
+  "description": "CodeClaw",
   "entry": "scripts/skill_helper.py"
 }
 OJSON
@@ -377,13 +377,13 @@ install_cursor() {
     step "Setting up Cursor rules..."
     mkdir -p "$TARGET_DIR/.cursor/rules" 2>/dev/null || true
 
-    # Create a Cursor rules file referencing CTDF skills
+    # Create a Cursor rules file referencing CodeClaw skills
     if ! $DRY_RUN; then
-        if [ ! -f "$TARGET_DIR/.cursor/rules/ctdf.md" ]; then
-            cat > "$TARGET_DIR/.cursor/rules/ctdf.md" <<'CURSOR_RULES'
-# CTDF Integration
+        if [ ! -f "$TARGET_DIR/.cursor/rules/claw.md" ]; then
+            cat > "$TARGET_DIR/.cursor/rules/claw.md" <<'CURSOR_RULES'
+# CodeClaw Integration
 
-This project uses the Claude Task Development Framework (CTDF).
+This project uses the CodeClaw.
 
 ## Available Commands
 - Task management: `python3 scripts/task_manager.py`
@@ -396,7 +396,7 @@ See the `skills/` directory for available skill SKILL.md files.
 ## Configuration
 See `config/` for configuration templates.
 CURSOR_RULES
-            ok "Created .cursor/rules/ctdf.md"
+            ok "Created .cursor/rules/claw.md"
         fi
     fi
 }
@@ -410,11 +410,11 @@ install_windsurf() {
     mkdir -p "$TARGET_DIR/.windsurf/rules" 2>/dev/null || true
 
     if ! $DRY_RUN; then
-        if [ ! -f "$TARGET_DIR/.windsurf/rules/ctdf.md" ]; then
-            cat > "$TARGET_DIR/.windsurf/rules/ctdf.md" <<'WS_RULES'
-# CTDF Integration
+        if [ ! -f "$TARGET_DIR/.windsurf/rules/claw.md" ]; then
+            cat > "$TARGET_DIR/.windsurf/rules/claw.md" <<'WS_RULES'
+# CodeClaw Integration
 
-This project uses the Claude Task Development Framework (CTDF).
+This project uses the CodeClaw.
 
 ## Available Commands
 - Task management: `python3 scripts/task_manager.py`
@@ -424,7 +424,7 @@ This project uses the Claude Task Development Framework (CTDF).
 ## Skill Definitions
 See the `skills/` directory for available skill SKILL.md files.
 WS_RULES
-            ok "Created .windsurf/rules/ctdf.md"
+            ok "Created .windsurf/rules/claw.md"
         fi
     fi
 }
@@ -441,8 +441,8 @@ install_continue_dev() {
 {
   "customCommands": [
     {
-      "name": "ctdf-task",
-      "description": "Run CTDF task manager",
+      "name": "claw-task",
+      "description": "Run CodeClaw task manager",
       "command": "python3 scripts/task_manager.py"
     }
   ]
@@ -462,9 +462,9 @@ install_copilot() {
         mkdir -p "$TARGET_DIR/.github"
         if [ ! -f "$TARGET_DIR/.github/copilot-instructions.md" ]; then
             cat > "$TARGET_DIR/.github/copilot-instructions.md" <<'COPILOT_MD'
-# CTDF Integration
+# CodeClaw Integration
 
-This project uses the Claude Task Development Framework (CTDF) for task
+This project uses the CodeClaw for task
 and release management.
 
 ## Scripts
@@ -489,7 +489,7 @@ install_aider() {
     if ! $DRY_RUN; then
         if [ ! -f "$TARGET_DIR/.aiderignore" ]; then
             cat > "$TARGET_DIR/.aiderignore" <<'AIDER_IGNORE'
-# CTDF generated files
+# CodeClaw generated files
 dist/
 .worktrees/
 __pycache__/
@@ -506,9 +506,9 @@ install_generic() {
     # Generic: create an AGENTS.md if not present
     if ! $DRY_RUN && [ ! -f "$TARGET_DIR/AGENTS.md" ]; then
         cat > "$TARGET_DIR/AGENTS.md" <<'AGENTS_MD'
-# CTDF Agent Instructions
+# CodeClaw Agent Instructions
 
-This project uses the Claude Task Development Framework (CTDF).
+This project uses the CodeClaw.
 
 ## Available Scripts
 - `python3 scripts/task_manager.py` — Task lifecycle management
@@ -557,7 +557,7 @@ main() {
     detect_platform
 
     echo ""
-    printf "${BOLD}CTDF Portable Installer v%s${NC}\n" "$VERSION"
+    printf "${BOLD}CodeClaw Portable Installer v%s${NC}\n" "$VERSION"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     info "Platform:  $PLATFORM"
     info "Target:    $TARGET_DIR"
@@ -586,7 +586,7 @@ main() {
     post_install
 
     echo ""
-    ok "CTDF installed successfully for platform: $PLATFORM"
+    ok "CodeClaw installed successfully for platform: $PLATFORM"
     echo ""
     info "Next steps:"
     info "  1. Review configuration in config/"

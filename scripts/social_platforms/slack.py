@@ -1,7 +1,7 @@
 """Slack webhook posting adapter.
 
 Posts release announcements to a Slack channel via incoming webhook URL.
-The webhook URL is stored in CTDF_SLACK_WEBHOOK.
+The webhook URL is stored in CLAW_SLACK_WEBHOOK.
 
 Zero external dependencies -- stdlib only (uses urllib.request).
 """
@@ -22,7 +22,7 @@ class SlackPlatform(SocialPlatform):
     """Slack incoming webhook posting."""
 
     name = "slack"
-    env_vars = ["CTDF_SLACK_WEBHOOK"]
+    env_vars = ["CLAW_SLACK_WEBHOOK"]
     max_length = 4000
 
     def post(self, message: str) -> dict[str, Any]:
@@ -31,10 +31,10 @@ class SlackPlatform(SocialPlatform):
             return {
                 "success": False,
                 "platform": self.name,
-                "error": "Missing credentials. Set CTDF_SLACK_WEBHOOK.",
+                "error": "Missing credentials. Set CLAW_SLACK_WEBHOOK.",
             }
 
-        webhook_url = os.environ.get("CTDF_SLACK_WEBHOOK", "")
+        webhook_url = os.environ.get("CLAW_SLACK_WEBHOOK", "")
 
         try:
             validate_webhook_url(webhook_url, ["hooks.slack.com"])

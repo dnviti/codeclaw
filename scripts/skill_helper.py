@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Consolidated skill helper for claude-task-development-framework.
+"""Consolidated skill helper for codeclaw.
 
-Eliminates repeated logic across CTDF skills by providing single-call
+Eliminates repeated logic across CodeClaw skills by providing single-call
 subcommands that gather context, dispatch arguments, check state, and
 manage worktrees.
 
@@ -294,13 +294,13 @@ def claude_md_info(root: Path) -> dict:
     """Return metadata about CLAUDE.md."""
     claude_md = root / "CLAUDE.md"
     if not claude_md.exists():
-        return {"exists": False, "lines": 0, "has_ctdf_section": False}
+        return {"exists": False, "lines": 0, "has_claw_section": False}
     content = claude_md.read_text(encoding="utf-8")
     lines = content.splitlines()
     return {
         "exists": True,
         "lines": len(lines),
-        "has_ctdf_section": "<!-- CTDF:START -->" in content,
+        "has_claw_section": "<!-- CodeClaw:START -->" in content,
     }
 
 
@@ -1353,7 +1353,7 @@ def output_json(data: dict) -> None:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Consolidated skill helper for CTDF",
+        description="Consolidated skill helper for CodeClaw",
     )
     sub = parser.add_subparsers(dest="command")
 

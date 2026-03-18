@@ -1,8 +1,8 @@
 {
-  "name": "ctdf",
-  "description": "Claude Task Development Framework - Portable Distribution",
+  "name": "claw",
+  "description": "CodeClaw - Portable Distribution",
   "license": "MIT",
-  "repository": "https://github.com/dnviti/claude-task-development-framework",
+  "repository": "https://github.com/dnviti/codeclaw",
   "author": {
     "name": "dnviti"
   },

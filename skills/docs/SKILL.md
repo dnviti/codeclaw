@@ -69,7 +69,7 @@ Every file starts with YAML front-matter:
 ---
 title: Architecture
 description: System architecture, component interactions, and data flow
-generated-by: ctdf-docs
+generated-by: claw-docs
 generated-at: 2026-03-16T14:30:00Z
 source-files:
   - src/app.ts

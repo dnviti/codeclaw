@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Task and idea manager CLI for claude-task-development-framework.
+"""Task and idea manager CLI for codeclaw.
 
 Provides deterministic file operations for Claude Code skills:
 - Task/idea listing, parsing, ID computation
@@ -2124,10 +2124,10 @@ def cmd_register_agent(args):
             "agent_type": agent_type,
             "task_code": task_code,
             "env_vars": {
-                "CTDF_AGENT_ID": agent_id,
-                "CTDF_SESSION_ID": session.session_id,
-                "CTDF_AGENT_TYPE": agent_type,
-                "CTDF_TASK_CODE": task_code,
+                "CLAW_AGENT_ID": agent_id,
+                "CLAW_SESSION_ID": session.session_id,
+                "CLAW_AGENT_TYPE": agent_type,
+                "CLAW_TASK_CODE": task_code,
             },
         }))
     except ImportError:
@@ -2141,10 +2141,10 @@ def cmd_register_agent(args):
             "agent_type": agent_type,
             "task_code": task_code,
             "env_vars": {
-                "CTDF_AGENT_ID": fallback_id,
-                "CTDF_SESSION_ID": "",
-                "CTDF_AGENT_TYPE": agent_type,
-                "CTDF_TASK_CODE": task_code,
+                "CLAW_AGENT_ID": fallback_id,
+                "CLAW_SESSION_ID": "",
+                "CLAW_AGENT_TYPE": agent_type,
+                "CLAW_TASK_CODE": task_code,
             },
             "note": "memory_protocol not available — running without coordination",
         }))
@@ -2181,7 +2181,7 @@ def cmd_deregister_agent(args):
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Task and idea manager CLI for claude-task-development-framework",
+        description="Task and idea manager CLI for codeclaw",
     )
     sub = parser.add_subparsers(dest="command", required=True)
 

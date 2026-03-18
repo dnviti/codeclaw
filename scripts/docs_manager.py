@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Documentation manager CLI for CTDF.
+"""Documentation manager CLI for CodeClaw.
 
 Provides deterministic operations for documentation lifecycle:
 discover codebase structure, track staleness via manifest hashes,
@@ -470,7 +470,7 @@ def cmd_diff_since_tag(args):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="CTDF Documentation Manager",
+        description="CodeClaw Documentation Manager",
     )
     sub = parser.add_subparsers(dest="command")
 

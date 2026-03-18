@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""OpenCode platform adapter for CTDF.
+"""OpenCode platform adapter for CodeClaw.
 
 OpenCode is a JS-based AI coding assistant.  This adapter bridges its
-JavaScript wrapper layer to CTDF's Python skill infrastructure by:
+JavaScript wrapper layer to CodeClaw's Python skill infrastructure by:
 
 1. Discovering skills via the same skills/ directory
 2. Invoking tools through Python subprocess calls (since OpenCode
@@ -30,7 +30,7 @@ class OpenCodeAdapter(PlatformAdapter):
     """Adapter for the OpenCode AI coding platform.
 
     OpenCode discovers tools through a JS configuration layer.  This
-    adapter presents CTDF skills as external Python scripts that
+    adapter presents CodeClaw skills as external Python scripts that
     OpenCode can call via its tool-execution pipeline.
     """
 
@@ -89,7 +89,7 @@ class OpenCodeAdapter(PlatformAdapter):
     # ── Tool Invocation ─────────────────────────────────────────────────
 
     def invoke_tool(self, tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
-        """Invoke a CTDF tool via subprocess.
+        """Invoke a CodeClaw tool via subprocess.
 
         OpenCode calls Python scripts as external processes.  This method
         builds the appropriate command line and captures output as JSON.
