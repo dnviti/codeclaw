@@ -1037,6 +1037,7 @@ def cmd_gc(args):
 def cmd_agents(args):
     """List active and historical agent sessions."""
     root = Path(args.root).resolve()
+    _check_enabled_or_exit(root, json_output=getattr(args, "json_output", False))
 
     try:
         from memory_protocol import MemoryProtocol
@@ -1087,6 +1088,7 @@ def cmd_agents(args):
 def cmd_conflicts(args):
     """Show flagged contradictions between agents."""
     root = Path(args.root).resolve()
+    _check_enabled_or_exit(root, json_output=getattr(args, "json_output", False))
 
     try:
         from memory_protocol import MemoryProtocol
