@@ -14,10 +14,10 @@
     }
   },
   "server_options": {
-    "_comment": "Vector memory is always-on. MCP server starts automatically on setup.",
-    "enabled": true,
+    "_comment": "Vector memory MCP is opt-in. Enable via /setup for automatic installation.",
+    "enabled": false,
     "transport": "stdio",
-    "auto_start": true,
+    "auto_start": false,
     "restart_on_crash": true,
     "tools": [
       {

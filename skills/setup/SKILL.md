@@ -302,11 +302,47 @@ STOP.
 
 Then return here for Step 9.7.
 
-### Step 9.7: Vector Memory Initialization (Mandatory — always runs)
+### Step 9.7: Vector Memory MCP (Optional — opt-in)
 
-This step is mandatory and always runs without a user prompt.
+**9.7a. Gitignore hardening (unconditional — always runs):**
 
-1. Enable vector memory in the project config:
+Before asking the user about vector memory, ensure `.gitignore` contains the required entries. This runs regardless of the user's choice:
+
+```bash
+# Append .claude/memory/ if not already present
+grep -qxF '.claude/memory/' .gitignore 2>/dev/null || echo '.claude/memory/' >> .gitignore
+
+# Append .claude/worktrees/ if not already present
+grep -qxF '.claude/worktrees/' .gitignore 2>/dev/null || echo '.claude/worktrees/' >> .gitignore
+
+# Append .mcp.json if not already present (contains machine-specific absolute paths)
+grep -qxF '.mcp.json' .gitignore 2>/dev/null || echo '.mcp.json' >> .gitignore
+```
+
+**9.7b. GATE — ask the user:**
+
+Use `AskUserQuestion`:
+- **"Yes, enable vector memory MCP (recommended)"** — proceed to 9.7c (full automated install)
+- **"No, keep disabled"** — set `vector_memory.enabled = false`, `mcp_server.enabled = false` in `.claude/project-config.json` and skip to Step 10
+
+**9.7c. Automated installation sequence (when user enables):**
+
+1. **Install all Python packages** in one command:
+
+   ```bash
+   pip install "mcp>=1.0" "lancedb>=0.5.0,<1.0" "sentence-transformers>=2.7.0,<3.0"
+   ```
+
+   If `pip install` fails, display:
+   > **Action required:** Install vector memory dependencies manually:
+   > ```
+   > pip install "mcp>=1.0" "lancedb>=0.5.0,<1.0" "sentence-transformers>=2.7.0,<3.0"
+   > ```
+   > Then re-run: `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/vector_memory.py index --force-init`
+
+   Do NOT continue with remaining sub-steps if pip fails — skip to Step 10 with a warning.
+
+2. **Update project config:**
 
    Read `.claude/project-config.json` (or create from template if missing):
    ```bash
@@ -320,20 +356,31 @@ This step is mandatory and always runs without a user prompt.
    - `mcp_server.enabled = true`
    - `mcp_server.auto_start = true`
 
-2. Auto-install dependencies if missing:
+3. **Generate `.mcp.json` at repository root:**
 
-   ```bash
-   python3 -c "import lancedb, sentence_transformers" 2>/dev/null || pip install "lancedb>=0.5.0,<1.0" "sentence-transformers>=2.7.0,<3.0"
+   Resolve the actual paths and write `.mcp.json` to the project root directory:
+   ```json
+   {
+     "mcpServers": {
+       "ctdf-vector-memory": {
+         "command": "python3",
+         "args": [
+           "<RESOLVED_PATH_TO_CTDF_SCRIPTS>/mcp_server.py",
+           "--root", "<RESOLVED_PROJECT_ROOT>"
+         ],
+         "env": {
+           "CTDF_PROJECT_ROOT": "<RESOLVED_PROJECT_ROOT>"
+         }
+       }
+     }
+   }
    ```
 
-   If `pip install` fails, display:
-   > **Action required:** Install vector memory dependencies manually:
-   > ```
-   > pip install "lancedb>=0.5.0,<1.0" "sentence-transformers>=2.7.0,<3.0"
-   > ```
-   > Then re-run: `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/vector_memory.py index --force-init`
+   Where:
+   - `<RESOLVED_PATH_TO_CTDF_SCRIPTS>` = the absolute path to the CTDF `scripts/` directory (resolve `${CLAUDE_PLUGIN_ROOT}/scripts`)
+   - `<RESOLVED_PROJECT_ROOT>` = the absolute path to the current project root (resolve `.`)
 
-3. Build the initial index (log progress):
+4. **Build initial vector index:**
 
    ```bash
    python3 ${CLAUDE_PLUGIN_ROOT}/scripts/vector_memory.py index --force-init --root .
@@ -343,18 +390,14 @@ This step is mandatory and always runs without a user prompt.
    - If it fails with exit code 2 (missing deps), show the install message above.
    - If it fails for any other reason, show the error and continue setup.
 
-4. Start the MCP server in the background:
+5. **Verify MCP server starts:**
 
    ```bash
-   python3 ${CLAUDE_PLUGIN_ROOT}/scripts/mcp_server.py --root . &
+   python3 ${CLAUDE_PLUGIN_ROOT}/scripts/mcp_server.py --check
    ```
 
-   After a brief moment, confirm reachability:
-   ```bash
-   python3 ${CLAUDE_PLUGIN_ROOT}/scripts/vector_memory.py status --root .
-   ```
-
-   Report the status result. If the MCP server could not start, log a warning and continue.
+   - If `{"mcp_sdk": true}` → report: "MCP server ready. It will start automatically via `.mcp.json` when your AI assistant connects."
+   - If fails → log warning: "MCP SDK check failed. The server may not start automatically. You can install manually with: `pip install mcp`"
 
 Then return here for Step 10.
 

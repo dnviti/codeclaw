@@ -170,14 +170,17 @@ Configure your MCP client to launch this script as a subprocess.
             print(json.dumps({
                 "mcp_sdk": False,
                 "status": "error",
-                "install": "pip install mcp",
+                "install": 'pip install "mcp>=1.0" "lancedb>=0.5.0,<1.0" "sentence-transformers>=2.7.0,<3.0"',
             }))
             sys.exit(1)
 
     if not _check_mcp_sdk():
         print(
             "Error: The 'mcp' Python package is not installed.\n"
-            "Install it with:  pip install mcp\n",
+            "Install all required packages with:\n"
+            '  pip install "mcp>=1.0" "lancedb>=0.5.0,<1.0" "sentence-transformers>=2.7.0,<3.0"\n'
+            "\n"
+            "Or enable vector memory MCP via the /setup skill for automatic installation.\n",
             file=sys.stderr,
         )
         sys.exit(1)
