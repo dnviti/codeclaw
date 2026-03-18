@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "generated_at": "2026-03-17T23:25:45.302280Z",
+  "generated_at": "2026-03-17T23:50:21.139572Z",
   "sections": [
     {
       "name": "index",
@@ -13,361 +13,136 @@
         {
           "path": ".claude-plugin/plugin.json",
           "hash": "2e3e6488a28dc9a26df0240fa868cbdc600894b37ed5efcc5298d508adddcd5e"
-        },
-        {
-          "path": ".claude-plugin/marketplace.json",
-          "hash": "b4fbc0d15d8c1109f1e23c8c6e8551411667f12889d8ee3152338ea706052d06"
         }
       ],
-      "generated_at": "2026-03-17T23:25:45.300379Z"
+      "generated_at": "2026-03-17T23:50:21.138846Z"
     },
     {
       "name": "architecture",
       "file": "architecture.md",
-      "source_files": [
-        {
-          "path": "scripts/task_manager.py",
-          "hash": "1e11957d7698f6c37dcc66bc609f43d8187aa854e4aeaaf66c21c81a56e2673b"
-        },
-        {
-          "path": "scripts/release_manager.py",
-          "hash": "edc0735a456be479cd98056746f9a052dc5a723333d9b8cb2c0db82f759f1d96"
-        },
-        {
-          "path": "scripts/skill_helper.py",
-          "hash": "acc0f9d7721747f2c94245dcf44b4c9a1092745d7ddc7dd646d1dbe04ffb305f"
-        },
-        {
-          "path": "scripts/docs_manager.py",
-          "hash": "c8cbc0d6870389ee9b61637562821192e551b253789726ec47d6106adf4b0cb7"
-        },
-        {
-          "path": "scripts/agent_runner.py",
-          "hash": "2f68c03a883aad5fc2f4cd60b727e8d65dfdb0ff3739335e9d22fe82f629627d"
-        },
-        {
-          "path": "scripts/app_manager.py",
-          "hash": "bd96e0525070d9bf22889ed8741b4c5aabc8ef2fdffb4570747de14545091550"
-        },
-        {
-          "path": "scripts/codebase_analyzer.py",
-          "hash": "a36a7822db3986dad0312062af21dad357b888900b2176cfbb3f5cf87fb3be22"
-        },
-        {
-          "path": "scripts/memory_builder.py",
-          "hash": "73987a6f3a80969d0c7c300f9c17ff9a573bb747e6aa85f35f886284536d386d"
-        },
-        {
-          "path": "scripts/test_manager.py",
-          "hash": "1f9d5a3dec8ba604efe2e696d18a1550dff4aab163fe42656fdcd967a31cc6e8"
-        },
-        {
-          "path": "scripts/ollama_manager.py",
-          "hash": "c602f498ff3e3a7adafe6c29c897278f8c9b83ae92d52e8f49197f654c479e89"
-        },
-        {
-          "path": "scripts/vector_memory.py",
-          "hash": "464a53ba2887f420ddec302e67a040e54f8f478930de388e08fb33e4a6b58733"
-        },
-        {
-          "path": "scripts/hooks/pre_tool_offload.py",
-          "hash": "3fc30ee8ee2f37ec5f7ee947022459a0cc198d7d377bfb951e56229ca1930b1b"
-        },
-        {
-          "path": "hooks/hooks.json",
-          "hash": "833e2f568883317dc5c15e18f8e9175aebe95de3aec39c118864997b428c316f"
-        },
-        {
-          "path": ".claude-plugin/plugin.json",
-          "hash": "2e3e6488a28dc9a26df0240fa868cbdc600894b37ed5efcc5298d508adddcd5e"
-        }
-      ],
-      "generated_at": "2026-03-17T23:25:45.300800Z"
+      "source_files": [],
+      "generated_at": "2026-03-17T23:50:21.138863Z"
     },
     {
       "name": "getting-started",
       "file": "getting-started.md",
-      "source_files": [
-        {
-          "path": "README.md",
-          "hash": "85386ecab5b931461b3f71ba22faec4042ff00f439a498f04e3a12ea9a505a88"
-        },
-        {
-          "path": ".claude-plugin/plugin.json",
-          "hash": "2e3e6488a28dc9a26df0240fa868cbdc600894b37ed5efcc5298d508adddcd5e"
-        },
-        {
-          "path": ".claude-plugin/marketplace.json",
-          "hash": "b4fbc0d15d8c1109f1e23c8c6e8551411667f12889d8ee3152338ea706052d06"
-        },
-        {
-          "path": "config/project-config.example.json",
-          "hash": "72f19f36e1c038ed422bbdee635cdcdc852990c2726f2f72af2396d42a73b875"
-        },
-        {
-          "path": "config/ollama-config.example.json",
-          "hash": "e210603bd980630ce2b3aee5c1024f5fd115a030e4e3f935f60835e6ba46a5c3"
-        },
-        {
-          "path": "config/issues-tracker.example.json",
-          "hash": "74c87715255ec7567cde8a2cd5c5a89b3b1218dfe49195a69594aa0f74de2f0b"
-        }
-      ],
-      "generated_at": "2026-03-17T23:25:45.300881Z"
+      "source_files": [],
+      "generated_at": "2026-03-17T23:50:21.138868Z"
     },
     {
       "name": "configuration",
       "file": "configuration.md",
-      "source_files": [
-        {
-          "path": "config/project-config.example.json",
-          "hash": "72f19f36e1c038ed422bbdee635cdcdc852990c2726f2f72af2396d42a73b875"
-        },
-        {
-          "path": "config/ollama-config.example.json",
-          "hash": "e210603bd980630ce2b3aee5c1024f5fd115a030e4e3f935f60835e6ba46a5c3"
-        },
-        {
-          "path": "config/issues-tracker.example.json",
-          "hash": "74c87715255ec7567cde8a2cd5c5a89b3b1218dfe49195a69594aa0f74de2f0b"
-        },
-        {
-          "path": "config/releases.example.json",
-          "hash": "e8b8eb2d0ea2d3eb4b0853cab232b671ff51edb87ec4367e52d7473bd6863254"
-        },
-        {
-          "path": "config/agentic-provider.example.json",
-          "hash": "10199cad6023cc67ccd5417df3b73105ed08744893d82ffc2493d0d9b2636f30"
-        },
-        {
-          "path": "scripts/skill_helper.py",
-          "hash": "acc0f9d7721747f2c94245dcf44b4c9a1092745d7ddc7dd646d1dbe04ffb305f"
-        },
-        {
-          "path": "scripts/agent_runner.py",
-          "hash": "2f68c03a883aad5fc2f4cd60b727e8d65dfdb0ff3739335e9d22fe82f629627d"
-        },
-        {
-          "path": "scripts/task_manager.py",
-          "hash": "1e11957d7698f6c37dcc66bc609f43d8187aa854e4aeaaf66c21c81a56e2673b"
-        },
-        {
-          "path": "scripts/release_manager.py",
-          "hash": "edc0735a456be479cd98056746f9a052dc5a723333d9b8cb2c0db82f759f1d96"
-        }
-      ],
-      "generated_at": "2026-03-17T23:25:45.301094Z"
+      "source_files": [],
+      "generated_at": "2026-03-17T23:50:21.138872Z"
     },
     {
       "name": "api-reference",
       "file": "api-reference.md",
-      "source_files": [
-        {
-          "path": "scripts/task_manager.py",
-          "hash": "1e11957d7698f6c37dcc66bc609f43d8187aa854e4aeaaf66c21c81a56e2673b"
-        },
-        {
-          "path": "scripts/release_manager.py",
-          "hash": "edc0735a456be479cd98056746f9a052dc5a723333d9b8cb2c0db82f759f1d96"
-        },
-        {
-          "path": "scripts/skill_helper.py",
-          "hash": "acc0f9d7721747f2c94245dcf44b4c9a1092745d7ddc7dd646d1dbe04ffb305f"
-        },
-        {
-          "path": "scripts/docs_manager.py",
-          "hash": "c8cbc0d6870389ee9b61637562821192e551b253789726ec47d6106adf4b0cb7"
-        },
-        {
-          "path": "scripts/agent_runner.py",
-          "hash": "2f68c03a883aad5fc2f4cd60b727e8d65dfdb0ff3739335e9d22fe82f629627d"
-        },
-        {
-          "path": "scripts/app_manager.py",
-          "hash": "bd96e0525070d9bf22889ed8741b4c5aabc8ef2fdffb4570747de14545091550"
-        },
-        {
-          "path": "scripts/codebase_analyzer.py",
-          "hash": "a36a7822db3986dad0312062af21dad357b888900b2176cfbb3f5cf87fb3be22"
-        },
-        {
-          "path": "scripts/memory_builder.py",
-          "hash": "73987a6f3a80969d0c7c300f9c17ff9a573bb747e6aa85f35f886284536d386d"
-        },
-        {
-          "path": "scripts/test_manager.py",
-          "hash": "1f9d5a3dec8ba604efe2e696d18a1550dff4aab163fe42656fdcd967a31cc6e8"
-        },
-        {
-          "path": "scripts/ollama_manager.py",
-          "hash": "c602f498ff3e3a7adafe6c29c897278f8c9b83ae92d52e8f49197f654c479e89"
-        },
-        {
-          "path": "scripts/vector_memory.py",
-          "hash": "464a53ba2887f420ddec302e67a040e54f8f478930de388e08fb33e4a6b58733"
-        },
-        {
-          "path": "scripts/hooks/pre_tool_offload.py",
-          "hash": "3fc30ee8ee2f37ec5f7ee947022459a0cc198d7d377bfb951e56229ca1930b1b"
-        },
-        {
-          "path": "hooks/hooks.json",
-          "hash": "833e2f568883317dc5c15e18f8e9175aebe95de3aec39c118864997b428c316f"
-        }
-      ],
-      "generated_at": "2026-03-17T23:25:45.301431Z"
+      "source_files": [],
+      "generated_at": "2026-03-17T23:50:21.138874Z"
     },
     {
       "name": "deployment",
       "file": "deployment.md",
-      "source_files": [
-        {
-          "path": "scripts/agent_runner.py",
-          "hash": "2f68c03a883aad5fc2f4cd60b727e8d65dfdb0ff3739335e9d22fe82f629627d"
-        },
-        {
-          "path": "hooks/hooks.json",
-          "hash": "833e2f568883317dc5c15e18f8e9175aebe95de3aec39c118864997b428c316f"
-        }
-      ],
-      "generated_at": "2026-03-17T23:25:45.301470Z"
+      "source_files": [],
+      "generated_at": "2026-03-17T23:50:21.138877Z"
     },
     {
       "name": "development",
       "file": "development.md",
-      "source_files": [
-        {
-          "path": "README.md",
-          "hash": "85386ecab5b931461b3f71ba22faec4042ff00f439a498f04e3a12ea9a505a88"
-        },
-        {
-          "path": ".gitignore",
-          "hash": "22eb163bc720f07667b3328f8feb1afa07e21ef7a5bd625b9422a0e317ce836e"
-        },
-        {
-          "path": "scripts/task_manager.py",
-          "hash": "1e11957d7698f6c37dcc66bc609f43d8187aa854e4aeaaf66c21c81a56e2673b"
-        },
-        {
-          "path": "scripts/release_manager.py",
-          "hash": "edc0735a456be479cd98056746f9a052dc5a723333d9b8cb2c0db82f759f1d96"
-        },
-        {
-          "path": "scripts/skill_helper.py",
-          "hash": "acc0f9d7721747f2c94245dcf44b4c9a1092745d7ddc7dd646d1dbe04ffb305f"
-        },
-        {
-          "path": "scripts/ollama_manager.py",
-          "hash": "c602f498ff3e3a7adafe6c29c897278f8c9b83ae92d52e8f49197f654c479e89"
-        },
-        {
-          "path": "scripts/vector_memory.py",
-          "hash": "464a53ba2887f420ddec302e67a040e54f8f478930de388e08fb33e4a6b58733"
-        },
-        {
-          "path": "scripts/hooks/pre_tool_offload.py",
-          "hash": "3fc30ee8ee2f37ec5f7ee947022459a0cc198d7d377bfb951e56229ca1930b1b"
-        },
-        {
-          "path": "hooks/hooks.json",
-          "hash": "833e2f568883317dc5c15e18f8e9175aebe95de3aec39c118864997b428c316f"
-        },
-        {
-          "path": ".claude-plugin/plugin.json",
-          "hash": "2e3e6488a28dc9a26df0240fa868cbdc600894b37ed5efcc5298d508adddcd5e"
-        }
-      ],
-      "generated_at": "2026-03-17T23:25:45.301750Z"
+      "source_files": [],
+      "generated_at": "2026-03-17T23:50:21.138880Z"
     },
     {
       "name": "troubleshooting",
       "file": "troubleshooting.md",
-      "source_files": [
-        {
-          "path": "scripts/task_manager.py",
-          "hash": "1e11957d7698f6c37dcc66bc609f43d8187aa854e4aeaaf66c21c81a56e2673b"
-        },
-        {
-          "path": "scripts/release_manager.py",
-          "hash": "edc0735a456be479cd98056746f9a052dc5a723333d9b8cb2c0db82f759f1d96"
-        },
-        {
-          "path": "scripts/skill_helper.py",
-          "hash": "acc0f9d7721747f2c94245dcf44b4c9a1092745d7ddc7dd646d1dbe04ffb305f"
-        },
-        {
-          "path": "scripts/agent_runner.py",
-          "hash": "2f68c03a883aad5fc2f4cd60b727e8d65dfdb0ff3739335e9d22fe82f629627d"
-        },
-        {
-          "path": "scripts/app_manager.py",
-          "hash": "bd96e0525070d9bf22889ed8741b4c5aabc8ef2fdffb4570747de14545091550"
-        },
-        {
-          "path": "scripts/ollama_manager.py",
-          "hash": "c602f498ff3e3a7adafe6c29c897278f8c9b83ae92d52e8f49197f654c479e89"
-        },
-        {
-          "path": "scripts/vector_memory.py",
-          "hash": "464a53ba2887f420ddec302e67a040e54f8f478930de388e08fb33e4a6b58733"
-        },
-        {
-          "path": "scripts/hooks/pre_tool_offload.py",
-          "hash": "3fc30ee8ee2f37ec5f7ee947022459a0cc198d7d377bfb951e56229ca1930b1b"
-        },
-        {
-          "path": "hooks/hooks.json",
-          "hash": "833e2f568883317dc5c15e18f8e9175aebe95de3aec39c118864997b428c316f"
-        }
-      ],
-      "generated_at": "2026-03-17T23:25:45.302016Z"
+      "source_files": [],
+      "generated_at": "2026-03-17T23:50:21.138882Z"
     },
     {
-      "name": "llm-context",
-      "file": "llm-context.md",
+      "name": "mcp-vector-memory",
+      "file": "mcp-vector-memory.md",
       "source_files": [
-        {
-          "path": "README.md",
-          "hash": "85386ecab5b931461b3f71ba22faec4042ff00f439a498f04e3a12ea9a505a88"
-        },
-        {
-          "path": "scripts/task_manager.py",
-          "hash": "1e11957d7698f6c37dcc66bc609f43d8187aa854e4aeaaf66c21c81a56e2673b"
-        },
-        {
-          "path": "scripts/release_manager.py",
-          "hash": "edc0735a456be479cd98056746f9a052dc5a723333d9b8cb2c0db82f759f1d96"
-        },
-        {
-          "path": "scripts/skill_helper.py",
-          "hash": "acc0f9d7721747f2c94245dcf44b4c9a1092745d7ddc7dd646d1dbe04ffb305f"
-        },
-        {
-          "path": "scripts/ollama_manager.py",
-          "hash": "c602f498ff3e3a7adafe6c29c897278f8c9b83ae92d52e8f49197f654c479e89"
-        },
         {
           "path": "scripts/vector_memory.py",
           "hash": "464a53ba2887f420ddec302e67a040e54f8f478930de388e08fb33e4a6b58733"
         },
         {
-          "path": "scripts/hooks/pre_tool_offload.py",
-          "hash": "3fc30ee8ee2f37ec5f7ee947022459a0cc198d7d377bfb951e56229ca1930b1b"
+          "path": "scripts/mcp_server.py",
+          "hash": "5646ccf724b18c4db3fcd80fa18458173fa7e0f10cdd7032b51a7cda59f11a62"
         },
         {
-          "path": ".claude-plugin/plugin.json",
-          "hash": "2e3e6488a28dc9a26df0240fa868cbdc600894b37ed5efcc5298d508adddcd5e"
+          "path": "scripts/mcp_tools/index.py",
+          "hash": "0ecc4f80a6f2fe3f5b06e1817fa30238c279ff4eb52149b73dcc9ba94a832f98"
+        },
+        {
+          "path": "scripts/mcp_tools/search.py",
+          "hash": "a3a19a0293aa6251b50ed747ad2214fcc513b24eb64f2029b3c4d9e6c3cf8e7d"
+        },
+        {
+          "path": "scripts/mcp_tools/store.py",
+          "hash": "b2eb64c59d15dfbac020c17fe8d224d84321c01d2a76cbd2b21d2e6751ca4688"
+        },
+        {
+          "path": "scripts/mcp_tools/task_context.py",
+          "hash": "c84d6f8d147657b7233d4bd3857091454dfb6cef0ac7a898104230ea3a4d281b"
+        },
+        {
+          "path": "scripts/embeddings/__init__.py",
+          "hash": "d6d0a14330d490ecdec95e1002bd112f8a5fddc29d0138195d0e57b21a5a6e46"
+        },
+        {
+          "path": "scripts/embeddings/local_onnx.py",
+          "hash": "5719f2924394b866b14ab7c4d48d56f5ef1cf2a8c54067fb509cee4c0fb523d8"
+        },
+        {
+          "path": "scripts/embeddings/api_provider.py",
+          "hash": "a2cf977bf49ea1162382cbcc4e0f23075ef4de05c3a3cfe82c2f3f8955179224"
+        },
+        {
+          "path": "scripts/chunkers/__init__.py",
+          "hash": "4a0b6da22572f66bb4ddd7f22c670c1f04a242b2f282ab6c0f0e156b10111567"
+        },
+        {
+          "path": "scripts/chunkers/python_chunker.py",
+          "hash": "f3142d9cf237b24bc15e4b3255a24f240714f6e81df6538e6e9d07cb7ac3d34a"
+        },
+        {
+          "path": "scripts/chunkers/generic_chunker.py",
+          "hash": "87dc221b1713458de457521d7d0d75b61c76c5350190785873e8debe5358ed12"
+        },
+        {
+          "path": "scripts/memory_protocol.py",
+          "hash": "6b7029ba7b0286bc5a00ca8e8e28bae56ce8956e03f0915b7a77e6df03811951"
+        },
+        {
+          "path": "scripts/memory_lock.py",
+          "hash": "2a1f9e162e8060782786b695a6168da8141f275a456e5c2cfa51c175ffc4a143"
+        },
+        {
+          "path": "scripts/deps_check.py",
+          "hash": "c326b253c04b7538127c7acb81ee6a66faea5bd486badc78a38f98d8e8a25632"
         },
         {
           "path": "config/project-config.example.json",
           "hash": "72f19f36e1c038ed422bbdee635cdcdc852990c2726f2f72af2396d42a73b875"
         },
         {
-          "path": "config/ollama-config.example.json",
-          "hash": "e210603bd980630ce2b3aee5c1024f5fd115a030e4e3f935f60835e6ba46a5c3"
+          "path": "config/mcp-server.example.json",
+          "hash": "cb5f85c73188db0368ddeaf94900e27039bacd41b9563b5b797e88d660371b54"
+        },
+        {
+          "path": "hooks/hooks.json",
+          "hash": "833e2f568883317dc5c15e18f8e9175aebe95de3aec39c118864997b428c316f"
         }
       ],
-      "generated_at": "2026-03-17T23:25:45.302278Z"
+      "generated_at": "2026-03-17T23:50:21.139559Z"
+    },
+    {
+      "name": "llm-context",
+      "file": "llm-context.md",
+      "source_files": [],
+      "generated_at": "2026-03-17T23:50:21.139565Z"
     }
   ]
 }
