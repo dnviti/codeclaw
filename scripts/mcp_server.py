@@ -106,11 +106,11 @@ def _list_namespaces(root_path: Path) -> list[str]:
 def create_server(root: str = "."):
     """Create and configure the MCP server instance.
 
-    Returns the ``Server`` object ready for ``run()``.
+    Returns the ``FastMCP`` object ready for ``run()``.
     """
-    from mcp.server import Server
+    from mcp.server.fastmcp import FastMCP
 
-    server = Server("ctdf-vector-memory")
+    server = FastMCP("ctdf-vector-memory")
 
     # ── Register tools ──
     from mcp_tools import index, search, store, task_context
@@ -129,14 +129,10 @@ def create_server(root: str = "."):
     return server
 
 
-async def run_server(root: str = "."):
+def run_server(root: str = "."):
     """Run the MCP server with stdio transport."""
-    from mcp.server.stdio import stdio_server
-
     server = create_server(root)
-
-    async with stdio_server() as (read_stream, write_stream):
-        await server.run(read_stream, write_stream, server.create_initialization_options())
+    server.run(transport="stdio")
 
 
 # ── CLI ──────────────────────────────────────────────────────────────────────
@@ -174,14 +170,17 @@ Configure your MCP client to launch this script as a subprocess.
             print(json.dumps({
                 "mcp_sdk": False,
                 "status": "error",
-                "install": "pip install mcp",
+                "install": 'pip install "mcp>=1.0" "lancedb>=0.5.0,<1.0" "sentence-transformers>=2.7.0,<3.0"',
             }))
             sys.exit(1)
 
     if not _check_mcp_sdk():
         print(
             "Error: The 'mcp' Python package is not installed.\n"
-            "Install it with:  pip install mcp\n",
+            "Install all required packages with:\n"
+            '  pip install "mcp>=1.0" "lancedb>=0.5.0,<1.0" "sentence-transformers>=2.7.0,<3.0"\n'
+            "\n"
+            "Or enable vector memory MCP via the /setup skill for automatic installation.\n",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -189,8 +188,7 @@ Configure your MCP client to launch this script as a subprocess.
     # Set the project root in an env var so tool handlers can access it
     os.environ.setdefault("CTDF_PROJECT_ROOT", str(Path(args.root).resolve()))
 
-    import asyncio
-    asyncio.run(run_server(args.root))
+    run_server(args.root)
 
 
 if __name__ == "__main__":
