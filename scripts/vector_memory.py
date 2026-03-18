@@ -414,6 +414,10 @@ def cmd_index(args):
 
     When --force-init is passed (used by setup and ensure_initialized),
     the index is always built from scratch regardless of existing state.
+
+    When event_sourcing is enabled in project config, writes go to the
+    append-only event log instead of directly to LanceDB, enabling
+    concurrent agent writes without locking.
     """
     root = Path(args.root).resolve()
     _check_enabled_or_exit(root)
@@ -435,19 +439,37 @@ def cmd_index(args):
     from chunkers import chunk_file, chunk_text_document
     from embeddings import create_provider, EmbeddingCache
 
-    # Acquire write lock if memory_lock is available
-    lock = None
+    # Check if event sourcing is enabled
+    use_event_sourcing = False
+    event_log = None
     try:
-        from memory_lock import MemoryLock
-        agent_id = os.environ.get("CTDF_AGENT_ID", f"agent-{os.getpid()}")
-        session_id = os.environ.get("CTDF_SESSION_ID", "")
-        lock = MemoryLock(index_dir, agent_id=agent_id, session_id=session_id)
+        from memory_event_log import is_event_sourcing_enabled, create_event_log
+        from memory_event_log import create_chunk_add_event, create_chunk_remove_event
+        use_event_sourcing = is_event_sourcing_enabled(root)
+        if use_event_sourcing:
+            event_log = create_event_log(root)
     except ImportError:
         pass
+
+    # Acquire write lock if memory_lock is available (skip if event sourcing)
+    lock = None
+    if not use_event_sourcing:
+        try:
+            from memory_lock import MemoryLock
+            agent_id = os.environ.get("CTDF_AGENT_ID", f"agent-{os.getpid()}")
+            session_id = os.environ.get("CTDF_SESSION_ID", "")
+            lock = MemoryLock(index_dir, agent_id=agent_id, session_id=session_id)
+        except ImportError:
+            pass
+
+    agent_id = os.environ.get("CTDF_AGENT_ID", f"agent-{os.getpid()}")
+    session_id = os.environ.get("CTDF_SESSION_ID", "")
 
     print("Vector Memory — Indexing", file=sys.stderr)
     print(f"  Root: {root}", file=sys.stderr)
     print(f"  Index: {index_dir}", file=sys.stderr)
+    if use_event_sourcing:
+        print("  Mode: event-sourced (lock-free writes)", file=sys.stderr)
 
     # Build hash manifest
     gitignore_patterns = load_gitignore_patterns(root)
@@ -477,63 +499,37 @@ def cmd_index(args):
         _save_meta(index_dir, config, len(new_manifest))
         return
 
-    # Initialize embedding provider
+    # Initialize embedding provider (not needed for event sourcing writes,
+    # but still used for direct mode)
     emb_config = {
         "provider": config["embedding_provider"],
         "model": config["embedding_model"],
         "api_key_env": config["embedding_api_key_env"],
     }
-    provider = create_provider(emb_config)
-    cache = EmbeddingCache(index_dir / "embedding_cache")
 
-    print(f"  Embedding: {provider.model_name()} "
-          f"(dim={provider.dimension()})", file=sys.stderr)
+    start_time = time.time()
+    total_chunks = 0
 
-    # Perform writes under lock if available
-    _ctx = lock.write() if lock else nullcontext()
-    with _ctx:
-        # Open vector DB
-        db = _open_db(index_dir)
-        table = _get_or_create_table(db, provider.dimension())
+    if use_event_sourcing and event_log is not None:
+        # ── Event-sourced path: append events to log (no lock needed) ──
 
-        # Remove stale entries
-        if files_to_remove:
-            for fp in files_to_remove:
-                try:
-                    table.delete(f"file_path = '{_sanitize_filter_value(fp)}'")
-                except Exception:
-                    pass
+        # Emit chunk_remove events for removed/modified files
+        for fp in files_to_remove:
+            ev = create_chunk_remove_event(agent_id, session_id, fp)
+            event_log.append(ev)
 
-        # Remove entries for modified files (will be re-added)
         if not force_full:
             for fp in files_to_index:
-                try:
-                    table.delete(f"file_path = '{_sanitize_filter_value(fp)}'")
-                except Exception:
-                    pass
-        else:
-            # Full rebuild: drop and recreate
-            try:
-                db.drop_table(TABLE_NAME)
-            except Exception:
-                pass
-            table = _get_or_create_table(db, provider.dimension())
+                ev = create_chunk_remove_event(agent_id, session_id, fp)
+                event_log.append(ev)
 
-        # Chunk and embed files
-        total_chunks = 0
-        batch_size = config.get("batch_size", DEFAULT_BATCH_SIZE)
-        start_time = time.time()
-
-        pending_records: list[dict] = []
-        pending_texts: list[str] = []
-
+        # Chunk files and emit chunk_add events
         for i, rel_path in enumerate(files_to_index):
             fpath = root / rel_path
             content = read_file_safe(fpath)
             if not content:
                 continue
 
-            # Chunk the file
             ext = fpath.suffix.lower()
             if ext in {".md", ".txt", ".rst"}:
                 chunks = chunk_text_document(rel_path, content,
@@ -543,7 +539,7 @@ def cmd_index(args):
                                     max_chunk_size=config["chunk_size"])
 
             for chunk in chunks:
-                record = {
+                ev = create_chunk_add_event(agent_id, session_id, {
                     "content": chunk.content,
                     "file_path": chunk.file_path,
                     "chunk_type": chunk.chunk_type,
@@ -553,26 +549,113 @@ def cmd_index(args):
                     "language": chunk.language,
                     "file_role": chunk.file_role,
                     "content_hash": chunk.content_hash,
-                }
-                pending_records.append(record)
-                pending_texts.append(chunk.content)
+                })
+                event_log.append(ev)
                 total_chunks += 1
 
-            # Flush batch
-            if len(pending_texts) >= batch_size:
-                _flush_batch(table, provider, cache, pending_records,
-                             pending_texts)
-                pending_records = []
-                pending_texts = []
-
-            # Progress
             if (i + 1) % 50 == 0:
-                print(f"    Indexed {i + 1}/{len(files_to_index)} files...",
+                print(f"    Logged {i + 1}/{len(files_to_index)} files...",
                       file=sys.stderr, flush=True)
 
-        # Final flush
-        if pending_texts:
-            _flush_batch(table, provider, cache, pending_records, pending_texts)
+        # Update session events_appended counter if available
+        try:
+            from memory_protocol import SessionRegistry
+            if session_id:
+                registry = SessionRegistry(root)
+                session_obj = registry.get_session(session_id)
+                if session_obj:
+                    session_obj.events_appended += total_chunks
+                    registry.register(session_obj)
+        except ImportError:
+            pass
+
+    else:
+        # ── Direct path: write to LanceDB under lock ──
+
+        provider = create_provider(emb_config)
+        cache = EmbeddingCache(index_dir / "embedding_cache")
+
+        print(f"  Embedding: {provider.model_name()} "
+              f"(dim={provider.dimension()})", file=sys.stderr)
+
+        _ctx = lock.write() if lock else nullcontext()
+        with _ctx:
+            db = _open_db(index_dir)
+            table = _get_or_create_table(db, provider.dimension())
+
+            # Remove stale entries
+            if files_to_remove:
+                for fp in files_to_remove:
+                    try:
+                        table.delete(f"file_path = '{_sanitize_filter_value(fp)}'")
+                    except Exception:
+                        pass
+
+            # Remove entries for modified files (will be re-added)
+            if not force_full:
+                for fp in files_to_index:
+                    try:
+                        table.delete(f"file_path = '{_sanitize_filter_value(fp)}'")
+                    except Exception:
+                        pass
+            else:
+                # Full rebuild: drop and recreate
+                try:
+                    db.drop_table(TABLE_NAME)
+                except Exception:
+                    pass
+                table = _get_or_create_table(db, provider.dimension())
+
+            # Chunk and embed files
+            batch_size = config.get("batch_size", DEFAULT_BATCH_SIZE)
+            pending_records: list[dict] = []
+            pending_texts: list[str] = []
+
+            for i, rel_path in enumerate(files_to_index):
+                fpath = root / rel_path
+                content = read_file_safe(fpath)
+                if not content:
+                    continue
+
+                ext = fpath.suffix.lower()
+                if ext in {".md", ".txt", ".rst"}:
+                    chunks = chunk_text_document(rel_path, content,
+                                                 max_chunk_size=config["chunk_size"])
+                else:
+                    chunks = chunk_file(rel_path, content,
+                                        max_chunk_size=config["chunk_size"])
+
+                for chunk in chunks:
+                    record = {
+                        "content": chunk.content,
+                        "file_path": chunk.file_path,
+                        "chunk_type": chunk.chunk_type,
+                        "name": chunk.name,
+                        "start_line": chunk.start_line,
+                        "end_line": chunk.end_line,
+                        "language": chunk.language,
+                        "file_role": chunk.file_role,
+                        "content_hash": chunk.content_hash,
+                    }
+                    pending_records.append(record)
+                    pending_texts.append(chunk.content)
+                    total_chunks += 1
+
+                # Flush batch
+                if len(pending_texts) >= batch_size:
+                    _flush_batch(table, provider, cache, pending_records,
+                                 pending_texts)
+                    pending_records = []
+                    pending_texts = []
+
+                # Progress
+                if (i + 1) % 50 == 0:
+                    print(f"    Indexed {i + 1}/{len(files_to_index)} files...",
+                          file=sys.stderr, flush=True)
+
+            # Final flush
+            if pending_texts:
+                _flush_batch(table, provider, cache, pending_records, pending_texts)
 
     elapsed = time.time() - start_time
     save_manifest(index_dir, new_manifest)
@@ -610,10 +693,104 @@ def _save_meta(index_dir: Path, config: dict, file_count: int):
     path.write_text(json.dumps(meta, indent=2), encoding="utf-8")
 
 
+# ── Compact Command ──────────────────────────────────────────────────────────
+
+def cmd_compact(args):
+    """Merge pending events from the event log into the vector store.
+
+    Requires an exclusive lock during compaction.  Events are read from
+    all segment files, applied to LanceDB, and segments are marked as
+    compacted.
+    """
+    root = Path(args.root).resolve()
+    config = get_effective_config(root)
+    index_dir = root / config["index_path"]
+
+    # Check if event sourcing is available
+    try:
+        from memory_event_log import (
+            create_event_log, load_event_sourcing_config,
+            LanceDBEventBackend,
+        )
+    except ImportError:
+        print("Error: memory_event_log module not found.", file=sys.stderr)
+        sys.exit(1)
+
+    es_config = load_event_sourcing_config(root)
+    if not es_config.get("enabled"):
+        print("Event sourcing is not enabled. Enable it in project-config.json "
+              "under vector_memory.event_sourcing.enabled", file=sys.stderr)
+        sys.exit(1)
+
+    ok, msg = _check_deps()
+    if not ok:
+        print(f"Error: {msg}", file=sys.stderr)
+        sys.exit(2)
+
+    from embeddings import create_provider, EmbeddingCache
+
+    event_log = create_event_log(root)
+    status = event_log.status()
+
+    if status["total_events"] == 0:
+        print("No pending events to compact.", file=sys.stderr)
+        return
+
+    print(f"Compacting {status['total_events']} events from "
+          f"{status['active_segments']} segments...", file=sys.stderr)
+
+    # Acquire exclusive lock for compaction
+    lock = None
+    try:
+        from memory_lock import EventLock
+        agent_id = os.environ.get("CTDF_AGENT_ID", f"agent-{os.getpid()}")
+        session_id = os.environ.get("CTDF_SESSION_ID", "")
+        lock = EventLock(index_dir, agent_id=agent_id, session_id=session_id)
+    except ImportError:
+        pass
+
+    emb_config = {
+        "provider": config["embedding_provider"],
+        "model": config["embedding_model"],
+        "api_key_env": config["embedding_api_key_env"],
+    }
+    provider = create_provider(emb_config)
+    cache = EmbeddingCache(index_dir / "embedding_cache")
+
+    _ctx = lock.compact() if lock else nullcontext()
+    with _ctx:
+        db = _open_db(index_dir)
+        table = _get_or_create_table(db, provider.dimension())
+        backend = LanceDBEventBackend(db, table, provider, cache)
+        result = event_log.compact(target_backend=backend)
+
+    # Optionally GC old segments
+    if getattr(args, "gc", False):
+        gc_result = event_log.gc_segments(older_than=0)
+        result["gc"] = gc_result
+
+    if getattr(args, "json_output", False):
+        print(json.dumps(result, indent=2))
+    else:
+        print(f"  Events processed: {result.get('events_processed', 0)}",
+              file=sys.stderr)
+        print(f"  Segments processed: {result.get('segments_processed', 0)}",
+              file=sys.stderr)
+        by_type = result.get("by_type", {})
+        if by_type:
+            print(f"  By type: {by_type}", file=sys.stderr)
+        print(f"  Status: {result.get('status', 'unknown')}", file=sys.stderr)
+
+
 # ── Search Command ───────────────────────────────────────────────────────────
 
 def cmd_search(args):
-    """Semantic search over the vector index."""
+    """Semantic search over the vector index.
+
+    When event sourcing is enabled and ``auto_compact_on_search`` is true,
+    pending events are merged into the index before searching so that
+    results include recent writes from all agents.
+    """
     root = Path(args.root).resolve()
     _check_enabled_or_exit(root, json_output=getattr(args, "json_output", False))
     config = get_effective_config(root)
@@ -629,7 +806,7 @@ def cmd_search(args):
               file=sys.stderr)
         sys.exit(1)
 
-    from embeddings import create_provider
+    from embeddings import create_provider, EmbeddingCache
 
     query = args.query
     top_k = args.top_k
@@ -645,6 +822,41 @@ def cmd_search(args):
     }
     provider = create_provider(emb_config)
     query_embedding = provider.embed([query])[0]
+
+    # Auto-compact pending events before search if event sourcing is enabled
+    try:
+        from memory_event_log import (
+            is_event_sourcing_enabled, create_event_log,
+            load_event_sourcing_config, LanceDBEventBackend,
+        )
+        if is_event_sourcing_enabled(root):
+            es_config = load_event_sourcing_config(root)
+            if es_config.get("auto_compact_on_search", True):
+                event_log = create_event_log(root)
+                status = event_log.status()
+                if status["total_events"] > 0:
+                    # Compact under exclusive lock
+                    compact_lock = None
+                    try:
+                        from memory_lock import EventLock
+                        agent_id = os.environ.get("CTDF_AGENT_ID",
+                                                  f"agent-{os.getpid()}")
+                        compact_lock = EventLock(index_dir, agent_id=agent_id)
+                    except ImportError:
+                        pass
+
+                    cache = EmbeddingCache(index_dir / "embedding_cache")
+                    _compact_ctx = (compact_lock.compact()
+                                    if compact_lock else nullcontext())
+                    with _compact_ctx:
+                        db = _open_db(index_dir)
+                        table = _get_or_create_table(db, provider.dimension())
+                        backend = LanceDBEventBackend(
+                            db, table, provider, cache
+                        )
+                        event_log.compact(target_backend=backend)
+    except ImportError:
+        pass
 
     # Optional: use versioned read
     consistency_cfg = get_effective_consistency_config(root)
@@ -1697,6 +1909,8 @@ Examples:
   %(prog)s index --full             # Full rebuild
   %(prog)s search "authentication"  # Semantic search
   %(prog)s status                   # Index health check
+  %(prog)s compact                  # Merge pending events into index
+  %(prog)s compact --gc             # Compact and GC old segments
   %(prog)s gc                       # Garbage collection
   %(prog)s gc --deep                # Deep GC (clears embedding cache)
   %(prog)s agents                   # List agent sessions
@@ -1736,6 +1950,15 @@ Examples:
                       help="Show full chunk content instead of truncated")
     srch.add_argument("--version", type=int, default=None,
                       help="Query at a specific dataset version (point-in-time)")
+
+    # ── compact ──
+    cpt = sub.add_parser("compact",
+                         help="Merge pending events into the vector store")
+    cpt.add_argument("--root", default=".", help="Project root directory")
+    cpt.add_argument("--gc", action="store_true",
+                     help="Also GC compacted segments after merging")
+    cpt.add_argument("--json", dest="json_output", action="store_true",
+                     help="Output as JSON")
 
     # ── status ──
     stat = sub.add_parser("status", help="Show index health and statistics")
@@ -1830,6 +2053,8 @@ Examples:
         cmd_index(args)
     elif args.command == "search":
         cmd_search(args)
+    elif args.command == "compact":
+        cmd_compact(args)
     elif args.command == "status":
         cmd_status(args)
     elif args.command == "freshness-check":

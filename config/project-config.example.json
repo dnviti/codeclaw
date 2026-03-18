@@ -44,7 +44,13 @@
     "index_path": ".claude/memory/vectors",
     "batch_size": 64,
     "include_patterns": [],
-    "exclude_patterns": []
+    "exclude_patterns": [],
+    "event_sourcing": {
+      "enabled": false,
+      "compact_interval_seconds": 300,
+      "max_segment_size_mb": 10,
+      "auto_compact_on_search": true
+    }
   },
   "mcp_server": {
     "enabled": false,
