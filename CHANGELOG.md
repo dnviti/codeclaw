@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.5.2] - 2026-03-18
+
+### Added
+- opt-in vector memory MCP with seamless setup installation (VMEM-0029) (#105)
+
+### Fixed
+- migrate MCP server to FastMCP API and harden .gitignore entries
+- enable Ollama tool call offloading with 0-10 level control (OLLAM-0030)
+
+## [3.5.1] - 2026-03-18
+
+### Added
+- sync release-state to platform issue in platform-only mode (REL-0028) (#97)
+- add Ollama tool calling with full /api/chat loop (OLLAM-0027) (#90)
+- mandatory vector memory always-on (VMEM-0024) (#78)
+- configurable Ollama offloading level 0-10 (OLLAM-0023) (#79)
+- add memory config and social posting steps to setup wizard (SETUP-0026) (#83)
+
+### Fixed
+- NFKC Unicode normalization for exclude-pattern bypass hardening (RPAT-v3.5.1-3) (#94)
+- VMEM-0024 patch — refactor _Args, pin pip deps (RPAT-v3.5.1-2) (#86)
+- OLLAM-0023 patch — normalize scoring input, deduplicate level helper, harden exclude patterns, add api_base warning (RPAT-v3.5.1-1) (#87)
+- merge task branch into local develop on worktree removal (CTDF-0025) (#81)
+
 ## [3.5.0] - 2026-03-17
 
 ### Added
