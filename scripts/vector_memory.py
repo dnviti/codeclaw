@@ -1205,6 +1205,7 @@ def cmd_conflicts(args):
         print("=" * 70)
         for c in conflicts:
             status = "RESOLVED" if c.get("resolved") else "PENDING"
+            method = c.get("resolve_strategy", "manual")
             print(
                 f"  [{status}] {c.get('conflict_id', '?')}"
                 f"  field={c.get('field', '?')}"
@@ -1213,12 +1214,92 @@ def cmd_conflicts(args):
             print(
                 f"           agent_a={c.get('entry_a_agent', '?')}"
                 f"  agent_b={c.get('entry_b_agent', '?')}"
+                f"  method={method}"
             )
             print(
                 f"           detected={c.get('detected_iso', '?')}"
             )
         print()
-        print(f"  To resolve: vector_memory.py conflicts --resolve <conflict_id>")
+        print(f"  To resolve manually: vector_memory.py conflicts --resolve <conflict_id>")
+        print(f"  To auto-resolve:     vector_memory.py resolve-conflicts [--dry-run]")
+        print()
+
+
+# ── Resolve Conflicts (LLM Judge) ────────────────────────────────────────────
+
+def cmd_resolve_conflicts(args):
+    """Auto-resolve pending opinion conflicts via LLM-as-judge."""
+    root = Path(args.root).resolve()
+
+    try:
+        from conflict_judge import (
+            batch_resolve, load_auto_resolve_config,
+            DEFAULT_STRATEGY, DEFAULT_PROVIDER,
+            DEFAULT_CONFIDENCE_THRESHOLD, DEFAULT_MAX_PER_RUN,
+        )
+    except ImportError:
+        print(json.dumps({"error": "conflict_judge module not available"}))
+        sys.exit(1)
+
+    # Load config defaults, then override with CLI args
+    config = load_auto_resolve_config(root)
+    strategy = args.strategy or config.get("strategy", DEFAULT_STRATEGY)
+    provider = args.provider or config.get("provider", DEFAULT_PROVIDER)
+    model = args.model or config.get("model", "")
+    threshold = (
+        args.threshold if args.threshold > 0
+        else config.get("confidence_threshold", DEFAULT_CONFIDENCE_THRESHOLD)
+    )
+    max_per_run = (
+        args.max_per_run if args.max_per_run > 0
+        else config.get("max_auto_resolve_per_run", DEFAULT_MAX_PER_RUN)
+    )
+
+    result = batch_resolve(
+        root=root,
+        strategy=strategy,
+        provider=provider,
+        model=model,
+        confidence_threshold=threshold,
+        max_per_run=max_per_run,
+        dry_run=args.dry_run,
+    )
+
+    if args.json_output:
+        print(json.dumps(result, indent=2))
+    else:
+        if not result.get("success"):
+            print(f"Error: {result.get('error', 'unknown')}")
+            sys.exit(1)
+
+        mode = "DRY RUN" if args.dry_run else "LIVE"
+        print(f"\nConflict Auto-Resolution [{mode}]")
+        print("=" * 60)
+        print(f"  Strategy:         {strategy}")
+        print(f"  Provider:         {provider}")
+        print(f"  Total pending:    {result.get('total_pending', 0)}")
+        print(f"  Opinion pending:  {result.get('opinion_pending', 0)}")
+        print(f"  Processed:        {result.get('processed', 0)}")
+        print(f"  Resolved:         {result.get('resolved', 0)}")
+        print(f"  Skipped/Failed:   {result.get('skipped', 0)}")
+
+        results_list = result.get("results", [])
+        if results_list:
+            print()
+            for r in results_list:
+                cid = r.get("conflict_id", "?")
+                resolved = "YES" if r.get("resolved") else "NO"
+                verdict = r.get("verdict", {})
+                winner = verdict.get("winner", "?") if verdict else "?"
+                conf = verdict.get("confidence", 0) if verdict else 0
+                err = r.get("error", "")
+                print(f"  {cid}: resolved={resolved} winner={winner} "
+                      f"confidence={conf:.2f}")
+                if err:
+                    print(f"         error: {err}")
+
+        if not results_list:
+            print("\n  No opinion conflicts to process.")
         print()
 
 
@@ -1710,6 +1791,25 @@ Examples:
     cfl.add_argument("--json", dest="json_output", action="store_true",
                      help="Output as JSON")
 
+    # ── resolve-conflicts ──
+    rc = sub.add_parser("resolve-conflicts",
+                        help="Auto-resolve opinion conflicts via LLM judge")
+    rc.add_argument("--root", default=".", help="Project root directory")
+    rc.add_argument("--strategy", choices=["single-judge", "majority-vote",
+                                           "confidence-merge"],
+                    default=None, help="Resolution strategy (default: from config)")
+    rc.add_argument("--provider", choices=["ollama", "claude"],
+                    default=None, help="LLM provider (default: from config)")
+    rc.add_argument("--model", default="", help="Override LLM model name")
+    rc.add_argument("--threshold", type=float, default=0,
+                    help="Confidence threshold for confidence-merge strategy")
+    rc.add_argument("--max", dest="max_per_run", type=int, default=0,
+                    help="Max conflicts to process (default: from config)")
+    rc.add_argument("--dry-run", dest="dry_run", action="store_true",
+                    help="Evaluate but do not mark conflicts as resolved")
+    rc.add_argument("--json", dest="json_output", action="store_true",
+                    help="Output as JSON")
+
     # ── hook (internal) ──
     hk = sub.add_parser("hook", help="Internal: incremental update hook")
     hk.add_argument("file_path", help="Path to the changed file")
@@ -1744,6 +1844,8 @@ Examples:
         cmd_agents(args)
     elif args.command == "conflicts":
         cmd_conflicts(args)
+    elif args.command == "resolve-conflicts":
+        cmd_resolve_conflicts(args)
     elif args.command == "hook":
         hook_file_changed(args.file_path)
     elif args.command == "hook-batch":

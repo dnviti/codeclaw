@@ -23,7 +23,16 @@
     "gc_ttl_days": 30,
     "max_index_size_mb": 500,
     "conflict_strategy": "auto",
-    "enable_versioned_reads": false
+    "enable_versioned_reads": false,
+    "auto_resolve": {
+      "enabled": false,
+      "strategy": "single-judge",
+      "provider": "ollama",
+      "confidence_threshold": 0.8,
+      "num_votes": 3,
+      "max_auto_resolve_per_run": 10,
+      "model": ""
+    }
   },
   "vector_memory": {
     "enabled": false,
