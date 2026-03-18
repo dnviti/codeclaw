@@ -2,8 +2,12 @@
 """Cross-platform advisory locking for vector memory store writes.
 
 Provides a ``MemoryLock`` context manager that wraps file-based advisory
-locks around LanceDB write operations, ensuring single-writer / multi-reader
-semantics when multiple agents share the same vector store.
+locks around memory backend write operations, ensuring single-writer /
+multi-reader semantics when multiple agents share the same store.
+
+Supports per-backend lock files (``vector_store.lock``, ``sqlite_store.lock``,
+``rlm_store.lock``) so backends can be written to independently without
+blocking each other.
 
 Uses ``fcntl.flock`` on Unix and ``msvcrt.locking`` on Windows.
 
@@ -197,11 +201,13 @@ class MemoryLock:
         session_id: str = "",
         timeout: float = DEFAULT_TIMEOUT,
         lock_dir: Optional[str | Path] = None,
+        lock_name: str = "vector_store",
     ):
         self.store_path = Path(store_path).resolve()
         self.agent_id = agent_id or f"agent-{os.getpid()}"
         self.session_id = session_id or ""
         self.timeout = timeout
+        self.lock_name = lock_name
 
         # Determine lock directory
         if lock_dir:
@@ -211,7 +217,7 @@ class MemoryLock:
             self._lock_dir = self.store_path / ".locks"
 
         self._lock_dir.mkdir(parents=True, exist_ok=True)
-        self._lock_file = self._lock_dir / "vector_store.lock"
+        self._lock_file = self._lock_dir / f"{lock_name}.lock"
         self._fd: Optional[int] = None
 
     @contextmanager
@@ -381,3 +387,53 @@ def cleanup_stale_locks(store_path: str | Path, max_age_seconds: float = 3600.0)
                 except OSError:
                     pass
     return cleaned
+
+
+# ── Per-Backend Lock Factories ──────────────────────────────────────────────
+
+# Standard lock names for each memory backend
+BACKEND_LOCK_NAMES = {
+    "lancedb": "vector_store",
+    "sqlite": "sqlite_store",
+    "rlm": "rlm_store",
+}
+
+
+def create_backend_lock(
+    store_path: str | Path,
+    backend: str,
+    agent_id: str = "",
+    session_id: str = "",
+    timeout: float = DEFAULT_TIMEOUT,
+) -> MemoryLock:
+    """Create a MemoryLock scoped to a specific memory backend.
+
+    Each backend gets its own lock file so backends can be written to
+    independently without blocking each other.
+
+    Args:
+        store_path: Path to the memory store directory.
+        backend: Backend name ('lancedb', 'sqlite', 'rlm').
+        agent_id: Agent identifier for lock info.
+        session_id: Session identifier for lock info.
+        timeout: Lock acquisition timeout in seconds.
+
+    Returns:
+        MemoryLock instance with the appropriate per-backend lock file.
+
+    Raises:
+        ValueError: If backend name is not recognized.
+    """
+    lock_name = BACKEND_LOCK_NAMES.get(backend)
+    if lock_name is None:
+        raise ValueError(
+            f"Unknown backend {backend!r}. "
+            f"Supported: {', '.join(BACKEND_LOCK_NAMES.keys())}"
+        )
+    return MemoryLock(
+        store_path=store_path,
+        agent_id=agent_id,
+        session_id=session_id,
+        timeout=timeout,
+        lock_name=lock_name,
+    )

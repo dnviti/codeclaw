@@ -1,7 +1,8 @@
 """MCP tool handler: semantic_search.
 
-Performs semantic search over the vector index via
-``vector_memory.py search``.
+Routes semantic search through the memory orchestrator when available,
+falling back to direct ``vector_memory.py`` subprocess call for
+backwards compatibility.
 """
 
 import json
@@ -23,8 +24,15 @@ def register(server):
         type_filter: str = "",
         root: str = ".",
         backend: str = "",
+        strategy: str = "auto",
+        backends: str = "",
     ) -> str:
         """Find relevant code and context via semantic similarity.
+
+        Searches across one or more memory backends (LanceDB vector,
+        SQLite hybrid FTS5+vec, RLM recursive) using the unified
+        orchestrator. Results from multiple backends are merged via
+        Reciprocal Rank Fusion (RRF).
 
         Args:
             query: Natural-language search query.
@@ -32,12 +40,19 @@ def register(server):
             file_filter: Optional substring filter on file paths.
             type_filter: Optional chunk type filter (function, class, etc.).
             root: Project root directory.
-            backend: Storage backend to query ("lancedb" or "sqlite").
-                     Defaults to the configured backend in project-config.json.
+            backend: Legacy: single backend name ("lancedb" or "sqlite").
+                     Prefer using 'strategy' and 'backends' instead.
+            strategy: Routing strategy:
+                - "auto": classify query and route to best backend (default)
+                - "all": fan-out to all available backends, merge via RRF
+                - "specific": use only the named backend(s)
+            backends: Comma-separated list of backend names for
+                      strategy="specific" (e.g., "lancedb,sqlite").
 
         Returns:
             JSON array of search results with file_path, name, chunk_type,
-            score, and content fields.
+            score, and content fields. When multiple backends contribute,
+            results include rrf_score and sources fields.
         """
         # Validate root path
         resolved_root = Path(root).resolve()
@@ -47,6 +62,47 @@ def register(server):
                 "message": f"Root is not a directory: {root!r}",
             })
 
+        # Try orchestrator-based search first
+        try:
+            scripts_dir = str(_SCRIPT_DIR)
+            if scripts_dir not in sys.path:
+                sys.path.insert(0, scripts_dir)
+
+            from memory_orchestrator import MemoryOrchestrator
+
+            orch = MemoryOrchestrator(root=resolved_root)
+
+            # Resolve backend parameters
+            backend_list = None
+            effective_strategy = strategy
+
+            if backend and backend in ("lancedb", "sqlite", "rlm"):
+                # Legacy single-backend parameter
+                backend_list = [backend]
+                effective_strategy = "specific"
+            elif backends:
+                backend_list = [
+                    b.strip() for b in backends.split(",") if b.strip()
+                ]
+                if backend_list:
+                    effective_strategy = "specific"
+
+            results = orch.search(
+                query=query,
+                strategy=effective_strategy,
+                top_k=top_k,
+                file_filter=file_filter,
+                type_filter=type_filter,
+                backends=backend_list,
+            )
+            return json.dumps(results, indent=2)
+
+        except ImportError:
+            pass  # Orchestrator not available, fall back
+        except Exception:
+            pass  # Orchestrator error, fall back
+
+        # Fallback: direct vector_memory.py subprocess call
         vm_script = _SCRIPT_DIR / "vector_memory.py"
         if not vm_script.exists():
             return json.dumps({

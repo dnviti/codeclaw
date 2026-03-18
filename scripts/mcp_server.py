@@ -7,12 +7,15 @@ Protocol) server using the stdio transport.  Any MCP-compatible AI assistant
 
 Tools provided:
     index_repository   — trigger codebase indexing (full or incremental)
-    semantic_search    — find relevant code and context
+    semantic_search    — find relevant code and context (orchestrator-aware)
     store_memory       — persist agent learnings and discoveries
     get_task_context   — retrieve comprehensive task-specific context
+    list_backends      — list configured memory backends and availability
+    backend_health     — check health status of memory backends
 
 Resources provided:
     memory://status    — current index status and available namespaces
+    memory://backends  — available backends and their health status
 
 Requirements:
     pip install mcp
@@ -101,6 +104,26 @@ def _list_namespaces(root_path: Path) -> list[str]:
         return []
 
 
+def _build_backends_status(root: str) -> dict:
+    """Build a status dict describing available memory backends."""
+    root_path = Path(root).resolve()
+
+    try:
+        from memory_orchestrator import MemoryOrchestrator
+        orch = MemoryOrchestrator(root=root_path)
+        return orch.status()
+    except ImportError:
+        return {
+            "orchestrator_available": False,
+            "message": "memory_orchestrator.py not found. MORC-0040 must be installed.",
+        }
+    except Exception as e:
+        return {
+            "orchestrator_available": False,
+            "error": str(e),
+        }
+
+
 # ── Server Setup ─────────────────────────────────────────────────────────────
 
 def create_server(root: str = "."):
@@ -114,17 +137,24 @@ def create_server(root: str = "."):
 
     # ── Register tools ──
     from mcp_tools import index, search, store, task_context
+    from mcp_tools import backends as backends_tools
 
     index.register(server)
     search.register(server)
     store.register(server)
     task_context.register(server)
+    backends_tools.register(server)
 
     # ── Register resources ──
     @server.resource("memory://status")
     async def resource_status() -> str:
         """Current vector memory index status and available namespaces."""
         return json.dumps(_build_status(root), indent=2)
+
+    @server.resource("memory://backends")
+    async def resource_backends() -> str:
+        """Available memory backends and their health status."""
+        return json.dumps(_build_backends_status(root), indent=2)
 
     return server
 

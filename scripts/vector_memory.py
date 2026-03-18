@@ -1631,6 +1631,170 @@ def _cmd_gc_sqlite(args):
         print("  Done.", file=sys.stderr)
 
 
+# ── MemoryBackend Interface ─────────────────────────────────────────────────
+
+class LanceDBMemoryBackend:
+    """MemoryBackend interface implementation for LanceDB vector store.
+
+    Wraps the existing vector_memory.py functions into a polymorphic
+    interface compatible with the memory orchestrator. Implements the
+    same ``search()``, ``index()``, ``status()``, ``gc()``, and
+    ``health()`` methods as ``SQLiteMemoryBackend``.
+    """
+
+    def __init__(self, root: Path):
+        self.root = root
+
+    def search(self, query: str, top_k: int = 10,
+               file_filter: str = "", type_filter: str = "",
+               hybrid_weight: Optional[float] = None) -> list[dict]:
+        """Search the LanceDB vector index.
+
+        Args:
+            query: Natural-language search query.
+            top_k: Maximum number of results.
+            file_filter: Optional substring filter on file paths.
+            type_filter: Optional chunk type filter.
+            hybrid_weight: Unused (LanceDB is purely vector-based).
+
+        Returns:
+            List of result dicts.
+        """
+        config = get_effective_config(self.root)
+        index_dir = self.root / config["index_path"]
+
+        if not (index_dir / "lancedb").exists():
+            return []
+
+        try:
+            from embeddings import create_provider
+
+            emb_config = {
+                "provider": config["embedding_provider"],
+                "model": config["embedding_model"],
+                "api_key_env": config["embedding_api_key_env"],
+            }
+            provider = create_provider(emb_config)
+            query_embedding = provider.embed([query])[0]
+
+            db = _open_db(index_dir)
+            try:
+                table = db.open_table(TABLE_NAME)
+            except Exception:
+                return []
+
+            results = table.search(query_embedding).limit(top_k * 3)
+
+            if file_filter:
+                safe_filter = _sanitize_filter_value(file_filter)
+                results = results.where(f"file_path LIKE '%{safe_filter}%'")
+            if type_filter:
+                safe_type = _sanitize_filter_value(type_filter)
+                results = results.where(f"chunk_type = '{safe_type}'")
+
+            df = results.limit(top_k).to_pandas()
+
+            records = []
+            for _, row in df.iterrows():
+                records.append({
+                    "file_path": row.get("file_path", ""),
+                    "name": row.get("name", ""),
+                    "chunk_type": row.get("chunk_type", ""),
+                    "language": row.get("language", ""),
+                    "start_line": int(row.get("start_line", 0)),
+                    "end_line": int(row.get("end_line", 0)),
+                    "score": float(row.get("_distance", 0.0)),
+                    "content": row.get("content", ""),
+                    "content_hash": row.get("content_hash", ""),
+                    "backend": "lancedb",
+                })
+            return records
+        except Exception:
+            return []
+
+    def index(self, file_paths: list[str], root: Path, config: dict,
+              full: bool = False) -> dict:
+        """Index files into LanceDB via cmd_index."""
+        import subprocess
+        cmd = [
+            sys.executable, str(Path(__file__).resolve()),
+            "index", "--root", str(root),
+        ]
+        if full:
+            cmd.append("--full")
+        try:
+            result = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=600)
+            return {
+                "success": result.returncode == 0,
+                "output": result.stderr.strip(),
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def status(self) -> dict:
+        """Return LanceDB index health and statistics."""
+        config = get_effective_config(self.root)
+        index_dir = self.root / config["index_path"]
+
+        result = {
+            "backend": "lancedb",
+            "index_exists": (index_dir / "lancedb").exists(),
+        }
+
+        meta_path = index_dir / INDEX_META
+        if meta_path.exists():
+            try:
+                meta = json.loads(meta_path.read_text(encoding="utf-8"))
+                result["last_indexed"] = meta.get("last_indexed")
+                result["indexed_files"] = meta.get("file_count", 0)
+                result["embedding_model"] = meta.get("embedding_model")
+            except (json.JSONDecodeError, OSError):
+                pass
+
+        result["index_size_mb"] = round(_dir_size_mb(index_dir), 2)
+        return result
+
+    def health(self) -> dict:
+        """Return backend health check result."""
+        status = self.status()
+        return {
+            "backend": "lancedb",
+            "available": True,
+            "index_exists": status.get("index_exists", False),
+            "status": status,
+        }
+
+    def gc(self, ttl_days: int = 30, deep: bool = False) -> dict:
+        """Garbage collection via cmd_gc."""
+        import subprocess
+        cmd = [
+            sys.executable, str(Path(__file__).resolve()),
+            "gc", "--root", str(self.root),
+            "--ttl-days", str(ttl_days),
+        ]
+        if deep:
+            cmd.append("--deep")
+        try:
+            result = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=300)
+            return {"success": result.returncode == 0}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+
+def create_lancedb_backend(root: Path) -> LanceDBMemoryBackend:
+    """Factory: create a LanceDBMemoryBackend for the given project root.
+
+    Args:
+        root: Project root directory.
+
+    Returns:
+        Configured LanceDBMemoryBackend instance.
+    """
+    return LanceDBMemoryBackend(root)
+
+
 # ── CLI ──────────────────────────────────────────────────────────────────────
 
 def main():
