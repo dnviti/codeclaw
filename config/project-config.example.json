@@ -35,7 +35,11 @@
     "index_path": ".claude/memory/vectors",
     "batch_size": 64,
     "include_patterns": [],
-    "exclude_patterns": []
+    "exclude_patterns": [],
+    "gpu_acceleration": {
+      "mode": "auto",
+      "log_provider": true
+    }
   },
   "mcp_server": {
     "enabled": false,
