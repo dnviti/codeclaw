@@ -2,7 +2,7 @@
 title: MCP Vector Memory
 description: Semantic vector memory layer with MCP server integration — architecture, installation, configuration, and use cases
 generated-by: ctdf-docs
-generated-at: 2026-03-18T12:00:00Z
+generated-at: 2026-03-18T18:00:00Z
 source-files:
   - scripts/vector_memory.py
   - scripts/mcp_server.py
@@ -212,11 +212,13 @@ pip install lancedb onnxruntime tokenizers numpy pyarrow
 | `numpy` | Numerical operations for embedding vectors |
 | `pyarrow` | Apache Arrow support required by LanceDB |
 
-For the MCP server, also install:
+For the MCP server, install all required packages:
 
 ```bash
-pip install mcp
+pip install "mcp>=1.0" "lancedb>=0.5.0,<1.0" "sentence-transformers>=2.7.0,<3.0"
 ```
+
+Alternatively, enable vector memory MCP via the `/setup` skill for automatic installation.
 
 ### Step 2 — Verify Dependencies
 
@@ -284,8 +286,8 @@ All configuration lives in `project-config.json` (searched at `.claude/project-c
 ```json
 {
   "vector_memory": {
-    "enabled": true,
-    "auto_index": true,
+    "enabled": false,
+    "auto_index": false,
     "embedding_provider": "local",
     "embedding_model": "all-MiniLM-L6-v2",
     "embedding_api_key_env": "",
@@ -300,8 +302,8 @@ All configuration lives in `project-config.json` (searched at `.claude/project-c
 
 | Field | Default | Description |
 |-------|---------|-------------|
-| `enabled` | `true` | Enable/disable vector memory. **Always-on by default** — missing config = enabled |
-| `auto_index` | `true` | Incremental re-index on every file write via PostToolUse hook |
+| `enabled` | `false` | Enable/disable vector memory. **Opt-in** — enable via `/setup` or set to `true` manually |
+| `auto_index` | `false` | Incremental re-index on every file write via PostToolUse hook. Enable after initial setup |
 | `embedding_provider` | `"local"` | `"local"` (ONNX), `"openai"`, or `"voyage"` |
 | `embedding_model` | `"all-MiniLM-L6-v2"` | Model identifier (see [Embedding Providers](#embedding-providers)) |
 | `embedding_api_key_env` | `""` | Environment variable name containing the API key (for API providers) |
@@ -336,9 +338,9 @@ All configuration lives in `project-config.json` (searched at `.claude/project-c
 ```json
 {
   "mcp_server": {
-    "enabled": true,
+    "enabled": false,
     "transport": "stdio",
-    "auto_start": true
+    "auto_start": false
   }
 }
 ```
@@ -893,8 +895,14 @@ python3 vector_memory.py gc --deep --ttl-days 7
 
 ```
 Error: The 'mcp' Python package is not installed.
+Install all required packages with:
+  pip install "mcp>=1.0" "lancedb>=0.5.0,<1.0" "sentence-transformers>=2.7.0,<3.0"
+
+Or enable vector memory MCP via the /setup skill for automatic installation.
 ```
 
-**Fix:** `pip install mcp`
+**Fix:** `pip install "mcp>=1.0" "lancedb>=0.5.0,<1.0" "sentence-transformers>=2.7.0,<3.0"`
+
+Or use `/setup` for automatic installation.
 
 Verify with: `python3 <plugin-dir>/scripts/mcp_server.py --check`

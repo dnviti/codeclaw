@@ -1,10 +1,68 @@
 {
   "version": "1.0",
-  "generated_at": "2026-03-17T23:50:21.139572Z",
+  "generated_at": "2026-03-18T02:44:17.492070Z",
   "sections": [
     {
       "name": "index",
       "file": "index.md",
+      "source_files": [
+        {
+          "path": ".claude-plugin/plugin.json",
+          "hash": "76b8cb2dd02b4e12d21186e055e875be98dc1ff58d69d180d44ee71f4e00a1ca"
+        },
+        {
+          "path": "README.md",
+          "hash": "85386ecab5b931461b3f71ba22faec4042ff00f439a498f04e3a12ea9a505a88"
+        }
+      ],
+      "generated_at": "2026-03-18T02:44:17.490885Z"
+    },
+    {
+      "name": "architecture",
+      "file": "architecture.md",
+      "source_files": [
+        {
+          "path": "scripts/task_manager.py",
+          "hash": "1e11957d7698f6c37dcc66bc609f43d8187aa854e4aeaaf66c21c81a56e2673b"
+        },
+        {
+          "path": "scripts/release_manager.py",
+          "hash": "edc0735a456be479cd98056746f9a052dc5a723333d9b8cb2c0db82f759f1d96"
+        },
+        {
+          "path": "scripts/skill_helper.py",
+          "hash": "acc0f9d7721747f2c94245dcf44b4c9a1092745d7ddc7dd646d1dbe04ffb305f"
+        },
+        {
+          "path": "scripts/docs_manager.py",
+          "hash": "c8cbc0d6870389ee9b61637562821192e551b253789726ec47d6106adf4b0cb7"
+        },
+        {
+          "path": "scripts/vector_memory.py",
+          "hash": "464a53ba2887f420ddec302e67a040e54f8f478930de388e08fb33e4a6b58733"
+        },
+        {
+          "path": "scripts/mcp_server.py",
+          "hash": "851f8d7e39a4a2dc829b220ca35f9bbb21322d062874eebed8ed8a1a99946022"
+        },
+        {
+          "path": "scripts/memory_protocol.py",
+          "hash": "6b7029ba7b0286bc5a00ca8e8e28bae56ce8956e03f0915b7a77e6df03811951"
+        },
+        {
+          "path": "scripts/memory_lock.py",
+          "hash": "2a1f9e162e8060782786b695a6168da8141f275a456e5c2cfa51c175ffc4a143"
+        },
+        {
+          "path": "hooks/hooks.json",
+          "hash": "833e2f568883317dc5c15e18f8e9175aebe95de3aec39c118864997b428c316f"
+        }
+      ],
+      "generated_at": "2026-03-18T02:44:17.491276Z"
+    },
+    {
+      "name": "getting-started",
+      "file": "getting-started.md",
       "source_files": [
         {
           "path": "README.md",
@@ -12,52 +70,121 @@
         },
         {
           "path": ".claude-plugin/plugin.json",
-          "hash": "2e3e6488a28dc9a26df0240fa868cbdc600894b37ed5efcc5298d508adddcd5e"
+          "hash": "76b8cb2dd02b4e12d21186e055e875be98dc1ff58d69d180d44ee71f4e00a1ca"
+        },
+        {
+          "path": "CLAUDE.md",
+          "hash": ""
         }
       ],
-      "generated_at": "2026-03-17T23:50:21.138846Z"
-    },
-    {
-      "name": "architecture",
-      "file": "architecture.md",
-      "source_files": [],
-      "generated_at": "2026-03-17T23:50:21.138863Z"
-    },
-    {
-      "name": "getting-started",
-      "file": "getting-started.md",
-      "source_files": [],
-      "generated_at": "2026-03-17T23:50:21.138868Z"
+      "generated_at": "2026-03-18T02:44:17.491324Z"
     },
     {
       "name": "configuration",
       "file": "configuration.md",
-      "source_files": [],
-      "generated_at": "2026-03-17T23:50:21.138872Z"
+      "source_files": [
+        {
+          "path": "config/project-config.example.json",
+          "hash": "63f80268d3fa6c74397e90095484185e0bc16ee552b32f5319e8eb5450a1d679"
+        },
+        {
+          "path": "config/mcp-server.example.json",
+          "hash": "59432dd836b6df4cba886ea0d3a5c1323b10c2ef477b625b4d3648af50c45181"
+        },
+        {
+          "path": "hooks/hooks.json",
+          "hash": "833e2f568883317dc5c15e18f8e9175aebe95de3aec39c118864997b428c316f"
+        }
+      ],
+      "generated_at": "2026-03-18T02:44:17.491353Z"
     },
     {
       "name": "api-reference",
       "file": "api-reference.md",
-      "source_files": [],
-      "generated_at": "2026-03-17T23:50:21.138874Z"
+      "source_files": [
+        {
+          "path": "scripts/task_manager.py",
+          "hash": "1e11957d7698f6c37dcc66bc609f43d8187aa854e4aeaaf66c21c81a56e2673b"
+        },
+        {
+          "path": "scripts/release_manager.py",
+          "hash": "edc0735a456be479cd98056746f9a052dc5a723333d9b8cb2c0db82f759f1d96"
+        },
+        {
+          "path": "scripts/skill_helper.py",
+          "hash": "acc0f9d7721747f2c94245dcf44b4c9a1092745d7ddc7dd646d1dbe04ffb305f"
+        },
+        {
+          "path": "scripts/docs_manager.py",
+          "hash": "c8cbc0d6870389ee9b61637562821192e551b253789726ec47d6106adf4b0cb7"
+        },
+        {
+          "path": "scripts/vector_memory.py",
+          "hash": "464a53ba2887f420ddec302e67a040e54f8f478930de388e08fb33e4a6b58733"
+        },
+        {
+          "path": "scripts/mcp_server.py",
+          "hash": "851f8d7e39a4a2dc829b220ca35f9bbb21322d062874eebed8ed8a1a99946022"
+        }
+      ],
+      "generated_at": "2026-03-18T02:44:17.491564Z"
     },
     {
       "name": "deployment",
       "file": "deployment.md",
-      "source_files": [],
-      "generated_at": "2026-03-17T23:50:21.138877Z"
+      "source_files": [
+        {
+          "path": ".github/workflows/ci.yml",
+          "hash": "f42340e78e6c1f68041cb60590ee2919dd6ba43f550ee76f61ffb507773b0e48"
+        },
+        {
+          "path": ".github/workflows/release.yml",
+          "hash": "e3295c0ae49440f2db9e173872560f7c6660491ff5311ea90acaaae6f56dd92b"
+        },
+        {
+          "path": "README.md",
+          "hash": "85386ecab5b931461b3f71ba22faec4042ff00f439a498f04e3a12ea9a505a88"
+        }
+      ],
+      "generated_at": "2026-03-18T02:44:17.491607Z"
     },
     {
       "name": "development",
       "file": "development.md",
-      "source_files": [],
-      "generated_at": "2026-03-17T23:50:21.138880Z"
+      "source_files": [
+        {
+          "path": "CLAUDE.md",
+          "hash": ""
+        },
+        {
+          "path": "README.md",
+          "hash": "85386ecab5b931461b3f71ba22faec4042ff00f439a498f04e3a12ea9a505a88"
+        },
+        {
+          "path": ".claude-plugin/plugin.json",
+          "hash": "76b8cb2dd02b4e12d21186e055e875be98dc1ff58d69d180d44ee71f4e00a1ca"
+        }
+      ],
+      "generated_at": "2026-03-18T02:44:17.491648Z"
     },
     {
       "name": "troubleshooting",
       "file": "troubleshooting.md",
-      "source_files": [],
-      "generated_at": "2026-03-17T23:50:21.138882Z"
+      "source_files": [
+        {
+          "path": "scripts/deps_check.py",
+          "hash": "c326b253c04b7538127c7acb81ee6a66faea5bd486badc78a38f98d8e8a25632"
+        },
+        {
+          "path": "scripts/vector_memory.py",
+          "hash": "464a53ba2887f420ddec302e67a040e54f8f478930de388e08fb33e4a6b58733"
+        },
+        {
+          "path": "scripts/mcp_server.py",
+          "hash": "851f8d7e39a4a2dc829b220ca35f9bbb21322d062874eebed8ed8a1a99946022"
+        }
+      ],
+      "generated_at": "2026-03-18T02:44:17.491709Z"
     },
     {
       "name": "mcp-vector-memory",
@@ -69,7 +196,7 @@
         },
         {
           "path": "scripts/mcp_server.py",
-          "hash": "5646ccf724b18c4db3fcd80fa18458173fa7e0f10cdd7032b51a7cda59f11a62"
+          "hash": "851f8d7e39a4a2dc829b220ca35f9bbb21322d062874eebed8ed8a1a99946022"
         },
         {
           "path": "scripts/mcp_tools/index.py",
@@ -125,24 +252,45 @@
         },
         {
           "path": "config/project-config.example.json",
-          "hash": "72f19f36e1c038ed422bbdee635cdcdc852990c2726f2f72af2396d42a73b875"
+          "hash": "63f80268d3fa6c74397e90095484185e0bc16ee552b32f5319e8eb5450a1d679"
         },
         {
           "path": "config/mcp-server.example.json",
-          "hash": "cb5f85c73188db0368ddeaf94900e27039bacd41b9563b5b797e88d660371b54"
+          "hash": "59432dd836b6df4cba886ea0d3a5c1323b10c2ef477b625b4d3648af50c45181"
         },
         {
           "path": "hooks/hooks.json",
           "hash": "833e2f568883317dc5c15e18f8e9175aebe95de3aec39c118864997b428c316f"
         }
       ],
-      "generated_at": "2026-03-17T23:50:21.139559Z"
+      "generated_at": "2026-03-18T02:44:17.491938Z"
     },
     {
       "name": "llm-context",
       "file": "llm-context.md",
-      "source_files": [],
-      "generated_at": "2026-03-17T23:50:21.139565Z"
+      "source_files": [
+        {
+          "path": "README.md",
+          "hash": "85386ecab5b931461b3f71ba22faec4042ff00f439a498f04e3a12ea9a505a88"
+        },
+        {
+          "path": "CLAUDE.md",
+          "hash": ""
+        },
+        {
+          "path": "scripts/task_manager.py",
+          "hash": "1e11957d7698f6c37dcc66bc609f43d8187aa854e4aeaaf66c21c81a56e2673b"
+        },
+        {
+          "path": "scripts/release_manager.py",
+          "hash": "edc0735a456be479cd98056746f9a052dc5a723333d9b8cb2c0db82f759f1d96"
+        },
+        {
+          "path": "config/project-config.example.json",
+          "hash": "63f80268d3fa6c74397e90095484185e0bc16ee552b32f5319e8eb5450a1d679"
+        }
+      ],
+      "generated_at": "2026-03-18T02:44:17.492069Z"
     }
   ]
 }

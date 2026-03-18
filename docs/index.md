@@ -2,7 +2,7 @@
 title: CTDF Documentation
 description: Complete technical documentation for the Claude Task Development Framework
 generated-by: ctdf-docs
-generated-at: 2026-03-18T00:00:00Z
+generated-at: 2026-03-18T18:00:00Z
 source-files:
   - README.md
   - .claude-plugin/plugin.json
@@ -11,7 +11,7 @@ source-files:
 
 # CTDF — Claude Task Development Framework
 
-A project-agnostic task and idea management plugin for [Claude Code](https://docs.anthropic.com/en/docs/claude-code). CTDF gives your AI-assisted development workflow a structured backbone: ideas are captured, evaluated, promoted to tasks, implemented with quality gates, and tracked to completion — all through plain-text files and Claude Code slash commands.
+A project-agnostic task and release management framework with 8 streamlined skills: `/task`, `/idea`, `/release`, `/docs`, `/setup`, `/update`, `/tests`, `/help`. Features a gated release pipeline with automatic subagent orchestration — all through plain-text files and slash commands.
 
 ## Table of Contents
 
@@ -51,9 +51,23 @@ A project-agnostic task and idea management plugin for [Claude Code](https://doc
 | Host | Claude Code CLI |
 | Version Control | Git (worktrees, branches, tags) |
 | Platform | GitHub Actions / GitLab CI/CD |
-| AI Providers | Claude, Ollama (local), OpenAI |
+| AI Providers | Claude, OpenAI Codex, OpenClaw |
+| MCP Server | Vector memory semantic search (stdio transport) |
 | Data Format | Plain-text files (`.txt`) + JSON configs |
 | Vector Memory | LanceDB + sentence-transformers (optional) |
+
+## Supported Platforms
+
+| Platform | Status |
+|----------|--------|
+| Claude Code | Supported |
+| OpenCode | Supported |
+| OpenClaw | Supported |
+| Cursor | Supported |
+| Windsurf | Supported |
+| Continue.dev | Supported |
+| GitHub Copilot | Supported |
+| Aider | Supported |
 
 ## Skills Overview
 
@@ -87,7 +101,7 @@ A project-agnostic task and idea management plugin for [Claude Code](https://doc
 
 ## Version
 
-Current plugin version: **3.5.1**
+Current plugin version: **3.5.2**
 
 Repository: [github.com/dnviti/claude-task-development-framework](https://github.com/dnviti/claude-task-development-framework)
 
