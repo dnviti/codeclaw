@@ -1,19 +1,19 @@
-# Continue.dev MCP integration for CTDF Vector Memory.
+# Continue.dev MCP integration for CodeClaw Vector Memory.
 #
 # Add this section to your .continue/config.yaml file.
-# Replace ${CTDF_SCRIPTS} with the actual path to the CTDF scripts/ directory.
+# Replace ${CLAW_SCRIPTS} with the actual path to the CodeClaw scripts/ directory.
 #
 # Docs: https://docs.continue.dev/customize/model-context-protocol
 
 experimental:
   modelContextProtocolServers:
-    - name: ctdf-vector-memory
+    - name: claw-vector-memory
       transport:
         type: stdio
         command: python3
         args:
-          - "${CTDF_SCRIPTS}/mcp_server.py"
+          - "${CLAW_SCRIPTS}/mcp_server.py"
           - "--root"
           - "."
       env:
-        CTDF_PROJECT_ROOT: "."
+        CLAW_PROJECT_ROOT: "."

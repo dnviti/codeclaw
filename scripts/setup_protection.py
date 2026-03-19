@@ -207,7 +207,7 @@ def main() -> None:
     data, config_path = load_config(root)
 
     if not config_path:
-        print("ERROR: No config file found. Copy the issues-tracker.example.json from the CTDF plugin config directory "
+        print("ERROR: No config file found. Copy the issues-tracker.example.json from the CodeClaw plugin config directory "
               "to .claude/issues-tracker.json and configure it.")
         sys.exit(1)
 

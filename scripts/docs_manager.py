@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Documentation manager CLI for CTDF.
+"""Documentation manager CLI for CodeClaw.
 
 Provides deterministic operations for documentation lifecycle:
 discover codebase structure, track staleness via manifest hashes,
@@ -58,6 +58,8 @@ def get_main_repo_root() -> Path:
 
 DOCS_DIR_NAME = "docs"
 MANIFEST_NAME = ".docs-manifest.json"
+VISUAL_RICHNESS_LEVELS = ("zero", "tiny", "moderate", "large")
+VISUAL_RICHNESS_DEFAULT = "tiny"
 
 # Standard documentation sections
 SECTIONS = [
@@ -302,15 +304,25 @@ def cmd_init_manifest(args):
                 .replace("+00:00", "Z"),
         })
 
+    # Visual richness tier
+    vr = getattr(args, "visual_richness", None)
+    if vr is None or vr not in VISUAL_RICHNESS_LEVELS:
+        vr = VISUAL_RICHNESS_DEFAULT
+
     manifest = {
         "version": "1.0",
         "generated_at": datetime.now(timezone.utc).isoformat()
             .replace("+00:00", "Z"),
+        "visual_richness": vr,
         "sections": manifest_sections,
     }
 
     _write_manifest(root, manifest)
-    print(json.dumps({"success": True, "sections_count": len(manifest_sections)}))
+    print(json.dumps({
+        "success": True,
+        "sections_count": len(manifest_sections),
+        "visual_richness": vr,
+    }))
 
 
 # ── Subcommand: clean ──────────────────────────────────────────────────────
@@ -353,6 +365,31 @@ def cmd_clean(args):
         "deleted": deleted,
         "count": len(deleted),
     }, indent=2))
+
+
+# ── Subcommand: get-visual-richness ────────────────────────────────────────
+
+def cmd_get_visual_richness(args):
+    """Return the visual richness tier stored in the docs manifest."""
+    root = get_main_repo_root()
+    manifest = _read_manifest(root)
+
+    if not manifest:
+        print(json.dumps({
+            "visual_richness": VISUAL_RICHNESS_DEFAULT,
+            "source": "default",
+            "message": "No manifest found. Using default tier.",
+        }))
+        return
+
+    vr = manifest.get("visual_richness", VISUAL_RICHNESS_DEFAULT)
+    if vr not in VISUAL_RICHNESS_LEVELS:
+        vr = VISUAL_RICHNESS_DEFAULT
+
+    print(json.dumps({
+        "visual_richness": vr,
+        "source": "manifest",
+    }))
 
 
 # ── Subcommand: detect-site-generator ──────────────────────────────────────
@@ -470,7 +507,7 @@ def cmd_diff_since_tag(args):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="CTDF Documentation Manager",
+        description="CodeClaw Documentation Manager",
     )
     sub = parser.add_subparsers(dest="command")
 
@@ -489,9 +526,16 @@ def main():
                        help="Create/update .docs-manifest.json")
     p.add_argument("--sections-json", required=True,
                    help="JSON array of section data")
+    p.add_argument("--visual-richness", default=VISUAL_RICHNESS_DEFAULT,
+                   choices=VISUAL_RICHNESS_LEVELS,
+                   help="Visual richness tier (default: tiny)")
 
     # clean
     sub.add_parser("clean", help="Remove all generated doc files")
+
+    # get-visual-richness
+    sub.add_parser("get-visual-richness",
+                   help="Return the visual richness tier from manifest")
 
     # detect-site-generator
     sub.add_parser("detect-site-generator",
@@ -513,6 +557,7 @@ def main():
         "list-sections": cmd_list_sections,
         "init-manifest": cmd_init_manifest,
         "clean": cmd_clean,
+        "get-visual-richness": cmd_get_visual_richness,
         "detect-site-generator": cmd_detect_site_generator,
         "diff-since-tag": cmd_diff_since_tag,
     }

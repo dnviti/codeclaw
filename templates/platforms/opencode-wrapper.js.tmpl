@@ -1,5 +1,5 @@
 /**
- * OpenCode plugin wrapper for CTDF skill: {{SKILL_NAME}}
+ * OpenCode plugin wrapper for CodeClaw skill: {{SKILL_NAME}}
  *
  * {{SKILL_DESCRIPTION}}
  *
@@ -16,11 +16,11 @@ const SKILL_NAME = "{{SKILL_NAME}}";
 const PROJECT_ROOT = path.resolve(__dirname, "..", "..");
 
 module.exports = {
-  name: `ctdf-${SKILL_NAME}`,
+  name: `claw-${SKILL_NAME}`,
   description: `{{SKILL_DESCRIPTION}}`.replace(/[^\x20-\x7E]/g, ""),
 
   /**
-   * Execute the CTDF skill by delegating to skill_helper.py.
+   * Execute the CodeClaw skill by delegating to skill_helper.py.
    *
    * @param {object} context - OpenCode execution context
    * @param {string} context.args - User-provided arguments

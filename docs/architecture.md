@@ -1,7 +1,7 @@
 ---
 title: Architecture
 description: System architecture, component interactions, data flow, and design decisions
-generated-by: ctdf-docs
+generated-by: claw-docs
 generated-at: 2026-03-18T00:00:00Z
 source-files:
   - scripts/task_manager.py
@@ -31,11 +31,11 @@ source-files:
 
 ## Overview
 
-CTDF (Claude Task Development Framework) is a project-agnostic plugin for Claude Code that provides structured task management, idea evaluation, gated release pipelines, documentation generation, and automated CI/CD via agentic fleet pipelines. It is built entirely in Python 3 using only the standard library (zero external dependencies for core functionality; optional packages for vector memory and MCP).
+CodeClaw is a project-agnostic plugin for Claude Code that provides structured task management, idea evaluation, gated release pipelines, documentation generation, and automated CI/CD via agentic fleet pipelines. It is built entirely in Python 3 using only the standard library (zero external dependencies for core functionality; optional packages for vector memory and MCP).
 
 ## Why This Architecture
 
-CTDF is designed to be a **zero-dependency, cross-platform plugin** that works with any language, framework, or tech stack. The architecture separates concerns into three layers:
+CodeClaw is designed to be a **zero-dependency, cross-platform plugin** that works with any language, framework, or tech stack. The architecture separates concerns into three layers:
 
 1. **Skills** (natural language interface) — Claude Code slash commands that define the AI's behavior
 2. **Scripts** (deterministic logic) — Python CLIs that handle file I/O, parsing, and state management
@@ -157,7 +157,7 @@ Manages the release lifecycle including version detection, changelog generation,
 - Parse conventional commits and classify them into changelog categories
 - Calculate semantic version bumps (major/minor/patch)
 - Generate changelogs in Keep a Changelog format
-- Persist release state across pipeline stages — stored locally as `.claude/release-state.json` in local/dual mode, or as a `ctdf-release-state` GitHub/GitLab issue in platform-only mode (shared across all collaborators)
+- Persist release state across pipeline stages — stored locally as `.claude/release-state.json` in local/dual mode, or as a `claw-release-state` GitHub/GitLab issue in platform-only mode (shared across all collaborators)
 - Discover and bump version fields in all manifest files
 - Platform milestone management (close with verification)
 
@@ -234,7 +234,7 @@ Multi-provider agent runner for automated CI/CD pipelines.
 - Abstract provider-specific CLI details (Claude, OpenAI, Ollama)
 - Build pipeline-specific prompts with platform placeholders
 - Manage provider configuration with layered precedence (CLI > env > config > defaults)
-- Install provider CLIs and set up the CTDF plugin
+- Install provider CLIs and set up the CodeClaw plugin
 - Support three pipelines: task implementation, idea scouting, documentation sync
 
 ### test_manager.py
@@ -344,7 +344,7 @@ stateDiagram-v2
     [*] --> Platform: platform-only mode
 
     Local: .claude/release-state.json
-    Platform: GitHub/GitLab issue (label: ctdf-release-state)
+    Platform: GitHub/GitLab issue (label: claw-release-state)
 
     Local --> Shared: git commit & push
     Platform --> Shared: All collaborators read via gh/glab
@@ -381,9 +381,9 @@ flowchart LR
 
 ## Plugin System
 
-CTDF integrates with Claude Code via the plugin system:
+CodeClaw integrates with Claude Code via the plugin system:
 
-- **`plugin.json`** — Declares the plugin name (`ctdf`), version (`3.5.1`), and skills directory
+- **`plugin.json`** — Declares the plugin name (`claw`), version (`3.5.1`), and skills directory
 - **`marketplace.json`** — Marketplace listing for discovery and installation
 - **`hooks.json`** — Registers:
   - `PreToolUse` on `Bash|Read|Grep|Glob|Edit|Write` → `pre_tool_offload.py` (Ollama routing)

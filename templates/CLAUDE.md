@@ -36,9 +36,9 @@ GITHUB_REPO_URL=""                       # HTTPS repo URL
 
 # Social Announcements (optional)
 # Configure in project-config.json under "social_announce".
-# Credentials via env vars: CTDF_BLUESKY_HANDLE, CTDF_BLUESKY_APP_PASSWORD,
-# CTDF_MASTODON_INSTANCE, CTDF_MASTODON_TOKEN, CTDF_DISCORD_WEBHOOK,
-# CTDF_SLACK_WEBHOOK. Never store credentials in config files.
+# Credentials via env vars: CLAW_BLUESKY_HANDLE, CLAW_BLUESKY_APP_PASSWORD,
+# CLAW_MASTODON_INSTANCE, CLAW_MASTODON_TOKEN, CLAW_DISCORD_WEBHOOK,
+# CLAW_SLACK_WEBHOOK. Never store credentials in config files.
 
 # Common commands:
 # [install command]
@@ -71,7 +71,7 @@ When offloading is enabled, Claude Code acts as an orchestrator and automaticall
 
 ## Architecture
 
-<!-- CTDF:START -->
+<!-- CodeClaw:START -->
 ## Key Patterns
 
 ### Task Files
@@ -136,7 +136,7 @@ This framework supports **Windows, macOS, and Linux** with automatic OS detectio
 
 ### Python Command Auto-Detection
 
-All scripts and skills reference `python3`. On Windows where only `python` is available, CTDF auto-detects the correct command:
+All scripts and skills reference `python3`. On Windows where only `python` is available, CodeClaw auto-detects the correct command:
 
 - **Auto-detection:** `platform_utils.detect_python_cmd()` tries `python3` first, then `python`, verifying each is Python 3.x via `shutil.which()`.
 - **Manual override:** Set `python_command` in `config/project-config.json` to skip auto-detection (e.g., `"python_command": "python"`).
@@ -154,7 +154,7 @@ All scripts and skills reference `python3`. On Windows where only `python` is av
 
 - **PowerShell Core (pwsh):** Required for shell-expansion features (e.g., inline file reading in agent invocations). Install from https://github.com/PowerShell/PowerShell. The legacy `cmd.exe` has limited support — commands that rely on inline expansion will fall back to direct Python file reading.
 - **Long path support:** Enable long paths in the Windows registry or via Group Policy if your project has deeply nested directories. Run: `New-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem" -Name "LongPathsEnabled" -Value 1 -PropertyType DWORD -Force`
-- **Line endings:** Configure Git to handle line endings automatically: `git config --global core.autocrlf true`. CTDF text files use LF; Git will convert on checkout/commit.
+- **Line endings:** Configure Git to handle line endings automatically: `git config --global core.autocrlf true`. CodeClaw text files use LF; Git will convert on checkout/commit.
 - **Symlink permissions:** If your project uses symlinks, enable Developer Mode in Windows Settings or grant `SeCreateSymbolicLinkPrivilege` to your user account.
 
 ### Troubleshooting (Windows)
@@ -162,14 +162,14 @@ All scripts and skills reference `python3`. On Windows where only `python` is av
 | Issue | Solution |
 |-------|----------|
 | `python3` not found | Install Python 3 from python.org and ensure "Add to PATH" is checked. Or set `python_command` in project config. |
-| `cp -r` fails | All CTDF scripts use `shutil.copytree()` instead. If you see this error, update to the latest CTDF version. |
-| `$(cat file)` fails in cmd.exe | CTDF uses direct file reading in Python. For manual commands, use PowerShell: `$(Get-Content -Raw file)` |
+| `cp -r` fails | All CodeClaw scripts use `shutil.copytree()` instead. If you see this error, update to the latest CodeClaw version. |
+| `$(cat file)` fails in cmd.exe | CodeClaw uses direct file reading in Python. For manual commands, use PowerShell: `$(Get-Content -Raw file)` |
 | Port check fails | Ensure `netstat` is available (built into Windows). Run as Administrator if needed. |
 | Permission denied on kill | Run the terminal as Administrator for `taskkill` operations. |
 
 ### Vector Memory (opt-in)
 
-CTDF includes an optional vector memory layer that indexes source code, tasks, and generated documents for semantic search. It is **disabled by default** and requires optional dependencies.
+CodeClaw includes an optional vector memory layer that indexes source code, tasks, and generated documents for semantic search. It is **disabled by default** and requires optional dependencies.
 
 | Component | Purpose |
 |-----------|---------|
@@ -192,7 +192,7 @@ CTDF includes an optional vector memory layer that indexes source code, tasks, a
 - `index_path`: Index storage path (default: `".claude/memory/vectors"`)
 
 Vectors are stored in `.claude/memory/vectors/` (auto-added to `.gitignore`).
-<!-- CTDF:END -->
+<!-- CodeClaw:END -->
 
 ### File Naming Conventions
 

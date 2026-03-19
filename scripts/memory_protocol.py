@@ -2,7 +2,7 @@
 """Multi-agent memory consistency protocol for shared vector stores.
 
 Provides agent registration, entry tagging with agent metadata, conflict
-detection and resolution, and versioned reads for the CTDF vector memory
+detection and resolution, and versioned reads for the CodeClaw vector memory
 layer. Designed to coordinate multiple concurrent agents spawned by
 ``/task pick all``, ``/release`` stage 4, or agentic fleet CI pipelines.
 
@@ -541,11 +541,11 @@ class MemoryProtocol:
         self.registry.register(session)
 
         # Set environment variables for child processes
-        os.environ["CTDF_AGENT_ID"] = safe_agent_id
-        os.environ["CTDF_SESSION_ID"] = session.session_id
-        os.environ["CTDF_AGENT_TYPE"] = safe_agent_type
+        os.environ["CLAW_AGENT_ID"] = safe_agent_id
+        os.environ["CLAW_SESSION_ID"] = session.session_id
+        os.environ["CLAW_AGENT_TYPE"] = safe_agent_type
         if safe_task_code:
-            os.environ["CTDF_TASK_CODE"] = safe_task_code
+            os.environ["CLAW_TASK_CODE"] = safe_task_code
 
         return session
 
@@ -553,8 +553,8 @@ class MemoryProtocol:
         """Deregister an agent session."""
         self.registry.deregister(session_id)
         # Clean up environment variables
-        for var in ("CTDF_AGENT_ID", "CTDF_SESSION_ID",
-                    "CTDF_AGENT_TYPE", "CTDF_TASK_CODE"):
+        for var in ("CLAW_AGENT_ID", "CLAW_SESSION_ID",
+                    "CLAW_AGENT_TYPE", "CLAW_TASK_CODE"):
             os.environ.pop(var, None)
 
     def tag_and_check(
@@ -573,13 +573,13 @@ class MemoryProtocol:
         """
         # Auto-detect from environment if not provided
         if not agent_id:
-            agent_id = os.environ.get("CTDF_AGENT_ID", f"agent-{os.getpid()}")
+            agent_id = os.environ.get("CLAW_AGENT_ID", f"agent-{os.getpid()}")
         if not session_id:
-            session_id = os.environ.get("CTDF_SESSION_ID", "")
+            session_id = os.environ.get("CLAW_SESSION_ID", "")
         if not agent_type:
-            agent_type = os.environ.get("CTDF_AGENT_TYPE", "task")
+            agent_type = os.environ.get("CLAW_AGENT_TYPE", "task")
         if not task_code:
-            task_code = os.environ.get("CTDF_TASK_CODE", "")
+            task_code = os.environ.get("CLAW_TASK_CODE", "")
 
         tagged = tag_entry(
             entry, agent_id, agent_type, task_code, session_id, category

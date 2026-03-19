@@ -7,7 +7,7 @@ argument-hint: "[project name] [env [section]] [init [purpose]] [branch-strategy
 
 # Project Setup
 
-You are a setup assistant for the CTDF plugin. Your job is to initialize, configure, and scaffold projects so that all other CTDF skills work correctly.
+You are a setup assistant for the CodeClaw plugin. Your job is to initialize, configure, and scaffold projects so that all other CodeClaw skills work correctly.
 
 Always respond and work in English.
 
@@ -362,14 +362,14 @@ Use `AskUserQuestion`:
    ```json
    {
      "mcpServers": {
-       "ctdf-vector-memory": {
+       "claw-vector-memory": {
          "command": "python3",
          "args": [
-           "<RESOLVED_PATH_TO_CTDF_SCRIPTS>/mcp_server.py",
+           "<RESOLVED_PATH_TO_CLAW_SCRIPTS>/mcp_server.py",
            "--root", "<RESOLVED_PROJECT_ROOT>"
          ],
          "env": {
-           "CTDF_PROJECT_ROOT": "<RESOLVED_PROJECT_ROOT>"
+           "CLAW_PROJECT_ROOT": "<RESOLVED_PROJECT_ROOT>"
          }
        }
      }
@@ -377,7 +377,7 @@ Use `AskUserQuestion`:
    ```
 
    Where:
-   - `<RESOLVED_PATH_TO_CTDF_SCRIPTS>` = the absolute path to the CTDF `scripts/` directory (resolve `${CLAUDE_PLUGIN_ROOT}/scripts`)
+   - `<RESOLVED_PATH_TO_CLAW_SCRIPTS>` = the absolute path to the CodeClaw `scripts/` directory (resolve `${CLAUDE_PLUGIN_ROOT}/scripts`)
    - `<RESOLVED_PROJECT_ROOT>` = the absolute path to the current project root (resolve `.`)
 
 4. **Build initial vector index:**
@@ -471,12 +471,12 @@ STOP.
 
    Ask for the required credentials **one platform at a time**:
 
-   - **Bluesky:** "Enter the env var name for your Bluesky handle (e.g. `CTDF_BLUESKY_HANDLE`):" and "Enter the env var name for your Bluesky app password (e.g. `CTDF_BLUESKY_APP_PASSWORD`):"
-   - **Mastodon:** "Enter the env var name for your Mastodon instance URL (e.g. `CTDF_MASTODON_INSTANCE`):" and "Enter the env var name for your Mastodon access token (e.g. `CTDF_MASTODON_ACCESS_TOKEN`):"
-   - **Discord:** "Enter the env var name for your Discord webhook URL (e.g. `CTDF_DISCORD_WEBHOOK`):"
-   - **Slack:** "Enter the env var name for your Slack webhook URL (e.g. `CTDF_SLACK_WEBHOOK`):"
+   - **Bluesky:** "Enter the env var name for your Bluesky handle (e.g. `CLAW_BLUESKY_HANDLE`):" and "Enter the env var name for your Bluesky app password (e.g. `CLAW_BLUESKY_APP_PASSWORD`):"
+   - **Mastodon:** "Enter the env var name for your Mastodon instance URL (e.g. `CLAW_MASTODON_INSTANCE`):" and "Enter the env var name for your Mastodon access token (e.g. `CLAW_MASTODON_ACCESS_TOKEN`):"
+   - **Discord:** "Enter the env var name for your Discord webhook URL (e.g. `CLAW_DISCORD_WEBHOOK`):"
+   - **Slack:** "Enter the env var name for your Slack webhook URL (e.g. `CLAW_SLACK_WEBHOOK`):"
 
-   > **Important:** Enter only the environment variable **name** (e.g. `CTDF_BLUESKY_HANDLE`), never the actual secret value. Storing secrets in project config would expose them to version control.
+   > **Important:** Enter only the environment variable **name** (e.g. `CLAW_BLUESKY_HANDLE`), never the actual secret value. Storing secrets in project config would expose them to version control.
 
    Store only the env var **names** (never the values) in project config. Inform: "Set `<ENV_VAR>=<value>` in your shell profile or `.env` file."
 
@@ -511,9 +511,9 @@ cp ${CLAUDE_PLUGIN_ROOT}/templates/CLAUDE.md ./CLAUDE.md
 
 Then apply any detected values (branch strategy, release config, etc.) to the newly created file.
 
-**If CLAUDE.md exists but does NOT contain `<!-- CTDF:START -->`**, extract the framework section (from `<!-- CTDF:START -->` to `<!-- CTDF:END -->`) from `${CLAUDE_PLUGIN_ROOT}/templates/CLAUDE.md` and append it at the end of the existing file.
+**If CLAUDE.md exists but does NOT contain `<!-- CodeClaw:START -->`**, extract the framework section (from `<!-- CodeClaw:START -->` to `<!-- CodeClaw:END -->`) from `${CLAUDE_PLUGIN_ROOT}/templates/CLAUDE.md` and append it at the end of the existing file.
 
-**If CLAUDE.md exists and already contains `<!-- CTDF:START -->`**, skip.
+**If CLAUDE.md exists and already contains `<!-- CodeClaw:START -->`**, skip.
 
 ### Step 12: Final Report
 
@@ -525,7 +525,7 @@ Present a summary covering: project name, platform (tracking mode, repository, l
 
 ## Env Flow
 
-You are an environment setup assistant. Scan the project, detect its tech stack, and update CLAUDE.md so all CTDF skills work correctly.
+You are an environment setup assistant. Scan the project, detect its tech stack, and update CLAUDE.md so all CodeClaw skills work correctly.
 
 ### Environment Detection
 
@@ -602,7 +602,7 @@ If `.claude/project-config.json` exists, update it. If not, create from `${CLAUD
 
 1. Re-read CLAUDE.md — verify well-formed markdown, no duplicates, no broken markers.
 2. Verify `.claude/project-config.json` is valid JSON (if updated).
-3. Verify `<!-- CTDF:START -->` / `<!-- CTDF:END -->` content was not modified.
+3. Verify `<!-- CodeClaw:START -->` / `<!-- CodeClaw:END -->` content was not modified.
 
 ### Env Step 6: Report
 
@@ -714,7 +714,7 @@ Create `CHANGELOG.md` with Keep a Changelog boilerplate and `## [Unreleased]` se
 
 ### Init Step 7: Orientation Report
 
-Present: stack, directory, getting started commands (install, `make dev`, localhost URL), project structure overview, git branches (`main`, `develop`), Makefile targets (`dev/stop/restart/test/lint/verify`), cross-platform scripts, and available CTDF skills (`/task create`, `/idea create`, `/release`).
+Present: stack, directory, getting started commands (install, `make dev`, localhost URL), project structure overview, git branches (`main`, `develop`), Makefile targets (`dev/stop/restart/test/lint/verify`), cross-platform scripts, and available CodeClaw skills (`/task create`, `/idea create`, `/release`).
 
 ### Init Step 8: Issues Tracker Integration (Optional)
 
@@ -897,7 +897,7 @@ Present: AI provider, enabled pipelines (with triggers and models), platform, al
 
 ## Platform Export Flow
 
-Activated when `$ARGUMENTS` contains `platform`. Generates platform-specific configuration files from CTDF skill definitions so that other AI coding tools can consume the same skills.
+Activated when `$ARGUMENTS` contains `platform`. Generates platform-specific configuration files from CodeClaw skill definitions so that other AI coding tools can consume the same skills.
 
 Shorthand for the exporter script:
 
@@ -910,7 +910,7 @@ Shorthand for the exporter script:
 Run: `PE list-skills`
 
 Present the list of discovered skills:
-> **Found N CTDF skills:** task, idea, release, setup, ...
+> **Found N CodeClaw skills:** task, idea, release, setup, ...
 >
 > These skills will be exported to the selected platform format.
 
@@ -988,7 +988,7 @@ Based on the target, provide platform-specific next steps:
 2. **Use exact formatting** — 80 `=` for section headers, 78 `-` for task separators
 3. **All output in English**
 4. **NEVER guess values** — use only what is detected. Use `[TODO]` for unknowns.
-5. **NEVER modify `<!-- CTDF:START -->` / `<!-- CTDF:END -->` content**
+5. **NEVER modify `<!-- CodeClaw:START -->` / `<!-- CodeClaw:END -->` content**
 6. **NEVER overwrite manual edits** — present detected values alongside existing, let user choose
 7. **NEVER expose secret values** — names and descriptions only
 8. **Always read files before updating**; preserve existing CLAUDE.md structure

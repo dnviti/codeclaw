@@ -1,7 +1,7 @@
 ---
 title: LLM Context
 description: Consolidated single-file reference for LLM/bot consumption — architecture, APIs, configuration, and quick-start
-generated-by: ctdf-docs
+generated-by: claw-docs
 generated-at: 2026-03-18T00:00:00Z
 source-files:
   - README.md
@@ -17,13 +17,13 @@ source-files:
 ---
 
 <!-- MACHINE-READABLE METADATA
-project: CTDF — Claude Task Development Framework
+project: CodeClaw
 version: 3.5.1
 type: claude-code-plugin
 language: python3
 dependencies: stdlib-only (lancedb+sentence-transformers+mcp optional for vector memory)
 platforms: linux, macos, windows
-repository: https://github.com/dnviti/claude-task-development-framework
+repository: https://github.com/dnviti/codeclaw
 license: MIT
 skills: task, idea, release, docs, setup, update, tests, help
 hooks: PreToolUse(Bash|Read|Grep|Glob|Edit|Write), PostToolUse(Edit|Write)
@@ -31,13 +31,13 @@ hooks: PreToolUse(Bash|Read|Grep|Glob|Edit|Write), PostToolUse(Edit|Write)
 
 ## Project Summary
 
-CTDF is a project-agnostic Claude Code plugin that provides:
+CodeClaw is a project-agnostic Claude Code plugin that provides:
 1. **Task and idea management** — Structured plain-text files (`to-do.txt`, `progressing.txt`, `done.txt`, `ideas.txt`)
 2. **GitHub/GitLab Issues integration** — Local-only, platform-only, or dual-sync modes
 3. **Gated 9-stage release pipeline** — Branch creation → task verification → PR analysis → staging → testing → production tagging → announcement → cleanup
 4. **Ollama local model offloading** — Route tool calls and tasks to a local LLM with configurable offloading level (0–10) and full tool-calling loop
 5. **Always-on vector memory** — Semantic indexing via LanceDB, auto-updated on file edits, accessible via MCP
-6. **Platform release state sync** — In platform-only mode, release state is stored in a `ctdf-release-state` GitHub/GitLab issue shared by all collaborators
+6. **Platform release state sync** — In platform-only mode, release state is stored in a `claw-release-state` GitHub/GitLab issue shared by all collaborators
 7. **Agentic CI/CD fleet** — Autonomous task implementation, idea scouting, and documentation sync via GitHub Actions / GitLab CI
 
 ---
@@ -181,7 +181,7 @@ Always exits 0. Never blocks Claude. Applies NFKC normalization to prevent Unico
 }
 ```
 
-> When `enabled: true, sync: false` (platform-only): release state is stored in a `ctdf-release-state` platform issue.
+> When `enabled: true, sync: false` (platform-only): release state is stored in a `claw-release-state` platform issue.
 
 ### `.claude/project-config.json` (key fields)
 
@@ -233,8 +233,8 @@ Always exits 0. Never blocks Claude. Applies NFKC normalization to prevent Unico
 
 ```bash
 # Install
-/plugin marketplace add https://github.com/dnviti/claude-task-development-framework
-/plugin install ctdf@dnviti-claude-task-development-framework
+/plugin marketplace add https://github.com/dnviti/codeclaw
+/plugin install claw@dnviti-plugins
 
 # Initialize project
 /setup "My Project"

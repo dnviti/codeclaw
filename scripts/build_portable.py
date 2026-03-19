@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build a portable ZIP distribution of CTDF.
+"""Build a portable ZIP distribution of CodeClaw.
 
 Assembles a self-contained .zip archive that users can download and extract
 into any project directory without Claude Code or any package manager.
@@ -77,7 +77,7 @@ _EXCLUDE_RE = [re.compile(p) for p in EXCLUDE_PATTERNS]
 DEFAULT_OUTPUT_DIR = REPO_ROOT / "dist"
 
 # Archive name template
-ARCHIVE_NAME_TEMPLATE = "ctdf-{version}-portable.zip"
+ARCHIVE_NAME_TEMPLATE = "claw-{version}-portable.zip"
 
 # Supported platform targets for the manifest
 PLATFORM_TARGETS = [
@@ -229,9 +229,9 @@ def build_manifest(
         file_entries.append(entry)
 
     manifest = {
-        "name": "ctdf",
+        "name": "claw",
         "version": version,
-        "description": "Claude Task Development Framework - Portable Distribution",
+        "description": "CodeClaw - Portable Distribution",
         "build_date": now,
         "platform_targets": PLATFORM_TARGETS,
         "archive_format": "zip",
@@ -302,8 +302,8 @@ def build_archive(
         print(f"[build] Creating archive: {archive_path}")
 
     with zipfile.ZipFile(archive_path, "w", zipfile.ZIP_DEFLATED) as zf:
-        # Add all collected files under a ctdf-{version}/ prefix
-        prefix = f"ctdf-{version}"
+        # Add all collected files under a claw-{version}/ prefix
+        prefix = f"claw-{version}"
 
         for abs_path, rel_path in files:
             arcname = f"{prefix}/{rel_path}"
@@ -361,7 +361,7 @@ def build_archive(
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     """Parse command-line arguments."""
     parser = argparse.ArgumentParser(
-        description="Build a portable ZIP distribution of CTDF.",
+        description="Build a portable ZIP distribution of CodeClaw.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""\
 Examples:
@@ -412,7 +412,7 @@ def main(argv: list[str] | None = None) -> int:
     output_dir = Path(args.output) if args.output else DEFAULT_OUTPUT_DIR
 
     if not args.json_output:
-        print(f"Building CTDF portable distribution v{version}...")
+        print(f"Building CodeClaw portable distribution v{version}...")
 
     try:
         archive_path = build_archive(

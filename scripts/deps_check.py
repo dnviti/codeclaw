@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Optional dependency checker for CTDF vector memory layer.
+"""Optional dependency checker for CodeClaw vector memory layer.
 
 Validates that opt-in dependencies (LanceDB, ONNX Runtime, sentence-transformers
 tokenizer) are installed and provides clear installation instructions when they
@@ -134,10 +134,24 @@ def install_instructions(missing: list[str] | None = None) -> str:
     return "\n".join(lines)
 
 
+def detect_gpu_providers() -> list[str]:
+    """Detect available ONNX Runtime GPU execution providers.
+
+    Returns a list of available GPU provider names (excluding CPU).
+    Returns empty list if onnxruntime is not installed.
+    """
+    try:
+        import onnxruntime as ort
+        all_providers = ort.get_available_providers()
+        return [p for p in all_providers if p != "CPUExecutionProvider"]
+    except (ImportError, AttributeError):
+        return []
+
+
 def print_status():
     """Print a human-readable status table of all optional deps."""
     statuses = check_all()
-    print("CTDF Vector Memory — Optional Dependencies")
+    print("CodeClaw Vector Memory — Optional Dependencies")
     print("=" * 55)
     for s in statuses:
         mark = "OK" if s.installed else "MISSING"
@@ -146,6 +160,27 @@ def print_status():
         if not s.installed:
             print(f"           pip install {s.pip_install}")
     print()
+
+    # GPU acceleration status
+    gpu_providers = detect_gpu_providers()
+    print("GPU Acceleration")
+    print("-" * 55)
+    if gpu_providers:
+        print(f"  Available GPU providers: {', '.join(gpu_providers)}")
+        print("  GPU acceleration will be used automatically (mode=auto).")
+    else:
+        ort_installed = check_dep("onnxruntime")
+        if ort_installed:
+            print("  No GPU providers detected (CPU-only onnxruntime installed).")
+            print("  For GPU acceleration, install the appropriate variant:")
+            print("    NVIDIA:  pip install onnxruntime-gpu")
+            print("    AMD:     pip install onnxruntime-rocm")
+            print("    Windows: pip install onnxruntime-directml")
+            print("    macOS:   pip install onnxruntime-silicon")
+        else:
+            print("  ONNX Runtime not installed — GPU detection skipped.")
+    print()
+
     ok, missing = check_vector_memory_deps()
     if ok:
         print("Status: Ready for vector memory indexing.")

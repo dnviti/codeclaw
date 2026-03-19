@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Social media announcement CLI for CTDF releases.
+"""Social media announcement CLI for CodeClaw releases.
 
 Generates platform-specific release announcements and posts them to
 configured social media platforms. Supports direct posting (Bluesky,
@@ -379,7 +379,7 @@ def cmd_platforms(args: argparse.Namespace) -> None:
 def main() -> None:
     """Main entry point."""
     parser = argparse.ArgumentParser(
-        description="Social media announcement manager for CTDF releases.",
+        description="Social media announcement manager for CodeClaw releases.",
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
