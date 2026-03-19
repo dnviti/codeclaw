@@ -13,13 +13,51 @@ Model download:
 import json
 import os
 import platform
+import re
 import sys
 import urllib.request
 import urllib.error
+import urllib.parse
 from pathlib import Path
 from typing import Optional
 
 from embeddings import EmbeddingProvider
+
+
+# ── Model Name Validation ────────────────────────────────────────────────────
+
+# Allow only safe model name characters: alphanumeric, hyphens, underscores,
+# dots, and forward slashes (for org/model patterns like "sentence-transformers/all-MiniLM-L6-v2").
+# Rejects path traversal sequences (../), URL-encoded chars (%xx), and other
+# characters that could be used for SSRF or path injection.
+_MODEL_NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._/-]*$")
+
+
+def _sanitize_model_name(model_name: str) -> str:
+    """Validate and sanitize a model name to prevent SSRF and path traversal.
+
+    Args:
+        model_name: Model name from config or user input.
+
+    Returns:
+        The validated model name (unchanged if valid).
+
+    Raises:
+        ValueError: If the model name contains unsafe characters.
+    """
+    if not model_name or not _MODEL_NAME_RE.match(model_name):
+        raise ValueError(
+            f"Invalid model name: {model_name!r}. "
+            f"Model names must contain only alphanumeric characters, "
+            f"hyphens, underscores, dots, and forward slashes."
+        )
+    # Reject path traversal attempts
+    if ".." in model_name or model_name.startswith("/"):
+        raise ValueError(
+            f"Invalid model name: {model_name!r}. "
+            f"Model names must not contain '..' or start with '/'."
+        )
+    return model_name
 
 
 # ── Model Registry ───────────────────────────────────────────────────────────
@@ -35,6 +73,10 @@ _MODEL_REGISTRY = {
 }
 
 _DEFAULT_CACHE_DIR = Path.home() / ".cache" / "claw" / "models"
+# Legacy cache path for backward compatibility with existing installations
+_LEGACY_CACHE_DIR = Path.home() / ".cache" / "claw" / "models"
+
+_ALLOWED_DOWNLOAD_HOSTS = {"huggingface.co"}
 
 
 # ── GPU Provider Detection ────────────────────────────────────────────────────
@@ -241,6 +283,30 @@ def _detect_execution_providers(gpu_mode: str = "auto") -> list[str]:
     return selected
 
 
+def _resolve_model_dir(model_name: str,
+                       model_dir: str | None = None) -> Path:
+    """Resolve the local cache directory for a model.
+
+    Centralised logic used by both ``__init__`` and ``validate_model`` to
+    avoid duplicating the legacy-fallback resolution.
+
+    Args:
+        model_name: Model identifier (e.g. ``"all-MiniLM-L6-v2"``).
+        model_dir:  Explicit override path.  When provided, returned as-is.
+
+    Returns:
+        ``Path`` pointing to the model directory.
+    """
+    if model_dir:
+        return Path(model_dir)
+    if model_name in _MODEL_REGISTRY:
+        legacy = _LEGACY_CACHE_DIR / model_name
+        if legacy.exists() and (legacy / "model.onnx").exists():
+            return legacy
+        return _DEFAULT_CACHE_DIR / model_name
+    return _DEFAULT_CACHE_DIR / model_name
+
+
 class LocalOnnxProvider(EmbeddingProvider):
     """Embedding provider using ONNX Runtime for local inference.
 
@@ -255,6 +321,9 @@ class LocalOnnxProvider(EmbeddingProvider):
                  model_dir: str | None = None,
                  gpu_mode: str = "auto",
                  log_provider: bool = True):
+        # Validate model name before using it in paths or URLs
+        _sanitize_model_name(model_name_or_path)
+
         self._model_id = model_name_or_path
         self._session = None
         self._tokenizer = None
@@ -263,16 +332,84 @@ class LocalOnnxProvider(EmbeddingProvider):
         self._log_provider = log_provider
         self._active_provider = None
 
-        # Determine model directory
-        if model_dir:
-            self._model_dir = Path(model_dir)
-        elif model_name_or_path in _MODEL_REGISTRY:
-            self._model_dir = _DEFAULT_CACHE_DIR / model_name_or_path
-        else:
-            self._model_dir = Path(model_name_or_path)
+        # Determine model directory (uses shared helper)
+        self._model_dir = _resolve_model_dir(model_name_or_path, model_dir)
 
         # Lazy init — don't import optional deps at construction time
         self._initialized = False
+
+    @classmethod
+    def validate_model(cls, model_name: str,
+                       model_dir: str | None = None) -> dict:
+        """Check if a model is available locally or can be downloaded.
+
+        Returns a dict with ``valid``, ``model``, ``path``, and ``error`` keys.
+        Does **not** load the ONNX session or import heavy dependencies.
+        """
+        # Validate model name to prevent SSRF / path traversal
+        try:
+            _sanitize_model_name(model_name)
+        except ValueError as e:
+            return {
+                "valid": False,
+                "model": model_name,
+                "path": "",
+                "error": str(e),
+            }
+
+        mdir = _resolve_model_dir(model_name, model_dir)
+
+        result: dict = {
+            "valid": False,
+            "model": model_name,
+            "path": str(mdir),
+            "error": None,
+        }
+
+        # Fast path: model files already present
+        required = ["model.onnx", "tokenizer.json"]
+        if all((mdir / f).exists() for f in required):
+            result["valid"] = True
+            return result
+
+        # Determine download URL for the ONNX file to probe availability
+        if model_name in _MODEL_REGISTRY:
+            probe_url = _MODEL_REGISTRY[model_name]["onnx_url"]
+        else:
+            probe_url = (
+                f"https://huggingface.co/sentence-transformers/"
+                f"{model_name}/resolve/main/onnx/model.onnx"
+            )
+
+        # Validate URL host to prevent SSRF
+        try:
+            parsed = urllib.parse.urlparse(probe_url)
+            if parsed.hostname not in _ALLOWED_DOWNLOAD_HOSTS:
+                result["error"] = (
+                    f"Download URL host '{parsed.hostname}' is not in the "
+                    f"allowed list: {_ALLOWED_DOWNLOAD_HOSTS}"
+                )
+                return result
+        except Exception:
+            result["error"] = f"Could not parse probe URL: {probe_url}"
+            return result
+
+        # HEAD request to check if the model exists remotely
+        try:
+            req = urllib.request.Request(probe_url, method="HEAD")
+            resp = urllib.request.urlopen(req, timeout=10)
+            if resp.status == 200:
+                result["valid"] = True
+                return result
+        except (urllib.error.URLError, OSError):
+            pass
+
+        result["error"] = (
+            f"Model '{model_name}' not found locally at {mdir} and could "
+            f"not be verified on HuggingFace. Change 'embedding_model' in "
+            f"project-config.json or manually place model files in: {mdir}"
+        )
+        return result
 
     def _ensure_init(self):
         """Lazy initialization: import deps and load model on first use."""
@@ -305,7 +442,7 @@ class LocalOnnxProvider(EmbeddingProvider):
                 "Install with: pip install tokenizers"
             )
 
-        # Ensure model files exist
+        # Ensure model files exist (download if needed)
         self._ensure_model_files()
 
         # Load tokenizer
@@ -373,39 +510,77 @@ class LocalOnnxProvider(EmbeddingProvider):
         self._initialized = True
 
     def _ensure_model_files(self):
-        """Download model files if they don't exist locally."""
-        if self._model_id not in _MODEL_REGISTRY:
-            # Custom model path — files must already exist
-            if not (self._model_dir / "model.onnx").exists():
-                raise FileNotFoundError(
-                    f"ONNX model not found at {self._model_dir}/model.onnx"
+        """Download model files if they don't exist locally.
+
+        For models in ``_MODEL_REGISTRY``, uses the exact URLs stored there.
+        For any other model name, attempts a generic download from HuggingFace
+        using the ``sentence-transformers/{model}`` URL pattern.  On download
+        failure, raises ``RuntimeError`` with an actionable message.
+        """
+        if self._model_id in _MODEL_REGISTRY:
+            registry = _MODEL_REGISTRY[self._model_id]
+            files_to_download = [
+                ("model.onnx", registry["onnx_url"]),
+                ("tokenizer.json", registry["tokenizer_url"]),
+            ]
+            if "config_url" in registry:
+                files_to_download.append(
+                    ("tokenizer_config.json", registry["config_url"])
                 )
-            return
-
-        registry = _MODEL_REGISTRY[self._model_id]
-        self._model_dir.mkdir(parents=True, exist_ok=True)
-
-        files_to_download = [
-            ("model.onnx", registry["onnx_url"]),
-            ("tokenizer.json", registry["tokenizer_url"]),
-        ]
-        if "config_url" in registry:
-            files_to_download.append(
-                ("tokenizer_config.json", registry["config_url"])
+        else:
+            # Generic HuggingFace sentence-transformers download
+            base = (
+                f"https://huggingface.co/sentence-transformers/"
+                f"{self._model_id}/resolve/main"
             )
+            files_to_download = [
+                ("model.onnx", f"{base}/onnx/model.onnx"),
+                ("tokenizer.json", f"{base}/tokenizer.json"),
+                ("tokenizer_config.json", f"{base}/tokenizer_config.json"),
+            ]
+
+        # Validate all download URLs against allowed hosts (SSRF prevention)
+        for filename, url in files_to_download:
+            parsed = urllib.parse.urlparse(url)
+            if parsed.hostname not in _ALLOWED_DOWNLOAD_HOSTS:
+                raise RuntimeError(
+                    f"Download URL host '{parsed.hostname}' for {filename} "
+                    f"is not in the allowed list: {_ALLOWED_DOWNLOAD_HOSTS}. "
+                    f"Only HuggingFace downloads are permitted."
+                )
+
+        # Verify model dir stays inside cache (path traversal prevention)
+        try:
+            resolved = self._model_dir.resolve()
+            cache_root = _DEFAULT_CACHE_DIR.resolve()
+            resolved.relative_to(cache_root)
+        except ValueError:
+            raise RuntimeError(
+                f"Model directory {self._model_dir} resolves outside the "
+                f"allowed cache root {_DEFAULT_CACHE_DIR}. "
+                f"This may indicate a path traversal attempt."
+            )
+
+        self._model_dir.mkdir(parents=True, exist_ok=True)
 
         for filename, url in files_to_download:
             dest = self._model_dir / filename
             if dest.exists():
                 continue
-            print(f"  Downloading {filename}...", file=sys.stderr, flush=True)
+            print(f"  Downloading {filename} for model "
+                  f"'{self._model_id}'...", file=sys.stderr, flush=True)
             try:
                 urllib.request.urlretrieve(url, str(dest))
             except (urllib.error.URLError, OSError) as e:
+                # Clean up partial download
+                if dest.exists():
+                    dest.unlink(missing_ok=True)
                 raise RuntimeError(
                     f"Failed to download {filename} from {url}: {e}\n"
-                    f"You can manually download the model files to: "
-                    f"{self._model_dir}"
+                    f"Model '{self._model_id}' not found or could not be "
+                    f"downloaded.\n"
+                    f"Change 'embedding_model' in project-config.json or "
+                    f"manually place model files in: {self._model_dir}"
                 )
 
     def _inject_gpu_paths_if_needed(self) -> bool:

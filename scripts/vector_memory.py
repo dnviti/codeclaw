@@ -110,6 +110,7 @@ def apply_search_filters(search_query, top_k: int,
 DEFAULT_INDEX_DIR = ".claude/memory/vectors"
 DEFAULT_CHUNK_SIZE = 2000
 DEFAULT_BATCH_SIZE = 64
+DEFAULT_SEARCH_LOG_MAX_SIZE_MB = 10
 HASH_MANIFEST = "file_hashes.json"
 INDEX_META = "index_meta.json"
 TABLE_NAME = "chunks"
@@ -215,6 +216,11 @@ def get_effective_config(root: Path) -> dict:
     to match the always-on default behavior introduced in VMEM-0024.
     """
     user_cfg = load_config(root)
+    search_log_defaults = {"enabled": False,
+                           "path": ".claude/memory/search_log.jsonl",
+                           "include_content": False,
+                           "max_size_mb": DEFAULT_SEARCH_LOG_MAX_SIZE_MB}
+    user_search_log = user_cfg.get("search_log", {})
     return {
         "enabled": user_cfg.get("enabled", True),
         "auto_index": user_cfg.get("auto_index", True),
@@ -226,6 +232,10 @@ def get_effective_config(root: Path) -> dict:
         "batch_size": user_cfg.get("batch_size", DEFAULT_BATCH_SIZE),
         "include_patterns": user_cfg.get("include_patterns", []),
         "exclude_patterns": user_cfg.get("exclude_patterns", []),
+        "search_log": {
+            k: user_search_log.get(k, v)
+            for k, v in search_log_defaults.items()
+        },
     }
 
 
@@ -671,6 +681,78 @@ def _save_meta(index_dir: Path, config: dict, file_count: int):
     path.write_text(json.dumps(meta, indent=2), encoding="utf-8")
 
 
+# ── Search Logging ───────────────────────────────────────────────────────────
+
+def _log_search(root: Path, config: dict, query: str, top_k: int,
+                file_filter: str, type_filter: str, df) -> None:
+    """Append a JSONL entry for a search query if search_log is enabled.
+
+    Non-blocking: failures are logged to stderr but never affect search.
+    Security: the log path is validated to stay within the project root.
+    """
+    log_cfg = config.get("search_log", {})
+    if not log_cfg.get("enabled"):
+        return
+    try:
+        raw_path = log_cfg.get("path", ".claude/memory/search_log.jsonl")
+        log_path = (root / raw_path).resolve()
+
+        # S-1: Guard against path traversal — log must stay under root
+        try:
+            log_path.relative_to(root.resolve())
+        except ValueError:
+            print(f"Warning: search_log.path {raw_path!r} resolves outside "
+                  f"project root; logging skipped.", file=sys.stderr)
+            return
+
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # O-1: Rotate log if it exceeds configured max size
+        max_bytes = log_cfg.get("max_size_mb",
+                                DEFAULT_SEARCH_LOG_MAX_SIZE_MB) * 1024 * 1024
+        if log_path.exists() and log_path.stat().st_size >= max_bytes:
+            rotated = log_path.with_suffix(".jsonl.1")
+            if rotated.exists():
+                rotated.unlink()
+            log_path.rename(rotated)
+
+        include_content = log_cfg.get("include_content", False)
+        results = []
+        for _, row in df.iterrows():
+            entry = {
+                "file_path": row.get("file_path", ""),
+                "name": row.get("name", ""),
+                "chunk_type": row.get("chunk_type", ""),
+                "score": float(row.get("_distance", 0.0)),
+            }
+            if include_content:
+                entry["content"] = row.get("content", "")[:200]
+            results.append(entry)
+
+        record = {
+            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "query": query,
+            "top_k": top_k,
+            "file_filter": file_filter or None,
+            "type_filter": type_filter or None,
+            "result_count": len(results),
+            "results": results,
+        }
+
+        # S-3: Open with restrictive permissions (owner read/write only)
+        fd = os.open(str(log_path),
+                     os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+        try:
+            with os.fdopen(fd, "a", encoding="utf-8") as f:
+                f.write(json.dumps(record, separators=(",", ":")) + "\n")
+        except Exception:
+            # fd is already closed by os.fdopen on failure
+            raise
+    except Exception as exc:
+        # O-3: Warn on stderr instead of silently swallowing
+        print(f"Warning: search log write failed: {exc}", file=sys.stderr)
+
+
 # ── Search Command ───────────────────────────────────────────────────────────
 # Sequential: bounded by fixed pattern list (~5 queries), parallelizing adds
 # thread complexity for marginal gain
@@ -743,6 +825,9 @@ def cmd_search(args):
             table.search(query_embedding),
             top_k, file_filter, type_filter,
         )
+
+    # Log search query and results if enabled
+    _log_search(root, config, query, top_k, file_filter, type_filter, df)
 
     # Format output
     if args.json_output:
@@ -1178,6 +1263,30 @@ def cmd_conflicts(args):
         print()
 
 
+# ── Validate Model Command ──────────────────────────────────────────────────
+
+def cmd_validate_model(args):
+    """Check if the configured embedding model is available or downloadable."""
+    root = Path(args.root).resolve()
+    config = get_effective_config(root)
+    model_name = args.model or config["embedding_model"]
+
+    try:
+        from embeddings.local_onnx import LocalOnnxProvider
+        result = LocalOnnxProvider.validate_model(model_name)
+    except Exception as e:
+        result = {
+            "valid": False,
+            "model": model_name,
+            "path": "",
+            "error": str(e),
+        }
+
+    print(json.dumps(result, indent=2))
+    if not result["valid"]:
+        sys.exit(1)
+
+
 # ── Hook: Incremental Update ────────────────────────────────────────────────
 
 def hook_file_changed(file_path: str):
@@ -1568,6 +1677,13 @@ Examples:
     cfl.add_argument("--json", dest="json_output", action="store_true",
                      help="Output as JSON")
 
+    # ── validate-model ──
+    vm = sub.add_parser("validate-model",
+                        help="Check if the configured embedding model is available")
+    vm.add_argument("--root", default=".", help="Project root directory")
+    vm.add_argument("--model", default=None,
+                    help="Model name to validate (default: from config)")
+
     # ── hook (internal) ──
     hk = sub.add_parser("hook", help="Internal: incremental update hook")
     hk.add_argument("file_path", help="Path to the changed file")
@@ -1594,6 +1710,8 @@ Examples:
         cmd_agents(args)
     elif args.command == "conflicts":
         cmd_conflicts(args)
+    elif args.command == "validate-model":
+        cmd_validate_model(args)
     elif args.command == "hook":
         hook_file_changed(args.file_path)
 
