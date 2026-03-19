@@ -114,14 +114,17 @@ class ReplicateProvider(ImageProvider):
             with urllib.request.urlopen(req, timeout=self._timeout) as resp:
                 return json.loads(resp.read().decode("utf-8"))
         except urllib.error.HTTPError as e:
-            error_body = ""
+            # S-4: Sanitize error body — extract only the structured error
+            # message to avoid leaking credentials that might be echoed back
+            error_msg = f"HTTP {e.code}"
             try:
-                error_body = e.read().decode("utf-8")[:500]
+                error_data = json.loads(e.read().decode("utf-8"))
+                api_msg = error_data.get("detail", "")
+                if api_msg:
+                    error_msg = f"HTTP {e.code}: {str(api_msg)[:200]}"
             except Exception:
                 pass
-            raise RuntimeError(
-                f"Replicate API error (HTTP {e.code}): {error_body}"
-            )
+            raise RuntimeError(f"Replicate API error ({error_msg})")
         except urllib.error.URLError as e:
             raise RuntimeError(f"Failed to connect to Replicate API: {e}")
 
@@ -174,7 +177,27 @@ class ReplicateProvider(ImageProvider):
 
     @staticmethod
     def _download_image(url: str) -> bytes:
-        """Download an image from a URL."""
+        """Download an image from a URL.
+
+        Validates the URL to prevent SSRF attacks (S-3): only HTTPS
+        URLs on public hostnames are allowed.
+        """
+        # S-3: Validate URL to prevent SSRF via spoofed API response
+        from urllib.parse import urlparse
+        parsed = urlparse(url)
+        if parsed.scheme not in ("https",):
+            raise RuntimeError(
+                f"Refusing to download from non-HTTPS URL: {url}"
+            )
+        hostname = parsed.hostname or ""
+        # Block internal/metadata IPs
+        _blocked = ("169.254.", "127.", "10.", "192.168.", "172.16.",
+                     "0.", "localhost", "[::1]")
+        if any(hostname.startswith(b) for b in _blocked):
+            raise RuntimeError(
+                f"Refusing to download from internal/private URL: {url}"
+            )
+
         req = urllib.request.Request(url, method="GET")
         try:
             with urllib.request.urlopen(req, timeout=30) as resp:

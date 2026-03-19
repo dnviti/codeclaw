@@ -80,14 +80,17 @@ class DallEProvider(ImageProvider):
             with urllib.request.urlopen(req, timeout=self._timeout) as resp:
                 result = json.loads(resp.read().decode("utf-8"))
         except urllib.error.HTTPError as e:
-            error_body = ""
+            # S-4: Sanitize error body — extract only the error message
+            # field to avoid leaking credentials that might be echoed back
+            error_msg = f"HTTP {e.code}"
             try:
-                error_body = e.read().decode("utf-8")[:500]
+                error_data = json.loads(e.read().decode("utf-8"))
+                api_msg = error_data.get("error", {}).get("message", "")
+                if api_msg:
+                    error_msg = f"HTTP {e.code}: {api_msg[:200]}"
             except Exception:
                 pass
-            raise RuntimeError(
-                f"DALL-E API error (HTTP {e.code}): {error_body}"
-            )
+            raise RuntimeError(f"DALL-E API error ({error_msg})")
         except urllib.error.URLError as e:
             raise RuntimeError(f"Failed to connect to OpenAI API: {e}")
 

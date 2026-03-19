@@ -11,7 +11,6 @@ import base64
 import json
 import urllib.error
 import urllib.request
-from typing import Optional
 
 from image_providers import ImageProvider
 
@@ -29,10 +28,30 @@ class LocalDiffuserProvider(ImageProvider):
     The server must be running locally before generation is attempted.
     """
 
+    # S-5: Allowed hostname patterns for local diffuser to prevent SSRF
+    _ALLOWED_HOSTS = ("localhost", "127.0.0.1", "0.0.0.0", "::1")
+
     def __init__(self, base_url: str = _DEFAULT_BASE_URL,
                  timeout: int = _DEFAULT_TIMEOUT):
         self._base_url = base_url.rstrip("/")
         self._timeout = timeout
+        self._validate_base_url()
+
+    def _validate_base_url(self) -> None:
+        """Validate that base_url points to a local/safe destination."""
+        from urllib.parse import urlparse
+        parsed = urlparse(self._base_url)
+        if parsed.scheme not in ("http", "https"):
+            raise ValueError(
+                f"Local diffuser base_url must use http or https scheme. "
+                f"Got: {self._base_url}"
+            )
+        hostname = parsed.hostname or ""
+        if hostname not in self._ALLOWED_HOSTS:
+            raise ValueError(
+                f"Local diffuser base_url must point to localhost. "
+                f"Got hostname: {hostname!r}. Allowed: {self._ALLOWED_HOSTS}"
+            )
 
     def generate(self, prompt: str, size: str = "1024x1024",
                  style: str = "natural") -> bytes:
@@ -70,14 +89,17 @@ class LocalDiffuserProvider(ImageProvider):
             with urllib.request.urlopen(req, timeout=self._timeout) as resp:
                 result = json.loads(resp.read().decode("utf-8"))
         except urllib.error.HTTPError as e:
-            error_body = ""
+            # S-4: Sanitize error body — extract only the structured error
+            # message to avoid leaking credentials that might be echoed back
+            error_msg = f"HTTP {e.code}"
             try:
-                error_body = e.read().decode("utf-8")[:500]
+                error_data = json.loads(e.read().decode("utf-8"))
+                api_msg = error_data.get("detail", error_data.get("error", ""))
+                if api_msg:
+                    error_msg = f"HTTP {e.code}: {str(api_msg)[:200]}"
             except Exception:
                 pass
-            raise RuntimeError(
-                f"Local diffuser API error (HTTP {e.code}): {error_body}"
-            )
+            raise RuntimeError(f"Local diffuser API error ({error_msg})")
         except urllib.error.URLError as e:
             raise RuntimeError(
                 f"Failed to connect to local diffuser at {self._base_url}: {e}. "

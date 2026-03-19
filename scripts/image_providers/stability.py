@@ -87,14 +87,17 @@ class StabilityProvider(ImageProvider):
             with urllib.request.urlopen(req, timeout=self._timeout) as resp:
                 result = json.loads(resp.read().decode("utf-8"))
         except urllib.error.HTTPError as e:
-            error_body = ""
+            # S-4: Sanitize error body — extract only the structured error
+            # message to avoid leaking credentials that might be echoed back
+            error_msg = f"HTTP {e.code}"
             try:
-                error_body = e.read().decode("utf-8")[:500]
+                error_data = json.loads(e.read().decode("utf-8"))
+                api_msg = error_data.get("message", "")
+                if api_msg:
+                    error_msg = f"HTTP {e.code}: {api_msg[:200]}"
             except Exception:
                 pass
-            raise RuntimeError(
-                f"Stability AI API error (HTTP {e.code}): {error_body}"
-            )
+            raise RuntimeError(f"Stability AI API error ({error_msg})")
         except urllib.error.URLError as e:
             raise RuntimeError(
                 f"Failed to connect to Stability AI API: {e}"
@@ -119,22 +122,19 @@ class StabilityProvider(ImageProvider):
         return bool(self._api_key)
 
     def _normalize_size(self, size: str) -> tuple[int, int]:
-        """Normalize size to Stability AI supported dimensions."""
-        if size in _VALID_DIMENSIONS:
-            parts = size.split("x")
-            return int(parts[0]), int(parts[1])
+        """Normalize size to Stability AI supported dimensions.
 
-        # Try to find closest match
+        O-5: Simplified — parse once, validate once, fall back to default.
+        """
         try:
             parts = size.lower().split("x")
             w, h = int(parts[0]), int(parts[1])
         except (ValueError, IndexError):
             return 1024, 1024
 
-        # Default to 1024x1024 if not a valid size
-        if f"{w}x{h}" not in _VALID_DIMENSIONS:
-            return 1024, 1024
-        return w, h
+        if f"{w}x{h}" in _VALID_DIMENSIONS:
+            return w, h
+        return 1024, 1024
 
     @staticmethod
     def _map_style(style: str) -> str:

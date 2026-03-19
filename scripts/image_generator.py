@@ -16,11 +16,10 @@ Pillow is optional (used for preview fallback on headless systems).
 """
 
 import argparse
+import atexit
 import json
 import os
-import platform
 import shutil
-import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -31,7 +30,25 @@ _SCRIPT_DIR = Path(__file__).resolve().parent
 if str(_SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPT_DIR))
 
-from platform_utils import IS_WINDOWS, IS_MACOS, IS_LINUX
+from platform_utils import open_file
+
+# Maximum prompt length to prevent DoS on API endpoints
+_MAX_PROMPT_LENGTH = 4000
+
+# Track temp directories for cleanup
+_TEMP_DIRS: list[Path] = []
+
+
+def _cleanup_temp_dirs() -> None:
+    """Remove temporary directories created during this session."""
+    for d in _TEMP_DIRS:
+        try:
+            shutil.rmtree(str(d), ignore_errors=True)
+        except OSError:
+            pass
+
+
+atexit.register(_cleanup_temp_dirs)
 
 
 # ── Constants ────────────────────────────────────────────────────────────────
@@ -122,6 +139,10 @@ class ImageGenerator:
         Path
             Path to the generated temporary image file.
         """
+        # S-6: Cap prompt length to prevent DoS
+        if len(prompt) > _MAX_PROMPT_LENGTH:
+            prompt = prompt[:_MAX_PROMPT_LENGTH]
+
         size = size or self._config.get("default_size", "1024x1024")
         style = style or self._config.get("default_style", "natural")
 
@@ -137,13 +158,15 @@ class ImageGenerator:
         # Generate image bytes
         image_bytes = gen_provider.generate(prompt, size=size, style=style)
 
-        # Save to temp file
+        # Save to temp file (O-2: register for cleanup at exit)
         temp_dir = Path(tempfile.mkdtemp(prefix="ctdf_img_"))
-        # Sanitize prompt for filename
+        _TEMP_DIRS.append(temp_dir)
+        # S-2: Sanitize prompt for filename — strip non-alphanum, guard
+        # against dot-only or hidden-file names
         safe_name = "".join(
             c if c.isalnum() or c in "-_ " else "" for c in prompt[:50]
-        ).strip().replace(" ", "_")
-        if not safe_name:
+        ).strip().replace(" ", "_").lstrip(".")
+        if not safe_name or safe_name in (".", ".."):
             safe_name = "generated"
         temp_path = temp_dir / f"{safe_name}.png"
         temp_path.write_bytes(image_bytes)
@@ -173,14 +196,31 @@ class ImageGenerator:
         image_path : Path
             Path to the source image (usually a temp file).
         target_path : Path
-            Destination path within the project.
+            Destination path within the project. Must resolve to a
+            location under the project root (path traversal is rejected).
 
         Returns
         -------
         Path
             The final path where the image was saved.
+
+        Raises
+        ------
+        ValueError
+            If target_path resolves outside the project root.
         """
         target_path = Path(target_path)
+        project_root = _find_project_root()
+
+        # S-1: Validate that target is within project root to prevent
+        # path traversal (e.g., --output ../../etc/cron.d/evil)
+        resolved = target_path.resolve()
+        if not str(resolved).startswith(str(project_root.resolve())):
+            raise ValueError(
+                f"Target path must be within the project root "
+                f"({project_root}). Got: {target_path}"
+            )
+
         target_path.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(str(image_path), str(target_path))
         return target_path
@@ -221,12 +261,8 @@ class ImageGenerator:
 def open_image_preview(image_path: Path) -> bool:
     """Open an image file in the system's default image viewer.
 
-    Cross-platform:
-    - Linux: xdg-open
-    - macOS: open
-    - Windows: os.startfile
-
-    Falls back to Pillow's Image.show() if system viewer fails.
+    Delegates to ``platform_utils.open_file()`` for cross-platform support,
+    with a Pillow fallback for headless environments.
 
     Parameters
     ----------
@@ -242,28 +278,11 @@ def open_image_preview(image_path: Path) -> bool:
     if not image_path.exists():
         return False
 
-    try:
-        if IS_WINDOWS:
-            os.startfile(str(image_path))
-            return True
-        elif IS_MACOS:
-            subprocess.Popen(
-                ["open", str(image_path)],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-            return True
-        elif IS_LINUX:
-            subprocess.Popen(
-                ["xdg-open", str(image_path)],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-            return True
-    except (OSError, FileNotFoundError):
-        pass
+    # O-1: Delegate to platform_utils.open_file instead of duplicating logic
+    if open_file(image_path):
+        return True
 
-    # Fallback: try Pillow
+    # Fallback: try Pillow for headless environments
     try:
         from PIL import Image
         img = Image.open(str(image_path))
@@ -324,7 +343,7 @@ def cmd_generate(args: argparse.Namespace) -> None:
 
         print(json.dumps(result, indent=2))
 
-    except RuntimeError as e:
+    except (RuntimeError, ValueError) as e:
         print(json.dumps({
             "success": False,
             "error": str(e),
