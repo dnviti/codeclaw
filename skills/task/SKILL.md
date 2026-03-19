@@ -2,7 +2,7 @@
 name: task
 description: "Unified task management: pick up, create, continue, or check status of project tasks."
 disable-model-invocation: true
-argument-hint: "[pick [CODE | all [sequential]]] [create [description | all [sequential]]] [continue [CODE | all [sequential]]] [schedule CODE [CODE2...] to X.X.X] [status] [yolo]"
+argument-hint: "[pick [CODE | all [sequential]]] [create [description | all [sequential]]] [continue [CODE | all [sequential]]] [edit CODE] [schedule CODE [CODE2...] to X.X.X] [status] [yolo]"
 ---
 
 # Task Manager
@@ -39,7 +39,7 @@ Submodules are automatically initialized (`git submodule update --init --recursi
 
 ## Argument Dispatch
 
-`SH dispatch --skill task --args "$ARGUMENTS"` → routes to: `pick`, `pick-all`, `create`, `create-all`, `continue`, `continue-all`, `schedule`, or `status` flow.
+`SH dispatch --skill task --args "$ARGUMENTS"` → routes to: `pick`, `pick-all`, `create`, `create-all`, `continue`, `continue-all`, `edit`, `schedule`, or `status` flow.
 
 Also returns `yolo: true/false`. When `yolo` is `true`, **auto-select the recommended (first) option at every GATE** without waiting for user input. Log each auto-selected choice. Yolo never auto-selects destructive or cancel options.
 
@@ -670,6 +670,74 @@ Present results table:
 | CODE2 | Title | Failed (reason) |
 
 Suggest: "Start the release with `/release continue X.X.X`" or "Schedule more tasks with `/task schedule`."
+
+---
+
+## Edit Flow
+
+Modify fields of an existing task in-place without changing its status.
+
+### Edit Flow — Locate Task
+
+- **Task code from dispatch:** `task_code` field. If empty, ask: "Which task do you want to edit? Enter the task code." STOP.
+- **Platform-only:** `PM view-issue` using the task code to search. Parse current fields (title, priority, dependencies, description, technical details, files involved).
+- **Local/dual:** `TM parse TASK-CODE`. Parse current fields from the task block.
+
+### Edit Flow Instructions
+
+#### Step 1: Present Current Fields
+
+Display the task's current values:
+
+| # | Field | Current Value |
+|---|-------|---------------|
+| 1 | Title | [current title] |
+| 2 | Priority | [HIGH/MEDIUM/LOW] |
+| 3 | Dependencies | [deps or None] |
+| 4 | Release | [version or None] |
+| 5 | Description | [first line or summary] |
+| 6 | Technical Details | [first line or summary] |
+| 7 | Files Involved | [count of files] |
+
+#### Step 2: Select Fields to Edit
+
+`AskUserQuestion` multiSelect: "Which fields do you want to edit?" with options:
+- **"Title"**
+- **"Priority"**
+- **"Dependencies"**
+- **"Release"**
+- **"Description"**
+- **"Technical Details"**
+- **"Files Involved"**
+- **"Cancel"**
+
+STOP.
+
+#### Step 3: Accept New Values
+
+For each selected field, present the current value and ask for the new value. Validate inputs before proceeding:
+- **Priority:** Must be one of `HIGH`, `MEDIUM`, or `LOW` (case-insensitive). Reject other values and re-prompt.
+- **Release:** Must match semver format `X.X.X` and exist in `RM release-plan-list`. If not found, warn and re-prompt.
+- **Multi-line fields** (Description, Technical Details): Accept the full replacement text.
+
+#### Step 4: Confirm Changes
+
+Present a diff-style summary of old vs new values for each modified field.
+
+`AskUserQuestion`: **"Apply these changes"** | **"Needs adjustments"** | **"Cancel"**
+
+STOP.
+
+#### Step 5: Apply Changes
+
+Based on mode:
+- **Platform-only:** `PM edit-issue` to update the issue title, body, and labels as needed. For priority changes, swap priority labels (remove old, add new). For release changes, update milestone and `release:` label.
+- **Local/dual:** Use `Edit` tool to modify the task block in the appropriate file (`to-do.txt`, `progressing.txt`, or `done.txt`). Preserve exact formatting: 78-dash separators, 2-space indent, field order.
+- **Dual sync:** Apply both local edit and platform update. If platform fails, warn but keep local changes.
+
+#### Step 6: Confirm
+
+Report: "Task [TASK-CODE] updated. Fields changed: [list]." Include platform issue URL if applicable.
 
 ---
 
