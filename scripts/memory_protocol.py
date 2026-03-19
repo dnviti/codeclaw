@@ -333,6 +333,7 @@ class ConflictResolver:
     """
 
     def __init__(self, root: Path):
+        self.root = root
         self.conflicts_dir = root / DEFAULT_CONFLICTS_DIR
         self.conflicts_dir.mkdir(parents=True, exist_ok=True)
 
@@ -428,12 +429,12 @@ class ConflictResolver:
         except ImportError:
             return None
 
-        config = load_auto_resolve_config(self.conflicts_dir.parent.parent)
+        config = load_auto_resolve_config(self.root)
         if not config.get("enabled", False):
             return None
 
         judge = ConflictJudge(
-            root=self.conflicts_dir.parent.parent,
+            root=self.root,
             provider=config.get("provider", "ollama"),
             model=config.get("model", ""),
             confidence_threshold=config.get("confidence_threshold", 0.8),
@@ -450,7 +451,7 @@ class ConflictResolver:
         winner_key = verdict.get("winner", "B")
 
         if winner_key == "A":
-            winner = conflict.entry_a
+            winner = dict(conflict.entry_a)
         elif winner_key == "merged":
             winner = dict(conflict.entry_b)
             winner["content"] = verdict.get("merged_content", "")
@@ -459,7 +460,7 @@ class ConflictResolver:
                 conflict.entry_b.get("agent_id", ""),
             ]
         else:
-            winner = conflict.entry_b
+            winner = dict(conflict.entry_b)
 
         winner["auto_resolved"] = True
         winner["judge_reasoning"] = verdict.get("reasoning", "")

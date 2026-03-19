@@ -1091,8 +1091,8 @@ def cmd_conflicts(args):
                 f"           detected={c.get('detected_iso', '?')}"
             )
         print()
-        print(f"  To resolve manually: vector_memory.py conflicts --resolve <conflict_id>")
-        print(f"  To auto-resolve:     vector_memory.py resolve-conflicts [--dry-run]")
+        print("  To resolve manually: vector_memory.py conflicts --resolve <conflict_id>")
+        print("  To auto-resolve:     vector_memory.py resolve-conflicts [--dry-run]")
         print()
 
 

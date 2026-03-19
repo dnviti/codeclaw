@@ -38,11 +38,25 @@ if str(_SCRIPT_DIR) not in sys.path:
 VALID_STRATEGIES = ("single-judge", "majority-vote", "confidence-merge")
 VALID_PROVIDERS = ("ollama", "claude")
 
+# Maximum allowed length for a conflict ID used in file paths
+_MAX_CONFLICT_ID_LEN = 64
+
 DEFAULT_STRATEGY = "single-judge"
 DEFAULT_PROVIDER = "ollama"
 DEFAULT_CONFIDENCE_THRESHOLD = 0.8
 DEFAULT_NUM_VOTES = 3
 DEFAULT_MAX_PER_RUN = 10
+
+def _sanitize_conflict_id(conflict_id: str) -> str:
+    """Sanitize a conflict ID for safe use in file paths.
+
+    Strips path separators and special characters to prevent path
+    traversal attacks. Returns only alphanumeric chars, hyphens, and
+    underscores, truncated to _MAX_CONFLICT_ID_LEN.
+    """
+    sanitized = re.sub(r"[^a-zA-Z0-9_-]", "", str(conflict_id))
+    return sanitized[:_MAX_CONFLICT_ID_LEN]
+
 
 # ── Prompt Template ──────────────────────────────────────────────────────────
 
@@ -150,8 +164,8 @@ def _parse_judge_response(text: str) -> Optional[dict]:
         except json.JSONDecodeError:
             pass
 
-    # Try finding the first { ... } block
-    brace_match = re.search(r"\{[^{}]*\}", text, re.DOTALL)
+    # Try finding a JSON object block (supports nested braces)
+    brace_match = re.search(r"\{(?:[^{}]|\{[^{}]*\})*\}", text, re.DOTALL)
     if brace_match:
         try:
             return json.loads(brace_match.group(0))
@@ -291,17 +305,43 @@ class ConflictJudge:
         self.confidence_threshold = confidence_threshold
         self.num_votes = max(1, num_votes)
 
+    @staticmethod
+    def _sanitize_prompt_value(value: str, max_length: int = 2000) -> str:
+        """Sanitize a value for safe inclusion in a judge prompt.
+
+        Truncates to max_length and escapes backtick sequences that could
+        break out of the code-fence delimiter in the prompt template.
+        """
+        value = str(value)[:max_length]
+        # Escape triple backticks to prevent code-fence breakout
+        value = value.replace("```", "` ` `")
+        return value
+
     def _build_prompt(self, conflict: dict) -> str:
         """Build the user prompt for the judge from a conflict record dict."""
         return JUDGE_USER_PROMPT_TEMPLATE.format(
-            field=conflict.get("field", "unknown"),
+            field=self._sanitize_prompt_value(
+                conflict.get("field", "unknown"), max_length=200
+            ),
             detected_iso=conflict.get("detected_iso", "unknown"),
-            agent_a=conflict.get("entry_a_agent", "unknown"),
-            session_a=conflict.get("entry_a_session", "unknown"),
-            value_a=conflict.get("entry_a_value", "(empty)"),
-            agent_b=conflict.get("entry_b_agent", "unknown"),
-            session_b=conflict.get("entry_b_session", "unknown"),
-            value_b=conflict.get("entry_b_value", "(empty)"),
+            agent_a=self._sanitize_prompt_value(
+                conflict.get("entry_a_agent", "unknown"), max_length=200
+            ),
+            session_a=self._sanitize_prompt_value(
+                conflict.get("entry_a_session", "unknown"), max_length=200
+            ),
+            value_a=self._sanitize_prompt_value(
+                conflict.get("entry_a_value", "(empty)")
+            ),
+            agent_b=self._sanitize_prompt_value(
+                conflict.get("entry_b_agent", "unknown"), max_length=200
+            ),
+            session_b=self._sanitize_prompt_value(
+                conflict.get("entry_b_session", "unknown"), max_length=200
+            ),
+            value_b=self._sanitize_prompt_value(
+                conflict.get("entry_b_value", "(empty)")
+            ),
         )
 
     def _query(self, prompt: str) -> Optional[dict]:
@@ -389,7 +429,7 @@ class ConflictJudge:
 
         # Pick the verdict matching majority winner with highest confidence
         matching = [v for v in verdicts if v.get("winner") == majority_winner]
-        best = max(matching, key=lambda v: v.get("confidence", 0))
+        best = dict(max(matching, key=lambda v: v.get("confidence", 0)))
 
         # Average confidence across matching verdicts
         avg_confidence = sum(
@@ -465,6 +505,12 @@ class ConflictJudge:
             and strategy-specific metadata.
         """
         if not strategy or strategy not in VALID_STRATEGIES:
+            import logging
+            if strategy:
+                logging.getLogger(__name__).warning(
+                    "Invalid strategy %r, falling back to %s",
+                    strategy, DEFAULT_STRATEGY,
+                )
             strategy = DEFAULT_STRATEGY
 
         conflict_id = conflict.get("conflict_id", "unknown")
@@ -473,15 +519,8 @@ class ConflictJudge:
             result = self.single_judge(conflict)
         elif strategy == "majority-vote":
             result = self.majority_vote(conflict)
-        elif strategy == "confidence-merge":
+        else:  # confidence-merge (guaranteed by VALID_STRATEGIES guard)
             result = self.confidence_merge(conflict)
-        else:
-            result = {
-                "resolved": False,
-                "verdict": None,
-                "strategy": strategy,
-                "error": f"Unknown strategy: {strategy}",
-            }
 
         result["conflict_id"] = conflict_id
         result["judged_at"] = time.time()
@@ -572,7 +611,9 @@ def batch_resolve(
 
         if result.get("resolved") and not dry_run:
             # Mark the conflict as resolved on disk
-            conflict_id = conflict.get("conflict_id", "")
+            conflict_id = _sanitize_conflict_id(
+                conflict.get("conflict_id", "")
+            )
             if conflict_id:
                 success = resolver.resolve_conflict_by_id(conflict_id)
                 result["persisted"] = success
@@ -607,8 +648,11 @@ def batch_resolve(
 
 def _save_resolution_metadata(root: Path, conflict_id: str, result: dict):
     """Save judge resolution metadata alongside the conflict file."""
+    safe_id = _sanitize_conflict_id(conflict_id)
+    if not safe_id:
+        return
     conflicts_dir = root / ".claude" / "memory" / "conflicts"
-    meta_path = conflicts_dir / f"{conflict_id}.resolution.json"
+    meta_path = conflicts_dir / f"{safe_id}.resolution.json"
     try:
         meta = {
             "conflict_id": conflict_id,
