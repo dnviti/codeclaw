@@ -137,6 +137,31 @@ For each file in "Files involved":
 - If marked CREATE, check target directory and similar files for patterns
 - Identify relevant interfaces, types, and patterns
 
+#### Step 4.5: Frontend Design Wizard (conditional)
+
+After codebase exploration, check if the task involves frontend code:
+
+```bash
+TM is-frontend-task TASK-CODE
+```
+
+**Platform-only alternative:** Pass issue body as JSON: `TM is-frontend-task TASK-CODE --json-body '{"title":"...","description":"...","files_create":[...],"files_modify":[...]}'`
+
+If `is_frontend` is `true`, run the frontend design wizard:
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/frontend_wizard.py detect-framework --root <PROJECT_ROOT>
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/frontend_wizard.py search-templates --framework <DETECTED> --query "<task keywords>"
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/frontend_wizard.py list-palettes
+```
+
+1. **Present 3 template options** from `search-templates` results. In **yolo mode**, auto-select the first template.
+2. **Ask palette selection**: show bundled palettes (Open Color, Radix Colors, Tailwind, Material Design) plus "Generate from seed color". In **yolo mode**, auto-select the recommended palette.
+3. **Apply constraints**: `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/frontend_wizard.py apply-constraints --template <SELECTED> --palette <SELECTED> --typography modern`
+4. Include the generated CSS variables, typography, and motion settings as **design constraints** in the implementation briefing.
+
+**Skip conditions:** Skip this step if `is_frontend` is `false` or if the wizard has already been run for this task (check `.claude/frontend-config.json`).
+
 #### Step 5: Present the implementation briefing
 
 1. **Task Selected**: Code, title, priority
