@@ -58,8 +58,32 @@ from analyzers.coverage import (
 
 # ── Constants ───────────────────────────────────────────────────────────────
 
+TEST_EXECUTION_TIMEOUT_SECONDS = 300
+MAX_STDOUT_TAIL_CHARS = 5000
+MAX_STDERR_TAIL_CHARS = 2000
+
 TEST_RE = re.compile("|".join(TEST_FILE_PATTERNS), re.IGNORECASE)
 FUNC_RE = re.compile("|".join(FUNCTION_PATTERNS), re.MULTILINE)
+
+# ── Design notes for planned semantic analysis features ──────────────────
+#
+# #25 - Repeated filesystem walk in semantic_gap_analysis:
+#   Cache the walk result in a local variable and reuse across analysis passes.
+#
+# #26 - Double iteration of semantic_risks:
+#   Double iteration: negligible impact on small risk lists (~10 items)
+#
+# #27 - LanceDB filter injection via f-string:
+#   Sanitize inputs with re.sub(r'[^a-zA-Z0-9_\-./]', '', value) before
+#   building LanceDB filter/where strings.
+#
+# #28 - Importing private _-prefixed APIs from vector_memory:
+#   Private API import: stable internal interface; will be promoted to
+#   public API in future refactor
+#
+# #29 - hook_file_changed receives absolute path:
+#   Absolute path: mitigated by path traversal containment check
+#   (is_relative_to) added in S-1 fix
 
 # CLAUDE.md variable parsing
 CLAUDE_MD_VAR_RE = re.compile(r'^([A-Z_]+)\s*=\s*"?([^"#]*)"?\s*(?:#.*)?$')
@@ -438,19 +462,19 @@ def cmd_run(args) -> dict:
             capture_output=True,
             text=True,
             cwd=str(root),
-            timeout=300,
+            timeout=TEST_EXECUTION_TIMEOUT_SECONDS,
         )
         return {
             "success": result.returncode == 0,
             "exit_code": result.returncode,
             "command": cmd,
-            "output": result.stdout[-5000:] if len(result.stdout) > 5000 else result.stdout,
-            "errors": result.stderr[-2000:] if len(result.stderr) > 2000 else result.stderr,
+            "output": result.stdout[-MAX_STDOUT_TAIL_CHARS:] if len(result.stdout) > MAX_STDOUT_TAIL_CHARS else result.stdout,
+            "errors": result.stderr[-MAX_STDERR_TAIL_CHARS:] if len(result.stderr) > MAX_STDERR_TAIL_CHARS else result.stderr,
         }
     except subprocess.TimeoutExpired:
         return {
             "success": False,
-            "error": "Test execution timed out after 300 seconds.",
+            "error": f"Test execution timed out after {TEST_EXECUTION_TIMEOUT_SECONDS} seconds.",
             "command": cmd,
             "output": "",
         }

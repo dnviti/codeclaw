@@ -26,6 +26,11 @@ if str(_SCRIPT_DIR) not in sys.path:
 
 # ── Constants ───────────────────────────────────────────────────────────────
 
+DEFAULT_GIT_TIMEOUT_SECONDS = 30
+DEFAULT_ISSUE_FETCH_LIMIT = 200
+DEFAULT_CI_RUNS_LIMIT = 20
+DEFAULT_FIND_FILES_LIMIT = 50
+
 SEPARATOR = "-" * 78
 SECTION_SEP = "=" * 80
 TASK_FILES = ["to-do.txt", "progressing.txt", "done.txt"]
@@ -1549,7 +1554,10 @@ def cmd_find_files(args):
 # ── Subcommand: platform-cmd ───────────────────────────────────────────────
 
 def _load_platform_config():
-    """Load platform config (reuses platform-config logic)."""
+    """Load platform config (reuses platform-config logic).
+
+    # GitLab URL support: design decision pending; current implementation targets GitHub-only repos
+    """
     root = get_main_repo_root()
     for candidate in ["issues-tracker.json", "github-issues.json"]:
         fp = root / ".claude" / candidate
@@ -1720,7 +1728,7 @@ def cmd_platform_cmd(args):
             cmd += f' --notes "{params.get("notes", "")}"'
         elif op == "list-ci-runs":
             ref = params.get("ref", "")
-            cmd = f'gh run list --repo "{repo}" --json databaseId,name,status,conclusion,workflowName --limit 20'
+            cmd = f'gh run list --repo "{repo}" --json databaseId,name,status,conclusion,workflowName --limit {DEFAULT_CI_RUNS_LIMIT}'
             cmd += f""" -q '[.[] | select(.headBranch=="{ref}" or .headSha=="{ref}")]'"""
         elif op == "delete-release":
             cmd = f'gh release delete "{params.get("tag", "")}" --repo "{repo}" --yes'
@@ -1877,7 +1885,7 @@ def cmd_sync_from_platform(args):
         result = subprocess.run(
             ["gh", "issue", "list", "--repo", repo,
              "--label", f"{task_label},{source_label}",
-             "--state", "all", "--limit", "200",
+             "--state", "all", "--limit", str(DEFAULT_ISSUE_FETCH_LIMIT),
              "--json", "number,title,state,labels"],
             capture_output=True, text=True,
         )
@@ -1885,7 +1893,7 @@ def cmd_sync_from_platform(args):
         result = subprocess.run(
             ["glab", "issue", "list", "-R", repo,
              "-l", f"{task_label},{source_label}",
-             "--state", "all", "--per-page", "200",
+             "--state", "all", "--per-page", str(DEFAULT_ISSUE_FETCH_LIMIT),
              "--output", "json"],
             capture_output=True, text=True,
         )
@@ -2329,7 +2337,7 @@ def cmd_remove_worktree(args):
             # Verify task branch exists before attempting merge
             branch_check = subprocess.run(
                 ["git", "branch", "--list", branch_name],
-                capture_output=True, text=True, cwd=cwd, timeout=30,
+                capture_output=True, text=True, cwd=cwd, timeout=DEFAULT_GIT_TIMEOUT_SECONDS,
             )
             branch_exists = bool(branch_check.stdout.strip())
 
@@ -2338,7 +2346,7 @@ def cmd_remove_worktree(args):
                     # Detect current branch
                     current_branch_result = subprocess.run(
                         ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-                        capture_output=True, text=True, check=True, cwd=cwd, timeout=30,
+                        capture_output=True, text=True, check=True, cwd=cwd, timeout=DEFAULT_GIT_TIMEOUT_SECONDS,
                     )
                     original_branch = current_branch_result.stdout.strip()
                     need_switch = original_branch != dev_branch
@@ -2348,24 +2356,24 @@ def cmd_remove_worktree(args):
                         # Stash dirty state if needed (includes untracked files)
                         status_result = subprocess.run(
                             ["git", "status", "--porcelain"],
-                            capture_output=True, text=True, cwd=cwd, timeout=30,
+                            capture_output=True, text=True, cwd=cwd, timeout=DEFAULT_GIT_TIMEOUT_SECONDS,
                         )
                         if status_result.stdout.strip():
                             subprocess.run(
                                 ["git", "stash", "--include-untracked"],
-                                capture_output=True, text=True, check=True, cwd=cwd, timeout=30,
+                                capture_output=True, text=True, check=True, cwd=cwd, timeout=DEFAULT_GIT_TIMEOUT_SECONDS,
                             )
                             stashed = True
                         subprocess.run(
                             ["git", "checkout", dev_branch],
-                            capture_output=True, text=True, check=True, cwd=cwd, timeout=30,
+                            capture_output=True, text=True, check=True, cwd=cwd, timeout=DEFAULT_GIT_TIMEOUT_SECONDS,
                         )
 
                     # Perform the merge
                     merge_result = subprocess.run(
                         ["git", "merge", "--no-ff", branch_name,
                          "-m", f"chore: merge {branch_name} into {dev_branch} (local)"],
-                        capture_output=True, text=True, cwd=cwd, timeout=30,
+                        capture_output=True, text=True, cwd=cwd, timeout=DEFAULT_GIT_TIMEOUT_SECONDS,
                     )
 
                     if merge_result.returncode == 0:
@@ -2375,7 +2383,7 @@ def cmd_remove_worktree(args):
                         # Abort failed merge to leave repo in clean state
                         subprocess.run(
                             ["git", "merge", "--abort"],
-                            capture_output=True, text=True, cwd=cwd, timeout=30,
+                            capture_output=True, text=True, cwd=cwd, timeout=DEFAULT_GIT_TIMEOUT_SECONDS,
                         )
                         print(f"Warning: could not merge {branch_name} into {dev_branch}: {merge_warning}",
                               file=sys.stderr)
@@ -2384,12 +2392,12 @@ def cmd_remove_worktree(args):
                     if need_switch:
                         subprocess.run(
                             ["git", "checkout", original_branch],
-                            capture_output=True, text=True, cwd=cwd, timeout=30,
+                            capture_output=True, text=True, cwd=cwd, timeout=DEFAULT_GIT_TIMEOUT_SECONDS,
                         )
                         if stashed:
                             pop_result = subprocess.run(
                                 ["git", "stash", "pop"],
-                                capture_output=True, text=True, cwd=cwd, timeout=30,
+                                capture_output=True, text=True, cwd=cwd, timeout=DEFAULT_GIT_TIMEOUT_SECONDS,
                             )
                             if pop_result.returncode != 0:
                                 pop_err = pop_result.stderr.strip() or pop_result.stdout.strip()
@@ -2638,7 +2646,7 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("find-files", help="Cross-platform file search")
     p.add_argument("--patterns", required=True, help="Comma-separated glob patterns")
     p.add_argument("--max-depth", type=int, default=None, help="Max directory depth")
-    p.add_argument("--limit", type=int, default=50, help="Max results")
+    p.add_argument("--limit", type=int, default=DEFAULT_FIND_FILES_LIMIT, help="Max results")
     p.add_argument("--format", choices=["json", "text"], default="text")
     p.set_defaults(func=cmd_find_files)
 

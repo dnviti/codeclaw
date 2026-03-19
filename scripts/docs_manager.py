@@ -187,7 +187,11 @@ def cmd_discover(args):
 # ── Subcommand: check-staleness ────────────────────────────────────────────
 
 def cmd_check_staleness(args):
-    """Compare current source file hashes against .docs-manifest.json."""
+    """Compare current source file hashes against .docs-manifest.json.
+
+    Per-file subprocess: batch mode requires vector_memory API redesign;
+    current scale (~100 files) is acceptable
+    """
     root = get_main_repo_root()
     manifest = _read_manifest(root)
 
