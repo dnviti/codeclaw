@@ -1536,6 +1536,32 @@ def _cmd_status_sqlite(args):
             print(f"  Staleness:    unknown (no manifest)")
 
 
+def _cmd_clear_sqlite(args):
+    """Clear command routed to SQLite backend."""
+    root = Path(args.root).resolve()
+    config = get_effective_config(root)
+
+    if not args.force:
+        print("Use --force to confirm deletion of the SQLite index.",
+              file=sys.stderr)
+        sys.exit(1)
+
+    sqlite_cfg = config.get("sqlite", {})
+    db_path = root / sqlite_cfg.get("db_path", ".claude/memory/sqlite/memory.db")
+
+    removed = False
+    for suffix in ("", "-wal", "-shm"):
+        p = Path(str(db_path) + suffix)
+        if p.exists():
+            p.unlink()
+            removed = True
+
+    if removed:
+        print(f"SQLite index cleared: {db_path}", file=sys.stderr)
+    else:
+        print(f"No SQLite index found at: {db_path}", file=sys.stderr)
+
+
 def _cmd_gc_sqlite(args):
     """GC command routed to SQLite backend."""
     root = Path(args.root).resolve()
@@ -1628,6 +1654,8 @@ Examples:
     clr.add_argument("--root", default=".", help="Project root directory")
     clr.add_argument("--force", action="store_true",
                      help="Confirm deletion")
+    clr.add_argument("--backend", choices=["lancedb", "sqlite"], default=None,
+                     help="Storage backend (default: from config or lancedb)")
 
     # ── configure ──
     cfg = sub.add_parser("configure", help="Show vector memory configuration")
@@ -1680,7 +1708,7 @@ Examples:
 
     # Resolve backend for commands that support it
     backend = None
-    if hasattr(args, "backend") and args.command in ("index", "search", "status", "gc"):
+    if hasattr(args, "backend") and args.command in ("index", "search", "status", "gc", "clear"):
         root = Path(getattr(args, "root", ".")).resolve()
         config = get_effective_config(root)
         backend = _resolve_backend(args, root, config)
@@ -1701,7 +1729,10 @@ Examples:
         else:
             cmd_status(args)
     elif args.command == "clear":
-        cmd_clear(args)
+        if backend == "sqlite":
+            _cmd_clear_sqlite(args)
+        else:
+            cmd_clear(args)
     elif args.command == "configure":
         cmd_configure(args)
     elif args.command == "gc":
