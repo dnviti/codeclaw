@@ -25,6 +25,12 @@ from typing import NamedTuple
 
 logger = logging.getLogger(__name__)
 
+# ── Optional locked config support ─────────────────────────────────────────
+try:
+    from config_lock import locked_config_update as _locked_config_update
+except ImportError:
+    _locked_config_update = None
+
 # Cache platform detection once at import time (the OS never changes mid-run).
 _PLATFORM_SYSTEM: str = platform.system()
 
@@ -724,6 +730,8 @@ def _persist_gpu_lib_paths(paths: list[str]) -> bool:
     GPU path allowlist validation to prevent injection of arbitrary
     paths into the config file.
 
+    Uses locked_config_update for atomic, race-condition-safe writes.
+
     Returns:
         True if persisted successfully, False otherwise.
     """
@@ -748,16 +756,28 @@ def _persist_gpu_lib_paths(paths: list[str]) -> bool:
     if not allowed:
         return False
 
+    def _update(config: dict) -> dict:
+        vm = config.setdefault("vector_memory", {})
+        gpu_cfg = vm.setdefault("gpu_acceleration", {})
+        gpu_cfg["lib_paths"] = allowed
+        return config
+
+    if _locked_config_update is not None:
+        try:
+            return _locked_config_update(config_path, _update)
+        except Exception as exc:
+            logger.debug("Failed to persist GPU lib paths: %s", exc)
+            return False
+
+    # Fallback: direct write if config_lock not available
     try:
         with open(config_path, "r", encoding="utf-8") as f:
             config = json.load(f)
 
-        vm = config.setdefault("vector_memory", {})
-        gpu_cfg = vm.setdefault("gpu_acceleration", {})
-        gpu_cfg["lib_paths"] = allowed
+        updated = _update(config)
 
         with open(config_path, "w", encoding="utf-8") as f:
-            json.dump(config, f, indent=2)
+            json.dump(updated, f, indent=2)
             f.write("\n")
 
         return True
