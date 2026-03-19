@@ -16,7 +16,7 @@ from pathlib import Path
 
 _SAFE_NAMESPACE_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
 
-from mcp_tools import SCRIPTS_DIR as _SCRIPT_DIR
+from mcp_tools import SCRIPTS_DIR as _SCRIPT_DIR, resolve_main_repo_root
 
 
 def register(server):
@@ -55,7 +55,8 @@ def register(server):
                            f"hyphens, and underscores.",
             })
 
-        root_path = Path(root).resolve()
+        # Resolve to main repo root (worktree-aware)
+        root_path = resolve_main_repo_root(root)
         notes_dir = root_path / ".claude" / "memory" / "notes" / namespace
         # Verify resolved path stays within expected directory
         expected_base = root_path / ".claude" / "memory" / "notes"

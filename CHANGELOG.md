@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.0.1] - 2026-03-19
+
+### Added
+- auto-detect GPU hardware for ONNX Runtime setup (VMEM-0046) (#171)
+- enable claw@dnviti-plugins in settings.json
+
+### Fixed
+- worktree-aware vector memory path resolution and [BETA] opt-in (FIX-0001) (#172)
+
 ## [4.0.0] - 2026-03-19
 
 ### Added

@@ -13,7 +13,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from mcp_tools import SCRIPTS_DIR as _SCRIPT_DIR
+from mcp_tools import SCRIPTS_DIR as _SCRIPT_DIR, resolve_main_repo_root
 
 
 def register(server):
@@ -40,8 +40,8 @@ def register(server):
             JSON array of search results with file_path, name, chunk_type,
             score, and content fields.
         """
-        # Validate root path
-        resolved_root = Path(root).resolve()
+        # Resolve to main repo root (worktree-aware)
+        resolved_root = resolve_main_repo_root(root)
         if not resolved_root.is_dir():
             return json.dumps({
                 "status": "error",

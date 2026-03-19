@@ -140,7 +140,34 @@ def _get_cached_provider(emb_config: dict):
 # ── Configuration ────────────────────────────────────────────────────────────
 
 def _find_project_root() -> Path:
-    """Find project root by looking for .claude/ or .git/."""
+    """Find project root, resolving through git worktrees to the main repo.
+
+    Uses a single ``git rev-parse --git-common-dir --git-dir`` call to detect
+    if the current working directory is inside a worktree.  When it is, the
+    main repository root is returned so that vector memory storage is shared
+    across all worktrees instead of being isolated per-worktree.
+
+    Falls back to the legacy directory-walk approach when git is unavailable.
+    """
+    import subprocess as _sp
+    try:
+        result = _sp.run(
+            ["git", "rev-parse", "--git-common-dir", "--git-dir"],
+            capture_output=True, text=True, check=True,
+        )
+        lines = result.stdout.strip().splitlines()
+        if len(lines) >= 2:
+            common_path = Path(lines[0]).resolve()
+            git_dir_path = Path(lines[1]).resolve()
+            if common_path != git_dir_path:
+                # Inside a worktree — common dir is <main-repo>/.git
+                return common_path.parent
+            # Not a worktree — git dir is <repo>/.git, return its parent
+            return git_dir_path.parent
+    except (FileNotFoundError, _sp.CalledProcessError):
+        pass
+
+    # Fallback: walk up directories looking for .claude/ or .git/
     d = Path.cwd()
     while d != d.parent:
         if (d / ".claude").is_dir() or (d / ".git").exists():

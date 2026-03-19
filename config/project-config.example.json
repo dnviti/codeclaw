@@ -63,7 +63,8 @@
     },
     "gpu_acceleration": {
       "mode": "auto",
-      "log_provider": true
+      "log_provider": true,
+      "_comment": "GPU mode auto-detected during /setup. Values: auto (detect at runtime), gpu (require GPU), cpu (force CPU). Package mapping: nvidia=onnxruntime-gpu, amd=onnxruntime-rocm, apple=onnxruntime-silicon, windows=onnxruntime-directml, none=onnxruntime"
     },
     "event_sourcing": {
       "enabled": false,
@@ -161,5 +162,9 @@
     "enabled": false,
     "model": "",
     "offloading_level": 5
+  },
+  "worktrees": {
+    "enabled": false,
+    "_comment": "[BETA] When true, /task pick creates isolated git worktrees per task. When false (default), standard branch switching is used."
   }
 }
