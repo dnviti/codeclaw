@@ -51,6 +51,8 @@ else:
 
 # ── Constants ────────────────────────────────────────────────────────────────
 
+# Relative path — callers must resolve against the *main* repository root
+# (not a worktree root) via get_main_repo_root() or _find_project_root().
 DEFAULT_LOCK_DIR = ".claude/memory/locks"
 DEFAULT_TIMEOUT = 30.0      # seconds
 DEFAULT_POLL_INTERVAL = 0.1  # seconds
@@ -552,7 +554,7 @@ class RedisLockBackend(LockBackend):
         agent_id: str = "",
         session_id: str = "",
         redis_url: str = "redis://localhost:6379",
-        redis_key_prefix: str = "ctdf:",
+        redis_key_prefix: str = "claw:",
         auto_renew_interval: float = DEFAULT_AUTO_RENEW_INTERVAL,
     ):
         self.store_path = Path(store_path).resolve()
@@ -974,7 +976,7 @@ def create_lock(
             agent_id=agent_id,
             session_id=session_id,
             redis_url=config.get("redis_url", "redis://localhost:6379"),
-            redis_key_prefix=config.get("redis_key_prefix", "ctdf:"),
+            redis_key_prefix=config.get("redis_key_prefix", "claw:"),
             auto_renew_interval=config.get(
                 "auto_renew_interval", DEFAULT_AUTO_RENEW_INTERVAL
             ),

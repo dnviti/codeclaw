@@ -2,7 +2,7 @@
 title: CodeClaw Documentation
 description: Complete technical documentation for the CodeClaw
 generated-by: claw-docs
-generated-at: 2026-03-18T18:00:00Z
+generated-at: 2026-03-19T00:00:00Z
 source-files:
   - README.md
   - .claude-plugin/plugin.json
@@ -11,7 +11,7 @@ source-files:
 
 # CodeClaw
 
-A project-agnostic task and release management framework with 8 streamlined skills: `/task`, `/idea`, `/release`, `/docs`, `/setup`, `/update`, `/tests`, `/help`. Features a gated release pipeline with automatic subagent orchestration — all through plain-text files and slash commands.
+A project-agnostic task and idea management plugin for Claude Code with 8 streamlined skills: `/task`, `/idea`, `/release`, `/docs`, `/setup`, `/update`, `/tests`, `/help`. Features a gated release pipeline with automatic subagent orchestration — all through plain-text files and slash commands.
 
 ## Table of Contents
 
@@ -47,7 +47,7 @@ A project-agnostic task and release management framework with 8 streamlined skil
 
 | Component | Technology |
 |-----------|-----------|
-| Runtime | Python 3 (stdlib only, zero dependencies) |
+| Runtime | Python 3.12+ (stdlib only, zero dependencies) |
 | Host | Claude Code CLI |
 | Version Control | Git (worktrees, branches, tags) |
 | Platform | GitHub Actions / GitLab CI/CD |
@@ -73,22 +73,25 @@ A project-agnostic task and release management framework with 8 streamlined skil
 
 | Skill | Purpose |
 |-------|---------|
-| `/task` | Task lifecycle: pick, create, continue, schedule, status |
-| `/idea` | Idea lifecycle: create, approve, disapprove, refactor, scout |
-| `/release` | Release pipeline: create, generate, continue, close |
+| `/task` | Task lifecycle: pick, create, continue, schedule, status, edit |
+| `/idea` | Idea lifecycle: create, approve, disapprove, refactor, scout, edit |
+| `/release` | Release pipeline: create, generate, continue, close, security-only, test-only, edit |
 | `/docs` | Documentation: generate, sync, reset, publish |
-| `/setup` | Project initialization and configuration |
+| `/setup` | Project initialization, configuration, scaffolding, branch strategy, agentic fleet |
 | `/update` | Update CodeClaw-managed files |
 | `/tests` | Test discovery, gaps, coverage, execution |
-| `/help` | Usage guide |
+| `/help` | Semantic search over skills and documentation |
+| `/crazy` | **[BETA]** Fully autonomous project builder |
 
-## Feature Highlights (v3.5.1)
+## Feature Highlights (v4.0.0)
 
-- **Ollama local model integration** — Route tool calls and tasks to local LLMs with configurable offloading level (0–10) and full `/api/chat` tool-calling loop
-- **Mandatory vector memory** — Always-on semantic indexing of project files; MCP server for agent retrieval
-- **Platform release state sync** — `release-state.json` persisted as a GitHub/GitLab issue in platform-only mode, shared across all collaborators
-- **NFKC Unicode normalization** — Exclude patterns are NFKC-normalized to prevent fullwidth-space/homoglyph bypass
-- **PreToolUse hook** — Evaluate every tool call against the Ollama offloading policy before execution
+- **Unified memory orchestrator** — Tandem multi-backend coordination (LanceDB + SQLite FTS5 + RLM)
+- **Semantic intelligence** — `/task`, `/idea`, `/docs`, `/tests`, `/help` skills powered by vector search
+- **[BETA] /crazy skill** — Fully autonomous end-to-end project builder
+- **Image generation** — On-demand with 4 provider backends (DALL-E, Replicate, Stability AI, local)
+- **Frontend design wizard** — Template search, theme selection, color palette picker
+- **Security hardened** — 209 findings analyzed, 133 fixes applied across 20 PRs by parallel sub-agents
+- **Rebranded** — CTDF to CodeClaw with plugin id `claw`
 - **Gated release pipeline** — 9 sequential stages with parallel sub-agent PR analysis, CI monitoring, and mandatory local build verification
 
 ## Key Design Principles
@@ -101,7 +104,7 @@ A project-agnostic task and release management framework with 8 streamlined skil
 
 ## Version
 
-Current plugin version: **3.5.2**
+Current plugin version: **4.0.0**
 
 Repository: [github.com/dnviti/codeclaw](https://github.com/dnviti/codeclaw)
 

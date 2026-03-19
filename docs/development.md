@@ -2,15 +2,18 @@
 title: Development
 description: Contributing guidelines, local development setup, testing, branch strategy, and coding conventions
 generated-by: claw-docs
-generated-at: 2026-03-18T00:00:00Z
+generated-at: 2026-03-19T00:00:00Z
 source-files:
   - README.md
+  - CLAUDE.md
   - .gitignore
   - scripts/task_manager.py
   - scripts/release_manager.py
   - scripts/skill_helper.py
   - scripts/ollama_manager.py
   - scripts/vector_memory.py
+  - scripts/mcp_server.py
+  - scripts/memory_orchestrator.py
   - scripts/hooks/pre_tool_offload.py
   - scripts/test_manager.py
   - scripts/analyzers/__init__.py
@@ -36,14 +39,14 @@ claude --plugin-dir .
 
 ### Requirements
 
-- **Python 3** — All scripts use stdlib only (no pip install needed for core features)
+- **Python 3.12+** — All scripts use stdlib only (no pip install needed for core features)
 - **Claude Code CLI** — The host application
 - **Git** — For worktree management and branch strategy
 - **`gh` CLI** (optional) — For GitHub Issues integration testing
 
 **Optional (for vector memory development):**
 ```bash
-pip install lancedb sentence-transformers mcp
+pip install lancedb onnxruntime tokenizers numpy pyarrow mcp
 ```
 
 ### Project Structure
@@ -53,7 +56,7 @@ codeclaw/
 ├── .claude-plugin/
 │   ├── plugin.json              # Plugin manifest (name, version, skills path)
 │   └── marketplace.json         # Marketplace listing
-├── skills/                      # 8 Claude Code skills (SKILL.md each)
+├── skills/                      # 9 Claude Code skills (SKILL.md each)
 │   ├── task/                    # Task management
 │   ├── idea/                    # Idea management
 │   ├── release/                 # Release pipeline
@@ -61,7 +64,8 @@ codeclaw/
 │   ├── setup/                   # Project setup and configuration
 │   ├── update/                  # Plugin file updates
 │   ├── tests/                   # Test management
-│   └── help/                    # Help and usage
+│   ├── help/                    # Help and usage
+│   └── crazy/                   # [BETA] Autonomous project builder
 ├── scripts/                     # Python automation (stdlib only)
 │   ├── task_manager.py          # Task/idea CRUD, hooks, platform sync
 │   ├── release_manager.py       # Version, changelog, state, platform release state
@@ -73,9 +77,23 @@ codeclaw/
 │   ├── memory_builder.py        # Codebase summary generator
 │   ├── test_manager.py          # Test discovery, gaps, coverage
 │   ├── ollama_manager.py        # Local model routing + tool calling
-│   ├── vector_memory.py         # Always-on semantic indexing + MCP
+│   ├── vector_memory.py         # Semantic indexing and search
+│   ├── mcp_server.py            # Vector memory MCP server
+│   ├── memory_orchestrator.py   # Multi-backend memory coordination
+│   ├── sqlite_backend.py        # SQLite FTS5 + vec hybrid backend
+│   ├── memory_event_log.py      # Event-sourced memory for concurrent writes
+│   ├── memory_lock.py           # Distributed lock backends (file/SQLite/Redis)
+│   ├── conflict_judge.py        # LLM-as-judge conflict resolution
+│   ├── rlm_backend.py           # Recursive context processing
+│   ├── image_generator.py       # Multi-provider image generation
+│   ├── frontend_wizard.py       # Frontend design wizard
 │   ├── setup_labels.py          # Platform label creation
 │   ├── setup_protection.py      # Branch protection rules
+│   ├── adapters/                # Platform adapters (claude_code, opencode, openclaw)
+│   ├── chunkers/                # Text chunking for vector memory
+│   ├── embeddings/              # Embedding providers (local ONNX, API)
+│   ├── mcp_tools/               # MCP server tool definitions
+│   ├── social_platforms/        # Social media posting adapters
 │   ├── hooks/
 │   │   └── pre_tool_offload.py  # PreToolUse hook: Ollama routing
 │   └── analyzers/               # Static analysis subpackage
@@ -239,12 +257,12 @@ During releases, the `/release continue` pipeline discovers all manifest files a
 The vector memory system (`scripts/vector_memory.py`) requires optional packages:
 
 ```bash
-pip install lancedb sentence-transformers mcp
+pip install lancedb onnxruntime tokenizers numpy pyarrow mcp
 ```
 
 Key behaviors:
-- **Always-on indexing** — PostToolUse hook re-indexes every edited file automatically
-- **MCP server** — Start with `python3 scripts/vector_memory.py server` for stdio transport
+- **Unified memory orchestrator** — Multi-backend coordination via `memory_orchestrator.py` (LanceDB + SQLite FTS5 + RLM)
+- **MCP server** — `mcp_server.py` provides semantic search, indexing, memory storage, and task context tools via stdio transport
 - **Garbage collection** — Run `python3 scripts/vector_memory.py gc --json` to prune stale entries
 - **Index location** — `.claude/memory/vectors` (gitignored via `.gitignore`)
 

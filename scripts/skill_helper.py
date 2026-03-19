@@ -1212,8 +1212,31 @@ def cmd_detect_branch_strategy(_args) -> dict:
 # Subcommand: setup-task-worktree
 # ════════════════════════════════════════════════════════════════════════════
 
+def _is_worktree_enabled(root: Path) -> bool:
+    """Check whether worktree-based task isolation is enabled in project config.
+
+    Reads ``worktrees.enabled`` from project-config.json.  Returns False
+    (disabled) by default — worktrees are a [BETA] opt-in feature.
+    """
+    for cfg_name in [
+        root / ".claude" / "project-config.json",
+        root / "config" / "project-config.json",
+    ]:
+        if cfg_name.exists():
+            try:
+                data = json.loads(cfg_name.read_text(encoding="utf-8"))
+                return bool(data.get("worktrees", {}).get("enabled", False))
+            except (json.JSONDecodeError, OSError):
+                pass
+    return False
+
+
 def cmd_setup_task_worktree(args) -> dict:
-    """Consolidate 5-step worktree creation into one command."""
+    """Consolidate 5-step worktree creation into one command.
+
+    When ``worktrees.enabled`` is False (the default), falls back to
+    standard branch switching instead of creating a git worktree.
+    """
     task_code = args.task_code
     base_branch = args.base_branch or "develop"
 
@@ -1221,6 +1244,48 @@ def cmd_setup_task_worktree(args) -> dict:
         return {"success": False, "error": "task_code is required"}
 
     root = get_main_repo_root()
+
+    # [BETA] Check if worktree isolation is enabled in project config
+    if not _is_worktree_enabled(root):
+        # Fallback: standard branch switching
+        code_lower = task_code.lower()
+        branch_name = f"task/{code_lower}"
+
+        # Fetch latest base branch
+        git_run("fetch", "origin", base_branch, cwd=str(root))
+
+        branch_exists = git_branch_exists(branch_name)
+        try:
+            if branch_exists:
+                subprocess.run(
+                    ["git", "checkout", branch_name],
+                    capture_output=True, text=True, check=True,
+                    cwd=str(root),
+                )
+            else:
+                # Try from remote first, then local
+                result = subprocess.run(
+                    ["git", "checkout", "-b", branch_name, f"origin/{base_branch}"],
+                    capture_output=True, text=True,
+                    cwd=str(root),
+                )
+                if result.returncode != 0:
+                    subprocess.run(
+                        ["git", "checkout", "-b", branch_name, base_branch],
+                        capture_output=True, text=True, check=True,
+                        cwd=str(root),
+                    )
+        except subprocess.CalledProcessError as e:
+            return {"success": False, "error": e.stderr.strip() or str(e)}
+
+        return {
+            "success": True,
+            "worktree_dir": str(root),
+            "branch": branch_name,
+            "created": not branch_exists,
+            "reused_existing": branch_exists,
+            "worktree_mode": False,
+        }
     code_lower = task_code.lower()
     branch_name = f"task/{code_lower}"
     wt_dir = root / ".worktrees" / "task" / code_lower

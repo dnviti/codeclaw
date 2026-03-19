@@ -2,7 +2,7 @@
 title: API Reference
 description: CLI commands, skill interfaces, script subcommands, and hook specifications
 generated-by: claw-docs
-generated-at: 2026-03-18T00:00:00Z
+generated-at: 2026-03-19T00:00:00Z
 source-files:
   - scripts/task_manager.py
   - scripts/release_manager.py
@@ -15,6 +15,7 @@ source-files:
   - scripts/test_manager.py
   - scripts/ollama_manager.py
   - scripts/vector_memory.py
+  - scripts/mcp_server.py
   - scripts/hooks/pre_tool_offload.py
   - scripts/setup_labels.py
   - scripts/setup_protection.py
@@ -113,23 +114,35 @@ python3 scripts/task_manager.py <subcommand> [options]
 
 | Subcommand | Key Options | Description |
 |------------|-------------|-------------|
-| `list` | `--status STATUS`, `--format text\|json\|summary` | List tasks/ideas by status |
+| `list` | `--status STATUS`, `--format json\|summary` | List tasks by status |
+| `list-ideas` | `--file ideas\|disapproved\|all`, `--format json\|summary` | List ideas |
 | `parse` | `CODE` | Parse a single task/idea block |
-| `next-id` | `--type task\|idea`, `--source platform-titles` | Generate the next sequential task ID |
+| `next-id` | `--type task\|idea`, `--source local\|platform-titles` | Generate the next sequential task ID |
 | `move` | `CODE --to progressing\|done\|todo`, `--completed-summary TEXT` | Move a task between statuses |
+| `remove` | `CODE --file FILE` | Remove a block from a file |
 | `sections` | `--file FILE` | List sections in a task file |
-| `duplicates` | `--keywords TEXT` | Detect duplicate tasks by keywords |
+| `duplicates` | `--keywords TEXT`, `--files FILES` | Detect duplicate tasks by keywords |
+| `summary` | `--format json\|text` | Task counts and progress |
+| `prefixes` | -- | List all task code prefixes |
+| `verify-files` | `CODE` | Check file existence for a task |
+| `semantic-explore` | `CODE`, `--format json\|text` | Explore codebase semantically for a task using vector search |
+| `is-frontend-task` | `CODE`, `--json-body JSON` | Check if a task involves frontend work |
 | `hook` | `FILE_PATH` | PostToolUse hook: correlate file edit to task |
 | `platform-cmd` | `OPERATION [key=value...]` | Run a platform (GitHub/GitLab) operation |
+| `worktree-info` | -- | Return worktree detection and listing |
+| `platform-config` | -- | Return platform tracker configuration |
 | `setup-task-worktree` | `--task-code CODE`, `--base-branch BRANCH` | Create isolated git worktree for a task |
-| `remove-worktree` | `--task-code CODE` | Remove a task's worktree (merges branch into develop first) |
-| `list-release-tasks` | `--version VERSION` | List all tasks assigned to a release |
+| `remove-worktree` | `--task-code CODE`, `--remove-branch`, `--no-merge-to-develop` | Remove a task's worktree (merges branch into develop first) |
+| `list-release-tasks` | `--version VERSION`, `--format json\|text` | List all tasks assigned to a release |
 | `schedule-tasks` | `--codes "CODE1,CODE2"`, `--version VERSION` | Assign tasks to a release |
-| `create-patch-task` | `--source SOURCE`, `--title TITLE`, `--release VERSION` | Create a release patch task (RPAT) |
-| `sync-from-platform` | `--dry-run`, `--format text` | Sync task status from platform Issues |
+| `create-patch-task` | `--source SOURCE`, `--title TITLE`, `--release VERSION`, `--priority PRIORITY`, `--description TEXT` | Create a release patch task (RPAT) |
+| `sync-from-platform` | `--dry-run`, `--format json\|text` | Sync task status from platform Issues |
+| `pr-body` | `--task-code CODE`, `--title TEXT`, `--summary TEXT`, `--issue-num NUM`, `--source SOURCE` | Generate PR body from template |
+| `find-files` | `--patterns GLOBS`, `--max-depth N`, `--limit N`, `--format json\|text` | Cross-platform file search |
+| `register-agent` | `--task-code CODE`, `--agent-type TYPE` | Register an agent with the memory consistency protocol |
 | `deregister-agent` | `--session-id ID` | Deregister a completed agent session |
 | `add-test-procedure` | `CODE --body TEXT` | Append testing instructions to a task |
-| `set-release` | `CODE VERSION` | Set the release assignment for a task |
+| `set-release` | `CODE --version VERSION` | Set the release assignment for a task |
 
 **platform-cmd operations:**
 
@@ -158,21 +171,26 @@ python3 scripts/release_manager.py <subcommand> [options]
 
 | Subcommand | Key Options | Description |
 |------------|-------------|-------------|
-| `full-context` | -- | Return complete release context as JSON |
+| `full-context` | `--tag-prefix PREFIX` | Return complete release context as JSON |
+| `current-version` | `--tag-prefix PREFIX` | Detect version from manifest files |
 | `parse-commits` | `--since TAG` | Parse conventional commits since a tag |
+| `suggest-bump` | `--current-version V`, `--suggested-bump TYPE`, `--force TYPE` | Calculate new version from bump type |
 | `generate-changelog` | `--version VERSION`, `--date DATE` | Generate changelog in Keep a Changelog format |
 | `update-versions` | `--version VERSION`, `--package-paths PATHS` | Discover and update version in all manifests |
 | `release-state-get` | -- | Read current release state (platform issue in platform-only mode) |
 | `release-state-set` | `--version V`, `--stage N`, `--stage-name NAME`, `--branch B`, `--add-completed-task CODE`, `--add-issue JSON`, `--increment-loop`, `--mark-gate-approved N` | Persist release pipeline state |
 | `release-state-clear` | -- | Clear saved release state (closes platform issue in platform-only mode) |
+| `release-generate` | -- | Analyze non-done tasks and return grouped data for roadmap generation |
 | `release-plan-list` | -- | List all releases in the release plan |
 | `release-plan-create` | `--version VERSION`, `--theme TEXT`, `--target-date DATE` | Create a new release entry |
-| `release-plan-add-task` | `--version VERSION`, `--task-code CODE` | Add a task to a release |
+| `release-plan-add-task` | `--version VERSION`, `--task CODE` | Add a task to a release |
+| `release-plan-remove-task` | `--version VERSION`, `--task CODE` | Remove a task from a release |
+| `release-plan-next` | -- | Get the next planned/in-progress release |
 | `release-plan-mark-released` | `--version VERSION` | Mark a release as released |
 | `release-plan-set-status` | `--version VERSION`, `--status STATUS` | Update a release status |
 | `merge-check` | `--source BRANCH`, `--target BRANCH` | Check for merge conflicts without merging |
 | `release-close` | `--version VERSION` | Check release readiness for closing |
-| `list-release-tasks` | `--version VERSION` | List tasks for a release with platform status |
+| `coverage-gate` | `--min-coverage N` | Run coverage threshold check as a release gate |
 
 > **Release state in platform-only mode:** `release-state-get/set/clear` transparently read/write a GitHub/GitLab issue labeled `claw-release-state`, so all collaborators share the same pipeline state.
 
@@ -186,9 +204,16 @@ python3 scripts/skill_helper.py <subcommand> [options]
 |------------|-------------|-------------|
 | `context` | -- | Return platform config, worktree state, branch config, submodules as JSON |
 | `dispatch` | `--skill NAME`, `--args TEXT` | Parse skill arguments: flow, yolo, task code |
+| `check-project-state` | -- | Return project file existence and CLAUDE.md status |
+| `create-project-files` | `--project-name NAME` | Create missing task/idea files |
+| `detect-branch-strategy` | -- | Return branch state and needs |
 | `setup-task-worktree` | `--task-code CODE`, `--base-branch BRANCH` | Create isolated git worktree for a task |
-| `list-submodules` | -- | List git submodules with paths |
 | `status-report` | -- | Pre-computed status: task counts, in-progress, next recommended, worktrees |
+| `list-submodules` | -- | List git submodules with paths |
+| `detect-release-config` | -- | Return all release configuration |
+| `detect-platform` | -- | Detect AI coding platform and return adapter info |
+| `refresh-branch-config` | -- | Refresh branch config cache |
+| `adapter-invoke` | `--platform PLATFORM`, `--tool TOOL`, `--tool-args ARGS` | Invoke a tool through the platform adapter |
 
 ### ollama_manager.py
 
@@ -233,14 +258,48 @@ python3 scripts/vector_memory.py <subcommand> [options]
 
 | Subcommand | Key Options | Description |
 |------------|-------------|-------------|
-| `index` | `--path PATH` | Index a file or directory |
-| `search` | `--query TEXT`, `--limit N` | Semantic search the vector store |
+| `index` | `--root PATH`, `--full`, `--force-init` | Index a file or directory (full or incremental) |
+| `search` | `QUERY`, `--root PATH`, `--top-k N`, `--file-filter F`, `--type-filter T`, `--json`, `--full-content`, `--version N` | Semantic search the vector store |
+| `status` | `--root PATH`, `--json` | Report index health, chunk counts, staleness |
+| `clear` | `--root PATH`, `--force` | Reset the vector index |
+| `configure` | `--root PATH`, `--json` | Show vector memory configuration |
+| `gc` | `--root PATH`, `--ttl-days N`, `--deep`, `--json` | Garbage-collect stale entries; compact index |
+| `agents` | `--root PATH`, `--status STATUS`, `--type TYPE`, `--json` | List active/historical agent sessions |
+| `conflicts` | `--root PATH`, `--status STATUS`, `--resolve ID`, `--json` | Show flagged contradictions between agents |
 | `hook` | `FILE_PATH` | PostToolUse hook: auto-index an edited file |
-| `gc` | `--json` | Garbage-collect stale entries; compact index |
-| `status` | -- | Report index size, entry count, last GC |
-| `server` | -- | Start the MCP server (stdio transport) |
 
-> **Prerequisites:** `pip install lancedb sentence-transformers mcp`
+> **Prerequisites:** `pip install "lancedb>=0.5.0,<1.0" "sentence-transformers>=2.7.0,<3.0"` (or `onnxruntime`+`tokenizers` as an alternative to `sentence-transformers`)
+
+### mcp_server.py
+
+```bash
+python3 scripts/mcp_server.py [options]
+```
+
+| Option | Description |
+|--------|-------------|
+| `--root PATH` | Project root directory (default: current directory) |
+| `--check` | Check if the MCP SDK is installed and exit |
+
+**MCP Tools (registered when `vector_memory.enabled` is `true`):**
+
+| Tool | Description |
+|------|-------------|
+| `index_repository` | Trigger codebase indexing (full or incremental) |
+| `semantic_search` | Find relevant code and context (orchestrator-aware) |
+| `store_memory` | Persist agent learnings and discoveries |
+| `get_task_context` | Retrieve comprehensive task-specific context |
+| `list_backends` | List configured memory backends and availability |
+| `backend_health` | Check health status of memory backends |
+
+**MCP Resources (always registered):**
+
+| Resource URI | Description |
+|--------------|-------------|
+| `memory://status` | Current index status and available namespaces |
+| `memory://backends` | Available backends and their health status |
+
+> **Prerequisites:** `pip install "mcp>=1.0" "lancedb>=0.5.0,<1.0" "sentence-transformers>=2.7.0,<3.0"`
 
 ### docs_manager.py
 
@@ -253,10 +312,14 @@ python3 scripts/docs_manager.py <subcommand> [options]
 | `discover` | -- | Scan codebase: languages, frameworks, file roles |
 | `check-staleness` | -- | Compare source hashes against `.docs-manifest.json` |
 | `list-sections` | -- | List doc sections with existence status |
-| `init-manifest` | `--sections-json JSON` | Create/update `.docs-manifest.json` |
+| `init-manifest` | `--sections-json JSON`, `--visual-richness TIER` | Create/update `.docs-manifest.json` |
 | `clean` | -- | Remove all generated doc files |
+| `get-visual-richness` | -- | Return the visual richness tier from manifest |
 | `detect-site-generator` | -- | Check for static site generators |
 | `diff-since-tag` | `--tag TAG` | Return changed files since a git tag |
+| `semantic-discover` | `--section NAME`, `--topic TEXT`, `--top-k N`, `--exclude JSON` | Find cross-cutting source files via semantic search |
+| `reindex-docs` | -- | Re-index docs/ directory into vector memory |
+| `semantic-staleness` | `--changed-files JSON` | Semantic similarity check for staleness detection |
 
 ### agent_runner.py
 

@@ -607,7 +607,7 @@ def _vmem_search(root: Path, query: str, top_k: int = 10,
         lock = None
         try:
             from memory_lock import MemoryLock
-            agent_id = os.environ.get("CTDF_AGENT_ID", f"agent-{os.getpid()}")
+            agent_id = os.environ.get("CodeClaw_AGENT_ID", f"agent-{os.getpid()}")
             lock = MemoryLock(index_dir, agent_id=agent_id)
         except ImportError:
             pass

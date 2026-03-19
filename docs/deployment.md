@@ -2,7 +2,7 @@
 title: Deployment
 description: CI/CD pipelines, GitHub Actions workflows, GitLab CI templates, Docker tagging strategy, and production setup
 generated-by: claw-docs
-generated-at: 2026-03-18T00:00:00Z
+generated-at: 2026-03-19T00:00:00Z
 source-files:
   - .github/workflows/ci.yml
   - .github/workflows/release.yml
@@ -32,17 +32,24 @@ The CodeClaw plugin itself uses two GitHub Actions workflows:
 
 ### CI Pipeline (`.github/workflows/ci.yml`)
 
-Runs on pull requests to `main`, `develop`, and `staging` branches. Template-based with placeholder sections for project-specific lint, test, and build commands.
+Runs on pull requests to `main`, `develop`, and `staging` branches, and on merge group check requests. Configured for Python 3.12 with a cross-platform matrix (Ubuntu, macOS, Windows) using `fail-fast: false`.
+
+**Key features:**
+- **Permissions:** Read-only `contents`, write access to `pull-requests`
+- **Concurrency:** Groups runs by ref (`ci-${{ github.ref }}`) with `cancel-in-progress: true`
+- **Cross-platform Python detection:** Separate detection steps for Unix and Windows, merged into a unified `py` output step
+- **Steps:** Checkout (pinned SHA) → Setup Python (with pip cache) → Detect Python command → Install dependencies → Lint (flake8) → Syntax check core scripts → Run tests (pytest)
 
 ### Release Pipeline (`.github/workflows/release.yml`)
 
-Triggers on pushes to `main` that modify plugin-relevant paths (`skills/`, `scripts/`, `config/`, `templates/`, `hooks/`, `CLAUDE.md`). Automatically:
+Triggers on manual `workflow_dispatch` or pushes to `main` that modify plugin-relevant paths (`skills/`, `scripts/`, `config/`, `templates/`, `hooks/`, `CLAUDE.md`). Automatically:
 
-1. Reads version from `.claude-plugin/plugin.json`
+1. Reads version from `.claude-plugin/plugin.json` (with `fetch-depth: 0` for full history)
 2. Checks if the tag already exists
-3. Generates release notes from commit history
-4. Creates a zip archive of the repository
+3. Generates release notes from commit history (comparing from previous tag)
+4. Creates a zip archive of the repository (`codeclaw-<version>.zip`)
 5. Tags and creates a GitHub Release with the archive
+6. Skips with a warning if the tag already exists (prompts to bump version in `plugin.json`)
 
 ## Template Workflows for Your Project
 
@@ -52,8 +59,8 @@ Located in `templates/github/workflows/`:
 
 | Template | Trigger | Purpose |
 |----------|---------|---------|
-| `ci.yml` | PR to main/develop/staging | Lint, test, build (placeholder-based) |
-| `release.yml` | Workflow dispatch or main push | Create tagged release with notes |
+| `ci.yml` | PR to main/develop/staging, merge group | Lint, test, build (cross-platform matrix) |
+| `release.yml` | Workflow dispatch or main push | Create tagged release with notes and zip archive |
 | `staging-merge.yml` | Push to staging | Build and push `latest` Docker image |
 | `security.yml` | Schedule or manual | Security scanning |
 | `agentic-fleet.yml` | Release publish | Orchestrates scout and docs pipelines |

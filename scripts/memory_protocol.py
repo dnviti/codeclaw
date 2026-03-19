@@ -34,6 +34,9 @@ if str(_SCRIPT_DIR) not in sys.path:
 
 # ── Constants ────────────────────────────────────────────────────────────────
 
+# Relative paths — callers must resolve against the *main* repository root
+# (not a worktree root) via get_main_repo_root() or _find_project_root()
+# so that sessions and conflicts are shared across all worktrees.
 DEFAULT_SESSIONS_DIR = ".claude/memory/sessions"
 DEFAULT_CONFLICTS_DIR = ".claude/memory/conflicts"
 
@@ -705,7 +708,7 @@ class MemoryProtocol:
             timeout=timeout,
             sqlite_path=self.lock_backend_config.get("sqlite_path"),
             redis_url=self.lock_backend_config.get("redis_url", "redis://localhost:6379"),
-            redis_key_prefix=self.lock_backend_config.get("redis_key_prefix", "ctdf:"),
+            redis_key_prefix=self.lock_backend_config.get("redis_key_prefix", "claw:"),
             auto_renew_interval=self.lock_backend_config.get("auto_renew_interval", 10),
         )
 

@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "generated_at": "2026-03-18T02:44:17.492070Z",
+  "generated_at": "2026-03-19T01:58:38.277161Z",
   "sections": [
     {
       "name": "index",
@@ -8,14 +8,14 @@
       "source_files": [
         {
           "path": ".claude-plugin/plugin.json",
-          "hash": "76b8cb2dd02b4e12d21186e055e875be98dc1ff58d69d180d44ee71f4e00a1ca"
+          "hash": "4dc2961f136bb7ba9068347d28abd0080f4cac0f02cab19e76ec698ce5e302a1"
         },
         {
           "path": "README.md",
-          "hash": "85386ecab5b931461b3f71ba22faec4042ff00f439a498f04e3a12ea9a505a88"
+          "hash": "5c05fa5b2ce1d3d6321a9b6456221d374c26f8e6f6ca9fa94f0f102a8d1f616e"
         }
       ],
-      "generated_at": "2026-03-18T02:44:17.490885Z"
+      "generated_at": "2026-03-19T01:58:38.275218Z"
     },
     {
       "name": "architecture",
@@ -23,42 +23,38 @@
       "source_files": [
         {
           "path": "scripts/task_manager.py",
-          "hash": "1e11957d7698f6c37dcc66bc609f43d8187aa854e4aeaaf66c21c81a56e2673b"
+          "hash": "2919bd4bb484151b955ad62e5726c7acf08b720ca5662b1badb1d1ae68832a63"
         },
         {
           "path": "scripts/release_manager.py",
-          "hash": "edc0735a456be479cd98056746f9a052dc5a723333d9b8cb2c0db82f759f1d96"
+          "hash": "8a7308d04b40ee86590f18baebbad8bd7b9d491260731fb972f82b817c551058"
         },
         {
           "path": "scripts/skill_helper.py",
-          "hash": "acc0f9d7721747f2c94245dcf44b4c9a1092745d7ddc7dd646d1dbe04ffb305f"
+          "hash": "e5e7d3f557aa94275a3248d3c9473c3edbb5311399f4923c7d36fd14f77a8d62"
         },
         {
           "path": "scripts/docs_manager.py",
-          "hash": "c8cbc0d6870389ee9b61637562821192e551b253789726ec47d6106adf4b0cb7"
+          "hash": "515b0340d74c924bf3b651ece6001f2dbe120b97de87b330d9df482121033a4e"
         },
         {
           "path": "scripts/vector_memory.py",
-          "hash": "464a53ba2887f420ddec302e67a040e54f8f478930de388e08fb33e4a6b58733"
+          "hash": "0450d7e72f16cdaddcada113b07057e7f23945b4422610668712496649b1fffe"
         },
         {
           "path": "scripts/mcp_server.py",
-          "hash": "851f8d7e39a4a2dc829b220ca35f9bbb21322d062874eebed8ed8a1a99946022"
+          "hash": "f55a2a42fa21abcc0c9648a0af33a0248753d568ba69214adc8de41a242eacb8"
         },
         {
           "path": "scripts/memory_protocol.py",
-          "hash": "6b7029ba7b0286bc5a00ca8e8e28bae56ce8956e03f0915b7a77e6df03811951"
+          "hash": "c235fb3bda6e50fd49abc47af37a04b879dc7f1bcc73f4575a9e1b134b52b325"
         },
         {
           "path": "scripts/memory_lock.py",
-          "hash": "2a1f9e162e8060782786b695a6168da8141f275a456e5c2cfa51c175ffc4a143"
-        },
-        {
-          "path": "hooks/hooks.json",
-          "hash": "833e2f568883317dc5c15e18f8e9175aebe95de3aec39c118864997b428c316f"
+          "hash": "c83a5d8dfb5e1ff7c52d28b399f1d9a04baa6eae1e5e6d91dc18a7864ff19257"
         }
       ],
-      "generated_at": "2026-03-18T02:44:17.491276Z"
+      "generated_at": "2026-03-19T01:58:38.275755Z"
     },
     {
       "name": "getting-started",
@@ -66,18 +62,18 @@
       "source_files": [
         {
           "path": "README.md",
-          "hash": "85386ecab5b931461b3f71ba22faec4042ff00f439a498f04e3a12ea9a505a88"
+          "hash": "5c05fa5b2ce1d3d6321a9b6456221d374c26f8e6f6ca9fa94f0f102a8d1f616e"
         },
         {
           "path": ".claude-plugin/plugin.json",
-          "hash": "76b8cb2dd02b4e12d21186e055e875be98dc1ff58d69d180d44ee71f4e00a1ca"
+          "hash": "4dc2961f136bb7ba9068347d28abd0080f4cac0f02cab19e76ec698ce5e302a1"
         },
         {
           "path": "CLAUDE.md",
-          "hash": ""
+          "hash": "4abde75f045b5936a3c7c7aa4bbc3992fab201679dc355e6e98cd9ddc3e901e5"
         }
       ],
-      "generated_at": "2026-03-18T02:44:17.491324Z"
+      "generated_at": "2026-03-19T01:58:38.275854Z"
     },
     {
       "name": "configuration",
@@ -85,18 +81,14 @@
       "source_files": [
         {
           "path": "config/project-config.example.json",
-          "hash": "63f80268d3fa6c74397e90095484185e0bc16ee552b32f5319e8eb5450a1d679"
+          "hash": "54ce0bf09f59b16de1ee613ecb9e85cc280720787727316502d572626203968f"
         },
         {
           "path": "config/mcp-server.example.json",
-          "hash": "59432dd836b6df4cba886ea0d3a5c1323b10c2ef477b625b4d3648af50c45181"
-        },
-        {
-          "path": "hooks/hooks.json",
-          "hash": "833e2f568883317dc5c15e18f8e9175aebe95de3aec39c118864997b428c316f"
+          "hash": "55a38c8c914fe7f79f39ff62ff1f5c2b498b59271e6dc934fc2c0c9725d5ea78"
         }
       ],
-      "generated_at": "2026-03-18T02:44:17.491353Z"
+      "generated_at": "2026-03-19T01:58:38.275911Z"
     },
     {
       "name": "api-reference",
@@ -104,30 +96,30 @@
       "source_files": [
         {
           "path": "scripts/task_manager.py",
-          "hash": "1e11957d7698f6c37dcc66bc609f43d8187aa854e4aeaaf66c21c81a56e2673b"
+          "hash": "2919bd4bb484151b955ad62e5726c7acf08b720ca5662b1badb1d1ae68832a63"
         },
         {
           "path": "scripts/release_manager.py",
-          "hash": "edc0735a456be479cd98056746f9a052dc5a723333d9b8cb2c0db82f759f1d96"
+          "hash": "8a7308d04b40ee86590f18baebbad8bd7b9d491260731fb972f82b817c551058"
         },
         {
           "path": "scripts/skill_helper.py",
-          "hash": "acc0f9d7721747f2c94245dcf44b4c9a1092745d7ddc7dd646d1dbe04ffb305f"
+          "hash": "e5e7d3f557aa94275a3248d3c9473c3edbb5311399f4923c7d36fd14f77a8d62"
         },
         {
           "path": "scripts/docs_manager.py",
-          "hash": "c8cbc0d6870389ee9b61637562821192e551b253789726ec47d6106adf4b0cb7"
+          "hash": "515b0340d74c924bf3b651ece6001f2dbe120b97de87b330d9df482121033a4e"
         },
         {
           "path": "scripts/vector_memory.py",
-          "hash": "464a53ba2887f420ddec302e67a040e54f8f478930de388e08fb33e4a6b58733"
+          "hash": "0450d7e72f16cdaddcada113b07057e7f23945b4422610668712496649b1fffe"
         },
         {
           "path": "scripts/mcp_server.py",
-          "hash": "851f8d7e39a4a2dc829b220ca35f9bbb21322d062874eebed8ed8a1a99946022"
+          "hash": "f55a2a42fa21abcc0c9648a0af33a0248753d568ba69214adc8de41a242eacb8"
         }
       ],
-      "generated_at": "2026-03-18T02:44:17.491564Z"
+      "generated_at": "2026-03-19T01:58:38.276251Z"
     },
     {
       "name": "deployment",
@@ -135,18 +127,18 @@
       "source_files": [
         {
           "path": ".github/workflows/ci.yml",
-          "hash": "f42340e78e6c1f68041cb60590ee2919dd6ba43f550ee76f61ffb507773b0e48"
+          "hash": "dbbc697c4f43cb51c337893c3f4d270deba62eceab6bf03cc3ff4b78e98b1696"
         },
         {
           "path": ".github/workflows/release.yml",
-          "hash": "e3295c0ae49440f2db9e173872560f7c6660491ff5311ea90acaaae6f56dd92b"
+          "hash": "d4ff3366b9393a95bd21f9208ea6b57a06f126ec3e0f86354c9c0615d4895561"
         },
         {
           "path": "README.md",
-          "hash": "85386ecab5b931461b3f71ba22faec4042ff00f439a498f04e3a12ea9a505a88"
+          "hash": "5c05fa5b2ce1d3d6321a9b6456221d374c26f8e6f6ca9fa94f0f102a8d1f616e"
         }
       ],
-      "generated_at": "2026-03-18T02:44:17.491607Z"
+      "generated_at": "2026-03-19T01:58:38.276344Z"
     },
     {
       "name": "development",
@@ -154,18 +146,18 @@
       "source_files": [
         {
           "path": "CLAUDE.md",
-          "hash": ""
+          "hash": "4abde75f045b5936a3c7c7aa4bbc3992fab201679dc355e6e98cd9ddc3e901e5"
         },
         {
           "path": "README.md",
-          "hash": "85386ecab5b931461b3f71ba22faec4042ff00f439a498f04e3a12ea9a505a88"
+          "hash": "5c05fa5b2ce1d3d6321a9b6456221d374c26f8e6f6ca9fa94f0f102a8d1f616e"
         },
         {
           "path": ".claude-plugin/plugin.json",
-          "hash": "76b8cb2dd02b4e12d21186e055e875be98dc1ff58d69d180d44ee71f4e00a1ca"
+          "hash": "4dc2961f136bb7ba9068347d28abd0080f4cac0f02cab19e76ec698ce5e302a1"
         }
       ],
-      "generated_at": "2026-03-18T02:44:17.491648Z"
+      "generated_at": "2026-03-19T01:58:38.276436Z"
     },
     {
       "name": "troubleshooting",
@@ -173,18 +165,18 @@
       "source_files": [
         {
           "path": "scripts/deps_check.py",
-          "hash": "c326b253c04b7538127c7acb81ee6a66faea5bd486badc78a38f98d8e8a25632"
+          "hash": "10632ab08e688d72fb1c0e8d3a9a4d6c16d9379d345b53c6c62752bc97632ad2"
         },
         {
           "path": "scripts/vector_memory.py",
-          "hash": "464a53ba2887f420ddec302e67a040e54f8f478930de388e08fb33e4a6b58733"
+          "hash": "0450d7e72f16cdaddcada113b07057e7f23945b4422610668712496649b1fffe"
         },
         {
           "path": "scripts/mcp_server.py",
-          "hash": "851f8d7e39a4a2dc829b220ca35f9bbb21322d062874eebed8ed8a1a99946022"
+          "hash": "f55a2a42fa21abcc0c9648a0af33a0248753d568ba69214adc8de41a242eacb8"
         }
       ],
-      "generated_at": "2026-03-18T02:44:17.491709Z"
+      "generated_at": "2026-03-19T01:58:38.276553Z"
     },
     {
       "name": "mcp-vector-memory",
@@ -192,78 +184,50 @@
       "source_files": [
         {
           "path": "scripts/vector_memory.py",
-          "hash": "464a53ba2887f420ddec302e67a040e54f8f478930de388e08fb33e4a6b58733"
+          "hash": "0450d7e72f16cdaddcada113b07057e7f23945b4422610668712496649b1fffe"
         },
         {
           "path": "scripts/mcp_server.py",
-          "hash": "851f8d7e39a4a2dc829b220ca35f9bbb21322d062874eebed8ed8a1a99946022"
-        },
-        {
-          "path": "scripts/mcp_tools/index.py",
-          "hash": "0ecc4f80a6f2fe3f5b06e1817fa30238c279ff4eb52149b73dcc9ba94a832f98"
+          "hash": "f55a2a42fa21abcc0c9648a0af33a0248753d568ba69214adc8de41a242eacb8"
         },
         {
           "path": "scripts/mcp_tools/search.py",
-          "hash": "a3a19a0293aa6251b50ed747ad2214fcc513b24eb64f2029b3c4d9e6c3cf8e7d"
-        },
-        {
-          "path": "scripts/mcp_tools/store.py",
-          "hash": "b2eb64c59d15dfbac020c17fe8d224d84321c01d2a76cbd2b21d2e6751ca4688"
+          "hash": "333a4be35378ddf218e8e7a88aa309ffabe67d33ccf9ede389e54396b900cc9d"
         },
         {
           "path": "scripts/mcp_tools/task_context.py",
-          "hash": "c84d6f8d147657b7233d4bd3857091454dfb6cef0ac7a898104230ea3a4d281b"
+          "hash": "154ec8c080d8bd0877e336ffa420311ba8587fdb251f2e9789048158fb9660be"
         },
         {
           "path": "scripts/embeddings/__init__.py",
-          "hash": "d6d0a14330d490ecdec95e1002bd112f8a5fddc29d0138195d0e57b21a5a6e46"
+          "hash": "6298356eab761c974ec968c5c31cb1523dce7e01d212df411df1e7232143c851"
         },
         {
           "path": "scripts/embeddings/local_onnx.py",
-          "hash": "5719f2924394b866b14ab7c4d48d56f5ef1cf2a8c54067fb509cee4c0fb523d8"
-        },
-        {
-          "path": "scripts/embeddings/api_provider.py",
-          "hash": "a2cf977bf49ea1162382cbcc4e0f23075ef4de05c3a3cfe82c2f3f8955179224"
-        },
-        {
-          "path": "scripts/chunkers/__init__.py",
-          "hash": "4a0b6da22572f66bb4ddd7f22c670c1f04a242b2f282ab6c0f0e156b10111567"
-        },
-        {
-          "path": "scripts/chunkers/python_chunker.py",
-          "hash": "f3142d9cf237b24bc15e4b3255a24f240714f6e81df6538e6e9d07cb7ac3d34a"
-        },
-        {
-          "path": "scripts/chunkers/generic_chunker.py",
-          "hash": "87dc221b1713458de457521d7d0d75b61c76c5350190785873e8debe5358ed12"
+          "hash": "89011f28729434ba163c3b51d348fcd959de57caf4659f851daae184c42eaebd"
         },
         {
           "path": "scripts/memory_protocol.py",
-          "hash": "6b7029ba7b0286bc5a00ca8e8e28bae56ce8956e03f0915b7a77e6df03811951"
+          "hash": "c235fb3bda6e50fd49abc47af37a04b879dc7f1bcc73f4575a9e1b134b52b325"
         },
         {
           "path": "scripts/memory_lock.py",
-          "hash": "2a1f9e162e8060782786b695a6168da8141f275a456e5c2cfa51c175ffc4a143"
+          "hash": "c83a5d8dfb5e1ff7c52d28b399f1d9a04baa6eae1e5e6d91dc18a7864ff19257"
         },
         {
           "path": "scripts/deps_check.py",
-          "hash": "c326b253c04b7538127c7acb81ee6a66faea5bd486badc78a38f98d8e8a25632"
+          "hash": "10632ab08e688d72fb1c0e8d3a9a4d6c16d9379d345b53c6c62752bc97632ad2"
         },
         {
           "path": "config/project-config.example.json",
-          "hash": "63f80268d3fa6c74397e90095484185e0bc16ee552b32f5319e8eb5450a1d679"
+          "hash": "54ce0bf09f59b16de1ee613ecb9e85cc280720787727316502d572626203968f"
         },
         {
           "path": "config/mcp-server.example.json",
-          "hash": "59432dd836b6df4cba886ea0d3a5c1323b10c2ef477b625b4d3648af50c45181"
-        },
-        {
-          "path": "hooks/hooks.json",
-          "hash": "833e2f568883317dc5c15e18f8e9175aebe95de3aec39c118864997b428c316f"
+          "hash": "55a38c8c914fe7f79f39ff62ff1f5c2b498b59271e6dc934fc2c0c9725d5ea78"
         }
       ],
-      "generated_at": "2026-03-18T02:44:17.491938Z"
+      "generated_at": "2026-03-19T01:58:38.276914Z"
     },
     {
       "name": "llm-context",
@@ -271,26 +235,26 @@
       "source_files": [
         {
           "path": "README.md",
-          "hash": "85386ecab5b931461b3f71ba22faec4042ff00f439a498f04e3a12ea9a505a88"
+          "hash": "5c05fa5b2ce1d3d6321a9b6456221d374c26f8e6f6ca9fa94f0f102a8d1f616e"
         },
         {
           "path": "CLAUDE.md",
-          "hash": ""
+          "hash": "4abde75f045b5936a3c7c7aa4bbc3992fab201679dc355e6e98cd9ddc3e901e5"
         },
         {
           "path": "scripts/task_manager.py",
-          "hash": "1e11957d7698f6c37dcc66bc609f43d8187aa854e4aeaaf66c21c81a56e2673b"
+          "hash": "2919bd4bb484151b955ad62e5726c7acf08b720ca5662b1badb1d1ae68832a63"
         },
         {
           "path": "scripts/release_manager.py",
-          "hash": "edc0735a456be479cd98056746f9a052dc5a723333d9b8cb2c0db82f759f1d96"
+          "hash": "8a7308d04b40ee86590f18baebbad8bd7b9d491260731fb972f82b817c551058"
         },
         {
           "path": "config/project-config.example.json",
-          "hash": "63f80268d3fa6c74397e90095484185e0bc16ee552b32f5319e8eb5450a1d679"
+          "hash": "54ce0bf09f59b16de1ee613ecb9e85cc280720787727316502d572626203968f"
         }
       ],
-      "generated_at": "2026-03-18T02:44:17.492069Z"
+      "generated_at": "2026-03-19T01:58:38.277157Z"
     }
   ]
 }

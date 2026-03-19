@@ -28,7 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - MCP vector memory toggleable via configuration parameter (MCP-0032) (#138)
 - Cache branch topology and protection settings (CONF-0031) (#145)
 - Edit flows for /task edit, /idea edit, and /release edit (EDIT-0044) (#157)
-- Rebrand project from CTDF to CodeClaw with plugin id claw (REBR-0042) (#156)
+- Rebrand project from CodeClaw to CodeClaw with plugin id claw (REBR-0042) (#156)
 
 ### Fixed
 - Add missing timeout parameter to FileLockBackend.__init__

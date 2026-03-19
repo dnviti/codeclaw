@@ -2,7 +2,7 @@
 title: MCP Vector Memory
 description: Semantic vector memory layer with MCP server integration — architecture, installation, configuration, and use cases
 generated-by: claw-docs
-generated-at: 2026-03-18T18:00:00Z
+generated-at: 2026-03-19T00:00:00Z
 source-files:
   - scripts/vector_memory.py
   - scripts/mcp_server.py
@@ -10,6 +10,7 @@ source-files:
   - scripts/mcp_tools/search.py
   - scripts/mcp_tools/store.py
   - scripts/mcp_tools/task_context.py
+  - scripts/mcp_tools/backends.py
   - scripts/embeddings/__init__.py
   - scripts/embeddings/local_onnx.py
   - scripts/embeddings/api_provider.py
@@ -59,7 +60,10 @@ flowchart TD
         T2["semantic_search"]
         T3["store_memory"]
         T4["get_task_context"]
+        T5["list_backends"]
+        T6["backend_health"]
         R1["memory://status"]
+        R2["memory://backends"]
     end
 
     subgraph Clients["MCP Clients"]
@@ -237,6 +241,15 @@ CodeClaw Vector Memory — Optional Dependencies
   [     OK] PyArrow                  (1x.x.x)
   [     OK] NumPy                    (2.x.x)
 
+GPU Acceleration
+-------------------------------------------------------
+  No GPU providers detected (CPU-only onnxruntime installed).
+  For GPU acceleration, install the appropriate variant:
+    NVIDIA:  pip install onnxruntime-gpu
+    AMD:     pip install onnxruntime-rocm
+    Windows: pip install onnxruntime-directml
+    macOS:   pip install onnxruntime-silicon
+
 Status: Ready for vector memory indexing.
 ```
 
@@ -295,7 +308,20 @@ All configuration lives in `project-config.json` (searched at `.claude/project-c
     "index_path": ".claude/memory/vectors",
     "batch_size": 64,
     "include_patterns": [],
-    "exclude_patterns": []
+    "exclude_patterns": [],
+    "backend": "lancedb",
+    "lock_backend": {
+      "type": "file",
+      "sqlite_path": ".claude/memory/locks/lock.db",
+      "redis_url": "redis://localhost:6379",
+      "redis_key_prefix": "claw:",
+      "timeout": 30,
+      "auto_renew_interval": 10
+    },
+    "gpu_acceleration": {
+      "mode": "auto",
+      "log_provider": true
+    }
   }
 }
 ```
@@ -312,6 +338,13 @@ All configuration lives in `project-config.json` (searched at `.claude/project-c
 | `batch_size` | `64` | Number of chunks per embedding batch |
 | `include_patterns` | `[]` | Whitelist file patterns (empty = all files) |
 | `exclude_patterns` | `[]` | Additional file patterns to skip |
+| `backend` | `"lancedb"` | Primary storage backend (`"lancedb"`, `"sqlite"`, or `"rlm"`) |
+| `lock_backend.type` | `"file"` | Lock backend for multi-agent coordination: `"file"` (default, single-machine), `"sqlite"` (networked filesystems), `"redis"` (distributed) |
+| `lock_backend.timeout` | `30` | Lock acquisition timeout in seconds |
+| `lock_backend.redis_url` | `"redis://localhost:6379"` | Redis connection URL (Redis backend only, requires `pip install redis`) |
+| `lock_backend.auto_renew_interval` | `10` | Auto-renewal interval in seconds for Redis locks |
+| `gpu_acceleration.mode` | `"auto"` | GPU mode for local ONNX embeddings: `"auto"` (try GPU, fall back to CPU), `"gpu"` (require GPU), `"cpu"` (force CPU) |
+| `gpu_acceleration.log_provider` | `true` | Log which ONNX execution provider is active on startup |
 
 ### Memory Consistency Section
 
@@ -321,7 +354,16 @@ All configuration lives in `project-config.json` (searched at `.claude/project-c
     "gc_ttl_days": 30,
     "max_index_size_mb": 500,
     "conflict_strategy": "auto",
-    "enable_versioned_reads": false
+    "enable_versioned_reads": false,
+    "auto_resolve": {
+      "enabled": false,
+      "strategy": "single-judge",
+      "provider": "ollama",
+      "confidence_threshold": 0.8,
+      "num_votes": 3,
+      "max_auto_resolve_per_run": 10,
+      "model": ""
+    }
   }
 }
 ```
@@ -332,6 +374,12 @@ All configuration lives in `project-config.json` (searched at `.claude/project-c
 | `max_index_size_mb` | `500` | Maximum allowed index size |
 | `conflict_strategy` | `"auto"` | How to resolve multi-agent conflicts (`"auto"` applies per-category rules) |
 | `enable_versioned_reads` | `false` | Enable LanceDB dataset versioning for point-in-time queries |
+| `auto_resolve.enabled` | `false` | Enable automated conflict resolution via LLM judge |
+| `auto_resolve.strategy` | `"single-judge"` | Resolution strategy for the conflict judge |
+| `auto_resolve.provider` | `"ollama"` | LLM provider for auto-resolution |
+| `auto_resolve.confidence_threshold` | `0.8` | Minimum confidence to accept an auto-resolution |
+| `auto_resolve.num_votes` | `3` | Number of judge votes for consensus |
+| `auto_resolve.max_auto_resolve_per_run` | `10` | Maximum conflicts to auto-resolve per GC run |
 
 ### MCP Server Section
 
@@ -350,7 +398,7 @@ All configuration lives in `project-config.json` (searched at `.claude/project-c
 ```mermaid
 flowchart LR
     subgraph Local["Local (Default)"]
-        L["all-MiniLM-L6-v2<br>384 dimensions<br>Zero-server<br>ONNX Runtime"]
+        L["all-MiniLM-L6-v2<br>384 dimensions<br>Zero-server<br>ONNX Runtime<br>GPU auto-detect"]
     end
 
     subgraph OpenAI["OpenAI API"]
@@ -375,6 +423,8 @@ flowchart LR
 | `openai` | `text-embedding-3-small` | 1536 | `OPENAI_API_KEY` | Balance of cost/quality |
 | `voyage` | `voyage-code-3` | 1024 | `VOYAGE_API_KEY` | Code-optimized searches |
 | `voyage` | `voyage-3-lite` | 512 | `VOYAGE_API_KEY` | Lightweight, fast |
+
+**GPU acceleration (local provider):** The local ONNX provider auto-detects GPU execution providers in preference order: CUDA (NVIDIA) > ROCm (AMD) > CoreML (macOS) > DirectML (Windows) > OpenVINO > CPU. Configure via `gpu_acceleration.mode` in `project-config.json`. Use `python3 scripts/deps_check.py` to check available GPU providers.
 
 **To switch providers**, update `project-config.json`:
 
@@ -474,13 +524,13 @@ your-project/
 │       │   └── <namespace>/         # Custom namespaces
 │       ├── sessions/                # Agent session tracking (JSON)
 │       ├── conflicts/               # Conflict detection records
-│       └── locks/                   # Advisory file locks
+│       └── locks/                   # Advisory locks (file, SQLite, or Redis backend)
 └── ...
 ```
 
 ## MCP Tools Reference
 
-The MCP server exposes four tools and one resource:
+The MCP server exposes six tools and two resources:
 
 ### index_repository
 
@@ -555,7 +605,7 @@ Persist agent learnings and discoveries for future retrieval.
 
 ### get_task_context
 
-Composite tool that assembles comprehensive context for a specific task.
+Composite tool that assembles comprehensive context for a specific task. It performs two complementary semantic searches: a keyword-based search using the task ID and a description-based search using the full task title and description to find conceptually related code.
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
@@ -565,12 +615,14 @@ Composite tool that assembles comprehensive context for a specific task.
 ```mermaid
 flowchart LR
     TC["get_task_context<br>AUTH-0001"] --> TF["Parse Task Files<br>to-do.txt / progressing.txt"]
-    TC --> SS["Semantic Search<br>code related to AUTH-0001"]
+    TC --> SS1["Keyword Search<br>search by task ID"]
+    TC --> SS2["Description Search<br>search by task content"]
     TC --> DT["Dependency Tasks<br>parse linked task codes"]
     TC --> MN["Memory Notes<br>search .claude/memory/notes/"]
 
     TF --> R["Combined Result"]
-    SS --> R
+    SS1 --> R
+    SS2 --> R
     DT --> R
     MN --> R
 
@@ -593,12 +645,51 @@ flowchart LR
   "related_code": [
     {"file_path": "src/auth/jwt.ts", "name": "signToken", "chunk_type": "function", "score": 0.18}
   ],
+  "semantic_related_code": [
+    {"file_path": "src/middleware/auth.ts", "name": "verifyToken", "chunk_type": "function", "score": 0.22, "language": "typescript"}
+  ],
   "dependency_tasks": [
     {"task_id": "DB-0003", "title": "Database Connection Pool", "status": "done"}
   ],
   "memory_notes": [
     {"path": ".claude/memory/notes/architecture/20260315_auth.md", "namespace": "architecture", "preview": "..."}
   ]
+}
+```
+
+The `related_code` field contains results from the keyword-based search (by task ID), while `semantic_related_code` contains results from the description-based search (by task content). Results in `semantic_related_code` are deduplicated by file path, keeping the best score per file.
+
+### list_backends
+
+Query the memory orchestrator for all configured backends and their availability.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `root` | `string` | `"."` | Project root directory |
+
+```json
+// Example response
+[
+  {"name": "lancedb", "configured": true, "available": true, "weight": 1.0},
+  {"name": "sqlite", "configured": false, "available": false, "weight": 0.8},
+  {"name": "rlm", "configured": false, "available": false, "weight": 0.6}
+]
+```
+
+### backend_health
+
+Check health status of one or all memory backends.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `backend` | `string` | `""` | Specific backend to check (`"lancedb"`, `"sqlite"`, `"rlm"`). If empty, checks all configured backends |
+| `root` | `string` | `"."` | Project root directory |
+
+```json
+// Example response (all backends)
+{
+  "lancedb": {"status": "healthy", "index_exists": true, "total_chunks": 1247},
+  "sqlite": {"status": "not_configured"}
 }
 ```
 
@@ -614,7 +705,22 @@ Returns current index health and available namespaces:
   "total_chunks": 1247,
   "total_files": 89,
   "last_indexed": "2026-03-18T12:00:00Z",
-  "namespaces": ["general", "bugs", "architecture"]
+  "namespaces": ["general", "bugs", "architecture"],
+  "lock_backend": "file"
+}
+```
+
+### memory://backends (Resource)
+
+Returns the status of all available memory backends and the orchestrator:
+
+```json
+{
+  "orchestrator_available": true,
+  "backends": {
+    "lancedb": {"status": "healthy"},
+    "sqlite": {"status": "not_configured"}
+  }
 }
 ```
 
@@ -649,10 +755,12 @@ stateDiagram-v2
 
 | Mechanism | Implementation | Purpose |
 |-----------|---------------|---------|
-| **Advisory Locking** | `memory_lock.py` — `fcntl.flock` (Unix) / `msvcrt.locking` (Windows) | Single-writer / multi-reader on the vector store |
+| **Advisory Locking** | `memory_lock.py` — pluggable backends: `FileLockBackend` (fcntl/msvcrt, default), `SQLiteLockBackend` (WAL-mode, networked FS), `RedisLockBackend` (distributed, SET NX EX with auto-renewal) | Single-writer / multi-reader on the vector store |
+| **Event Locking** | `memory_lock.EventLock` — lock-free appends with exclusive compaction locks | Optimistic concurrency for event-sourced writes |
+| **Per-Backend Locks** | `memory_lock.create_backend_lock()` — separate lock files per memory backend (`vector_store`, `sqlite_store`, `rlm_store`) | Backends written independently without blocking each other |
 | **Entry Tagging** | Every entry gets `agent_id`, `session_id`, `task_code`, `timestamp` | Track ownership and provenance |
 | **Conflict Detection** | Compare entries on same `file_path` with different `content` | Catch contradictory writes |
-| **Resolution Strategies** | Factual → last-writer-wins, Additive → merge, Opinion → flag-for-review | Automatic conflict handling |
+| **Resolution Strategies** | Factual → last-writer-wins, Additive → merge, Opinion → flag-for-review (with optional auto-judge via LLM) | Automatic conflict handling |
 | **Session Registry** | JSON files in `.claude/memory/sessions/` | Track agent lifecycles, detect orphans |
 | **Versioned Reads** | LanceDB dataset versioning (optional) | Point-in-time queries |
 
@@ -848,7 +956,7 @@ flowchart TD
 - **Path containment:** Stored notes verify that the resolved path stays within `.claude/memory/notes/`
 - **Agent ID sanitization:** All agent identifiers are stripped of special characters before use in file paths or environment variables
 - **API key handling:** API keys are read from environment variables, never stored in config files
-- **Advisory locking:** Prevents concurrent write corruption, with deadlock detection at 120 seconds
+- **Advisory locking:** Prevents concurrent write corruption, with deadlock detection at 120 seconds. Pluggable backends: file (fcntl/msvcrt), SQLite (WAL-mode for networked FS), Redis (distributed with auto-renewal). Redis URLs are validated for scheme (redis:// or rediss:// only) and passwords are redacted in status output
 
 ## Troubleshooting
 
@@ -875,14 +983,26 @@ Failed to download model.onnx from https://huggingface.co/...
 ### Lock timeout
 
 ```
-LockTimeoutError: Could not acquire exclusive lock within 30s
+LockTimeoutError: Could not acquire exclusive lock on .../vector_store.lock within 30s. Holder: {...}
 ```
 
 **Fix:** Check for crashed agents holding stale locks:
 ```bash
 python3 vector_memory.py agents --status active
 ```
-If an agent is orphaned, its lock can be force-released.
+If an agent is orphaned, its lock can be force-released. The GC command also cleans up stale locks automatically:
+```bash
+python3 vector_memory.py gc
+```
+
+For networked filesystems where `fcntl.flock` is unreliable, switch to the SQLite lock backend:
+```json
+{
+  "vector_memory": {
+    "lock_backend": { "type": "sqlite" }
+  }
+}
+```
 
 ### Index too large
 

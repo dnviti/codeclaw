@@ -2,14 +2,26 @@
 title: LLM Context
 description: Consolidated single-file reference for LLM/bot consumption — architecture, APIs, configuration, and quick-start
 generated-by: claw-docs
-generated-at: 2026-03-18T00:00:00Z
+generated-at: 2026-03-19T00:00:00Z
 source-files:
   - README.md
+  - CLAUDE.md
+  - docs/index.md
+  - docs/architecture.md
+  - docs/getting-started.md
+  - docs/configuration.md
+  - docs/api-reference.md
+  - docs/development.md
   - scripts/task_manager.py
   - scripts/release_manager.py
   - scripts/skill_helper.py
   - scripts/ollama_manager.py
   - scripts/vector_memory.py
+  - scripts/mcp_server.py
+  - scripts/memory_protocol.py
+  - scripts/memory_lock.py
+  - scripts/memory_orchestrator.py
+  - scripts/test_manager.py
   - scripts/hooks/pre_tool_offload.py
   - .claude-plugin/plugin.json
   - config/project-config.example.json
@@ -18,27 +30,32 @@ source-files:
 
 <!-- MACHINE-READABLE METADATA
 project: CodeClaw
-version: 3.5.1
+version: 4.0.0
 type: claude-code-plugin
 language: python3
-dependencies: stdlib-only (lancedb+sentence-transformers+mcp optional for vector memory)
+dependencies: stdlib-only (lancedb+onnxruntime+tokenizers+mcp optional for vector memory)
 platforms: linux, macos, windows
 repository: https://github.com/dnviti/codeclaw
 license: MIT
-skills: task, idea, release, docs, setup, update, tests, help
+skills: task, idea, release, docs, setup, update, tests, help, crazy
 hooks: PreToolUse(Bash|Read|Grep|Glob|Edit|Write), PostToolUse(Edit|Write)
 -->
 
 ## Project Summary
 
-CodeClaw is a project-agnostic Claude Code plugin that provides:
+CodeClaw is a project-agnostic Claude Code plugin (v4.0.0) that provides:
 1. **Task and idea management** — Structured plain-text files (`to-do.txt`, `progressing.txt`, `done.txt`, `ideas.txt`)
 2. **GitHub/GitLab Issues integration** — Local-only, platform-only, or dual-sync modes
 3. **Gated 9-stage release pipeline** — Branch creation → task verification → PR analysis → staging → testing → production tagging → announcement → cleanup
 4. **Ollama local model offloading** — Route tool calls and tasks to a local LLM with configurable offloading level (0–10) and full tool-calling loop
-5. **Always-on vector memory** — Semantic indexing via LanceDB, auto-updated on file edits, accessible via MCP
-6. **Platform release state sync** — In platform-only mode, release state is stored in a `claw-release-state` GitHub/GitLab issue shared by all collaborators
-7. **Agentic CI/CD fleet** — Autonomous task implementation, idea scouting, and documentation sync via GitHub Actions / GitLab CI
+5. **Unified memory orchestrator** — Tandem multi-backend coordination (LanceDB + SQLite FTS5 + RLM) with semantic indexing, auto-updated on file edits, accessible via MCP
+6. **Semantic intelligence** — `/task`, `/idea`, `/docs`, `/tests`, `/help` skills powered by vector search
+7. **Platform release state sync** — In platform-only mode, release state is stored in a `claw-release-state` GitHub/GitLab issue shared by all collaborators
+8. **Agentic CI/CD fleet** — Autonomous task implementation, idea scouting, and documentation sync via GitHub Actions / GitLab CI
+9. **[BETA] /crazy skill** — Fully autonomous end-to-end project builder
+10. **Image generation** — On-demand with 4 provider backends (DALL-E, Replicate, Stability AI, local)
+11. **Frontend design wizard** — Template search, theme selection, color palette picker
+12. **Multi-platform support** — Claude Code, OpenCode, OpenClaw, Cursor, Windsurf, Continue.dev, GitHub Copilot, Aider
 
 ---
 
@@ -56,11 +73,19 @@ Hooks (hooks.json)    → Event-driven integration (PreToolUse + PostToolUse)
 
 | Script | Purpose |
 |--------|---------|
-| `scripts/task_manager.py` | Task/idea CRUD, platform sync, worktree management |
+| `scripts/task_manager.py` | Task/idea CRUD, platform sync, worktree management (~2,700 lines) |
 | `scripts/release_manager.py` | Version detection, changelog, release state (local + platform) |
 | `scripts/skill_helper.py` | Context gathering, argument dispatch, worktree setup |
 | `scripts/ollama_manager.py` | Local model routing, hardware detection, tool-calling loop |
-| `scripts/vector_memory.py` | LanceDB indexing, MCP server, GC |
+| `scripts/vector_memory.py` | LanceDB indexing, semantic search, GC, agent sessions |
+| `scripts/mcp_server.py` | MCP stdio server exposing vector memory tools via FastMCP |
+| `scripts/memory_orchestrator.py` | Multi-backend memory coordination (LanceDB + SQLite FTS5 + RLM) |
+| `scripts/memory_protocol.py` | Multi-agent consistency protocol, conflict detection, session registry |
+| `scripts/memory_lock.py` | Cross-platform advisory locking (file/SQLite/Redis backends) |
+| `scripts/test_manager.py` | Test discovery, gaps, coverage tracking, execution |
+| `scripts/docs_manager.py` | Documentation lifecycle, hash-based staleness tracking |
+| `scripts/agent_runner.py` | Multi-provider agentic fleet runner (Claude/OpenAI/Ollama) |
+| `scripts/image_generator.py` | Multi-provider image generation (DALL-E/Replicate/Stability AI/local) |
 | `scripts/hooks/pre_tool_offload.py` | PreToolUse: evaluate tool calls for Ollama offloading |
 
 ### Hooks
@@ -103,14 +128,24 @@ python3 scripts/task_manager.py <subcommand> [options]
 
 Essential subcommands:
 - `list --status todo|progressing|done|idea --format summary|json`
+- `list-ideas --file ideas|disapproved|all --format json|summary`
 - `parse CODE` — parse a task block
-- `next-id --type task|idea` — next sequential ID
-- `move CODE --to progressing|done|todo`
+- `next-id --type task|idea --source local|platform-titles` — next sequential ID
+- `move CODE --to progressing|done|todo --completed-summary TEXT`
+- `remove CODE --file FILE` — remove a block from a file
+- `summary --format json|text` — task counts and progress
+- `semantic-explore CODE` — explore codebase semantically via vector search
 - `platform-cmd OPERATION [key=value...]` — GitHub/GitLab operations
 - `setup-task-worktree --task-code CODE --base-branch develop`
-- `remove-worktree --task-code CODE` — merges branch into develop, then removes
+- `remove-worktree --task-code CODE --remove-branch --no-merge-to-develop`
 - `list-release-tasks --version X.X.X`
+- `schedule-tasks --codes "CODE1,CODE2" --version X.X.X`
 - `create-patch-task --source SOURCE --title TITLE --release X.X.X`
+- `sync-from-platform --dry-run` — sync task status from platform Issues
+- `worktree-info` — worktree detection and listing
+- `find-files --patterns GLOBS --max-depth N` — cross-platform file search
+- `register-agent --task-code CODE --agent-type TYPE` — memory consistency protocol
+- `pr-body --task-code CODE --title TEXT --summary TEXT` — generate PR body
 
 ### release_manager.py CLI
 
@@ -119,14 +154,23 @@ python3 scripts/release_manager.py <subcommand> [options]
 ```
 
 Essential subcommands:
-- `full-context` — complete release context as JSON
+- `full-context --tag-prefix PREFIX` — complete release context as JSON
+- `current-version --tag-prefix PREFIX` — detect version from manifest files
 - `release-state-get` — read pipeline state (local file OR platform issue)
 - `release-state-set --version V --stage N --stage-name NAME [--increment-loop] [--mark-gate-approved N]`
 - `release-state-clear` — clear state (close platform issue in platform-only mode)
 - `merge-check --source BRANCH --target BRANCH`
 - `parse-commits --since TAG`
+- `suggest-bump --current-version V --force TYPE` — calculate new version
 - `generate-changelog --version V --date YYYY-MM-DD`
-- `update-versions --version V` — auto-discover and bump all manifests
+- `update-versions --version V --package-paths PATHS` — auto-discover and bump all manifests
+- `release-generate` — analyze tasks and return grouped data for roadmap
+- `release-plan-list` — list all releases in the release plan
+- `release-plan-create --version V --theme TEXT --target-date DATE`
+- `release-plan-add-task --version V --task CODE`
+- `release-plan-next` — get the next planned/in-progress release
+- `release-close --version V` — check release readiness for closing
+- `coverage-gate --min-coverage N` — run coverage threshold check
 
 ### skill_helper.py CLI
 
@@ -148,10 +192,53 @@ python3 scripts/ollama_manager.py <subcommand> [options]
 
 Essential subcommands:
 - `detect-hardware` — RAM, VRAM, GPU, CPU
-- `recommend-model` — best model tier for hardware
+- `recommend-model --ram-gb N --vram-gb N` — best model tier for hardware
+- `score-task --description TEXT` — score task for offload suitability (0–10)
 - `should-offload --tool NAME --args TEXT --level N` → true/false
 - `get-offload-level` → integer 0–10
-- `query --prompt TEXT` → Ollama response
+- `query --prompt TEXT --model MODEL` → Ollama response
+- `install` — install Ollama if not present
+- `pull-model --model MODEL` — pull a model into Ollama
+
+### test_manager.py CLI
+
+```bash
+python3 scripts/test_manager.py <subcommand> [options]
+```
+
+Essential subcommands:
+- `discover --root PATH` — find all test files
+- `analyze-gaps --root PATH --target FILE` — compare source vs test coverage
+- `suggest --root PATH` — recommend test targets by priority
+- `run --root PATH --target FILE` — execute tests via configured framework
+- `coverage snapshot --root PATH` — capture current coverage state
+- `coverage compare --old FILE --new FILE` — diff two snapshots
+- `coverage threshold-check --min-coverage N` — pass/fail against minimum
+
+### vector_memory.py CLI
+
+```bash
+python3 scripts/vector_memory.py <subcommand> [options]
+```
+
+Essential subcommands:
+- `index --root PATH --full --force-init` — index a file or directory
+- `search QUERY --top-k N --file-filter F --type-filter T --json --version N` — semantic search
+- `status --root PATH --json` — report index health, chunk counts, staleness
+- `clear --root PATH --force` — reset the vector index
+- `gc --root PATH --ttl-days N --deep --json` — garbage-collect stale entries
+- `agents --root PATH --status STATUS` — list active/historical agent sessions
+- `conflicts --root PATH --resolve ID` — show/resolve contradictions between agents
+- `hook FILE_PATH` — PostToolUse hook: auto-index an edited file
+
+### mcp_server.py
+
+```bash
+python3 scripts/mcp_server.py [--root PATH] [--check]
+```
+
+MCP Tools (when `vector_memory.enabled` is `true`): `index_repository`, `semantic_search`, `store_memory`, `get_task_context`, `list_backends`, `backend_health`
+MCP Resources: `memory://status`, `memory://backends`
 
 ### pre_tool_offload.py (Hook)
 
@@ -190,14 +277,61 @@ Always exits 0. Never blocks Claude. Applies NFKC normalization to prevent Unico
   "verify_command": "",        // run before staging/production push
   "tag_prefix": "v",
   "changelog_file": "CHANGELOG.md",
+  "python_command": "",        // override: "python3" (default) or "python"
+  "memory_consistency": {
+    "gc_ttl_days": 30,
+    "max_index_size_mb": 500,
+    "conflict_strategy": "auto",   // "auto" or "manual"
+    "enable_versioned_reads": false,
+    "auto_resolve": {
+      "enabled": false,
+      "strategy": "single-judge",  // or "majority-vote"
+      "provider": "ollama"
+    }
+  },
   "vector_memory": {
-    "enabled": true,           // always-on semantic indexing
+    "enabled": false,          // opt-in semantic indexing (enable via /setup)
+    "auto_index": false,       // auto-reindex on PostToolUse events
     "embedding_provider": "local",
-    "index_path": ".claude/memory/vectors"
+    "embedding_model": "all-MiniLM-L6-v2",
+    "chunk_size": 2000,
+    "index_path": ".claude/memory/vectors",
+    "backend": "lancedb",
+    "lock_backend": {
+      "type": "file",         // "file", "sqlite", or "redis"
+      "timeout": 30
+    },
+    "sqlite": {
+      "enabled": false,       // SQLite FTS5 hybrid search backend
+      "hybrid_weight_vector": 0.7,
+      "hybrid_weight_text": 0.3
+    },
+    "gpu_acceleration": { "mode": "auto" },
+    "event_sourcing": { "enabled": false },
+    "rlm": { "enabled": false, "provider": "ollama", "max_depth": 3 },
+    "orchestrator": {
+      "backends": ["lancedb"],
+      "fallback_chain": ["lancedb", "sqlite", "rlm"],
+      "query_routing": { "exact": "sqlite", "semantic": "lancedb", "deep": "rlm" }
+    }
   },
   "mcp_server": {
-    "enabled": true,           // MCP server for vector search
-    "auto_start": true
+    "enabled": false,          // MCP server for vector search (opt-in via /setup)
+    "transport": "stdio",
+    "auto_start": false
+  },
+  "social_announce": {
+    "platforms": {             // direct posting: bluesky, mastodon, discord, slack
+      "bluesky": { "enabled": false }
+    },
+    "clipboard_platforms": [   // format + copy: twitter, linkedin, reddit, hackernews
+      { "name": "twitter", "enabled": false, "max_length": 280 }
+    ]
+  },
+  "image_generation": {
+    "enabled": false,
+    "provider": "local",       // "local", "dalle", "replicate", "stability"
+    "output_dir": "assets/generated"
   },
   "ollama": {
     "enabled": false,
@@ -252,6 +386,13 @@ Always exits 0. Never blocks Claude. Applies NFKC normalization to prevent Unico
 
 # Update documentation
 /docs sync
+
+# Fully autonomous mode (append yolo to auto-confirm gates)
+/task pick all yolo
+/release continue 1.0.0 yolo
+
+# [BETA] Autonomous project builder
+/crazy "Build a REST API with user auth"
 ```
 
 ---
@@ -265,13 +406,13 @@ The 9-stage release pipeline persists state via `release-state-get/set`:
 | 1 | Create Branch | `git checkout -b release/X.X.X develop` |
 | 2 | Task Readiness Gate | Verify all release tasks are `done` |
 | 3 | Fetch Open PRs | `gh pr list --base develop --state open` |
-| 4 | Per-PR Sub-Agent Analysis | Parallel: analyze → fix → merge each PR |
-| 5 | Merge to Staging | develop → staging; tag `vX.X.X-staging`; push |
+| 4 | Per-PR Sub-Agent Analysis | Parallel: analyze → optimize → security → fix → merge each PR |
+| 5 | Merge to Staging | develop → staging; local build gate; tag `vX.X.X-staging`; push |
 | 6 | Integration Tests | Run `verify_command` or auto-detected test suite |
-| 7 | Merge to Main + Tag | staging → main; bump versions; tag `vX.X.X`; push; CI monitor |
+| 7 | Merge to Main + Tag | staging → main; changelog; version bump gate; local build gate; tag `vX.X.X`; push; CI monitoring (platform-only) |
 | 7h | Docs Sync | `/docs sync` auto-runs |
 | 8 | Users Testing | Release is live |
-| 8.5 | Announce | Social media via configured platforms |
+| 8.5 | Announce | Social media via configured platforms (direct + clipboard) |
 | 9 | End | Close milestone; clear state; GC vector memory |
 
 ---
@@ -297,24 +438,48 @@ Always-excluded (regardless of level): `git push`, `git reset`, `rm -rf`, `sudo`
 ```
 .claude/
 ├── issues-tracker.json     # Platform integration config
-├── project-config.json     # Project settings
+├── project-config.json     # Project settings (vector memory, social announce, image gen, ollama)
 ├── ollama-config.json      # Ollama offloading config
 ├── releases.json           # Release plan (local/dual mode)
 ├── release-state.json      # Pipeline state (local/dual mode)
 ├── agentic-provider.json   # CI/CD fleet config
-└── memory/vectors/         # LanceDB vector index (gitignored)
+└── memory/
+    ├── vectors/            # LanceDB vector index (gitignored)
+    ├── sqlite/             # SQLite FTS5 backend (optional)
+    └── locks/              # Lock files for multi-agent coordination
 
 scripts/
-├── task_manager.py
-├── release_manager.py
-├── skill_helper.py
-├── ollama_manager.py
-├── vector_memory.py
-├── docs_manager.py
-├── agent_runner.py
+├── task_manager.py         # Task/idea CRUD, platform sync, worktrees
+├── release_manager.py      # Version, changelog, release state
+├── skill_helper.py         # Context, dispatch, worktrees
+├── ollama_manager.py       # Local model routing + tool calling
+├── vector_memory.py        # Semantic indexing and search
+├── mcp_server.py           # MCP stdio server for vector memory
+├── memory_orchestrator.py  # Multi-backend coordination (LanceDB + SQLite + RLM)
+├── memory_protocol.py      # Multi-agent consistency protocol
+├── memory_lock.py          # Distributed lock backends (file/SQLite/Redis)
+├── sqlite_backend.py       # SQLite FTS5 + vec hybrid backend
+├── memory_event_log.py     # Event-sourced memory for concurrent writes
+├── conflict_judge.py       # LLM-as-judge conflict resolution
+├── rlm_backend.py          # Recursive context processing
+├── docs_manager.py         # Documentation lifecycle
+├── agent_runner.py         # Multi-provider fleet runner
+├── test_manager.py         # Test discovery, gaps, coverage
+├── app_manager.py          # Port/process management (cross-platform)
+├── codebase_analyzer.py    # Static analysis reports
+├── memory_builder.py       # Codebase summary generator
+├── image_generator.py      # Multi-provider image generation
+├── frontend_wizard.py      # Frontend design wizard
+├── setup_labels.py         # Platform label creation
+├── setup_protection.py     # Branch protection rules
+├── adapters/               # Platform adapters (claude_code, opencode, openclaw)
+├── chunkers/               # Text chunking for vector memory
+├── embeddings/             # Embedding providers (local ONNX, API)
+├── mcp_tools/              # MCP server tool definitions
+├── social_platforms/       # Social media posting adapters
 ├── hooks/
 │   └── pre_tool_offload.py
-└── analyzers/
+└── analyzers/              # Static analysis (features, quality, infrastructure, coverage)
 
 skills/
 ├── task/SKILL.md
@@ -324,8 +489,9 @@ skills/
 ├── setup/SKILL.md
 ├── update/SKILL.md
 ├── tests/SKILL.md
-└── help/SKILL.md
+├── help/SKILL.md
+└── crazy/SKILL.md          # [BETA] Autonomous project builder
 
 hooks/hooks.json            # PreToolUse + PostToolUse definitions
-.claude-plugin/plugin.json  # Plugin manifest (version: 3.5.1)
+.claude-plugin/plugin.json  # Plugin manifest (version: 4.0.0)
 ```

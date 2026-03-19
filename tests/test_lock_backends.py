@@ -357,7 +357,7 @@ class TestRedisLockBackend:
         try:
             import redis as redis_lib
             client = redis_lib.from_url("redis://localhost:6379", decode_responses=True)
-            for key in client.keys("test-ctdf:*"):
+            for key in client.keys("test-claw:*"):
                 client.delete(key)
         except Exception:
             pass
@@ -366,16 +366,16 @@ class TestRedisLockBackend:
         backend = RedisLockBackend(
             store_path=tmp_store,
             agent_id="test-redis",
-            redis_key_prefix="test-ctdf:",
+            redis_key_prefix="test-claw:",
         )
         assert backend.agent_id == "test-redis"
-        assert backend.key_prefix == "test-ctdf:"
+        assert backend.key_prefix == "test-claw:"
 
     def test_acquire_and_release(self, tmp_store):
         backend = RedisLockBackend(
             store_path=tmp_store,
             agent_id="test-redis",
-            redis_key_prefix="test-ctdf:",
+            redis_key_prefix="test-claw:",
         )
         result = backend.acquire(exclusive=True, timeout=5)
         assert result is True
@@ -387,7 +387,7 @@ class TestRedisLockBackend:
         backend = RedisLockBackend(
             store_path=tmp_store,
             agent_id="test-redis",
-            redis_key_prefix="test-ctdf:",
+            redis_key_prefix="test-claw:",
         )
         status = backend.status()
         assert status["lock_type"] == "redis"
@@ -397,7 +397,7 @@ class TestRedisLockBackend:
         backend = RedisLockBackend(
             store_path=tmp_store,
             agent_id="test-redis",
-            redis_key_prefix="test-ctdf:",
+            redis_key_prefix="test-claw:",
         )
         backend.acquire(exclusive=True, timeout=5)
         backend.force_release()
@@ -410,11 +410,11 @@ class TestRedisLockBackend:
         backend.agent_id = "test"
         backend.session_id = ""
         backend.redis_url = "redis://localhost:6379"
-        backend.key_prefix = "test-ctdf:"
+        backend.key_prefix = "test-claw:"
         backend.auto_renew_interval = 10
         backend._token = "test-token"
-        backend._lock_key = "test-ctdf:lock:vector_store"
-        backend._info_key = "test-ctdf:lock:vector_store:info"
+        backend._lock_key = "test-claw:lock:vector_store"
+        backend._info_key = "test-claw:lock:vector_store:info"
         backend._held = False
         backend._renew_thread = None
         backend._renew_stop = threading.Event()
@@ -482,7 +482,7 @@ class TestCreateLock:
             store_path=tmp_store,
             agent_id="test",
             redis_url="redis://localhost:6379",
-            redis_key_prefix="test-ctdf:",
+            redis_key_prefix="test-claw:",
         )
         assert isinstance(lock, MemoryLock)
         assert isinstance(lock._backend, RedisLockBackend)

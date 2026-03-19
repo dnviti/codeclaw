@@ -2,11 +2,12 @@
 title: Getting Started
 description: Installation, prerequisites, first run, and initial project setup
 generated-by: claw-docs
-generated-at: 2026-03-18T00:00:00Z
+generated-at: 2026-03-19T00:00:00Z
 source-files:
   - README.md
   - .claude-plugin/plugin.json
   - .claude-plugin/marketplace.json
+  - CLAUDE.md
   - config/project-config.example.json
   - config/ollama-config.example.json
   - config/issues-tracker.example.json
@@ -21,7 +22,7 @@ This guide walks you through installing CodeClaw, setting up your first project,
 | Requirement | Purpose |
 |-------------|---------|
 | [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) | The host AI coding assistant that runs CodeClaw skills |
-| Python 3 | Runtime for all CodeClaw automation scripts (stdlib only, no pip packages needed for core features) |
+| Python 3.12+ | Runtime for all CodeClaw automation scripts (stdlib only, no pip packages needed for core features) |
 | Git | Version control; CodeClaw uses worktrees, branches, and tags |
 | `gh` CLI (optional) | GitHub Issues integration, PR management, and branch protection setup |
 | `glab` CLI (optional) | GitLab Issues integration |
@@ -29,7 +30,7 @@ This guide walks you through installing CodeClaw, setting up your first project,
 
 **Optional: Vector memory dependencies (for semantic search and MCP):**
 ```bash
-pip install lancedb sentence-transformers mcp
+pip install lancedb onnxruntime tokenizers numpy pyarrow mcp
 ```
 
 ## Installation

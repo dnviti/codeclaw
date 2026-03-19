@@ -1,5 +1,6 @@
 # CI Pipeline — Lint, Test & Build
-# Configured for Python 3.12 (CodeClaw / CTDF)
+# Configured for Python 3.12 (CodeClaw)
+# Cross-platform: runs on Linux, macOS, and Windows
 
 name: CI
 
@@ -20,7 +21,11 @@ concurrency:
 jobs:
   lint-test-build:
     name: Lint, Test & Build
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+      fail-fast: false
+    runs-on: ${{ matrix.os }}
 
     steps:
       - name: Checkout code
@@ -32,8 +37,9 @@ jobs:
           python-version: "3.12"
           cache: pip
 
-      - name: Detect Python command
-        id: py
+      - name: Detect Python command (Unix)
+        if: runner.os != 'Windows'
+        id: py_unix
         run: |
           if command -v python3 &>/dev/null; then
             echo "cmd=python3" >> "$GITHUB_OUTPUT"
@@ -41,10 +47,31 @@ jobs:
             echo "cmd=python" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Detect Python command (Windows)
+        if: runner.os == 'Windows'
+        id: py_win
+        shell: pwsh
+        run: |
+          if (Get-Command python3 -ErrorAction SilentlyContinue) {
+            "cmd=python3" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          } else {
+            "cmd=python" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          }
+
+      - name: Set Python command
+        id: py
+        shell: bash
+        run: |
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            echo "cmd=${{ steps.py_win.outputs.cmd }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "cmd=${{ steps.py_unix.outputs.cmd }}" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Install dependencies
         run: |
           ${{ steps.py.outputs.cmd }} -m pip install --upgrade pip
-          pip install -r requirements.txt 2>/dev/null || pip install pytest flake8
+          pip install -r requirements.txt
 
       - name: Lint
         run: |

@@ -2,7 +2,7 @@
 title: Troubleshooting
 description: Common errors, debugging techniques, and frequently asked questions
 generated-by: claw-docs
-generated-at: 2026-03-18T00:00:00Z
+generated-at: 2026-03-19T00:00:00Z
 source-files:
   - scripts/task_manager.py
   - scripts/release_manager.py
@@ -11,6 +11,8 @@ source-files:
   - scripts/app_manager.py
   - scripts/ollama_manager.py
   - scripts/vector_memory.py
+  - scripts/deps_check.py
+  - scripts/mcp_server.py
   - scripts/hooks/pre_tool_offload.py
   - hooks/hooks.json
 ---
@@ -154,14 +156,21 @@ python3 scripts/ollama_manager.py get-offload-level
 
 ### Vector Memory Errors
 
-**Symptom:** Errors mentioning `lancedb`, `sentence_transformers`, or `mcp` after file edits.
+**Symptom:** Errors mentioning `lancedb`, `onnxruntime`, `tokenizers`, or `pyarrow` after file edits.
 
 **Cause:** Optional dependencies not installed.
 
 **Fix:**
 ```bash
-pip install lancedb sentence-transformers mcp
+pip install lancedb onnxruntime tokenizers numpy pyarrow
 ```
+
+**To verify installed dependencies:**
+```bash
+python3 scripts/deps_check.py
+```
+
+The checker reports each dependency's status and also detects available GPU acceleration providers.
 
 **To disable vector memory** (if dependencies can't be installed):
 ```json
@@ -217,7 +226,7 @@ python3 scripts/app_manager.py kill-ports 3000
 **Fix:** Ensure task files exist (`/setup`) or temporarily disable hooks by removing `hooks/hooks.json`.
 
 **Cause 2:** `vector_memory.py hook` fails because dependencies aren't installed.
-**Fix:** `pip install lancedb sentence-transformers mcp` or disable vector memory in `project-config.json`.
+**Fix:** `pip install lancedb onnxruntime tokenizers numpy pyarrow` or disable vector memory in `project-config.json`.
 
 ### Documentation Sync Reports All Stale
 
@@ -256,6 +265,12 @@ python3 scripts/ollama_manager.py detect-hardware
 
 # Check vector memory
 python3 scripts/vector_memory.py status
+
+# Check vector memory dependencies and GPU support
+python3 scripts/deps_check.py
+
+# Check MCP SDK availability
+python3 scripts/mcp_server.py --check
 ```
 
 ### Git Worktree Troubleshooting

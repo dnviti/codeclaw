@@ -742,7 +742,7 @@ def cmd_run(args):
 def build_parser() -> argparse.ArgumentParser:
     """Build the CLI argument parser."""
     parser = argparse.ArgumentParser(
-        description="Frontend design wizard for CTDF task implementation.",
+        description="Frontend design wizard for CodeClaw task implementation.",
     )
     sub = parser.add_subparsers(dest="command", required=True)
 

@@ -2,9 +2,10 @@
 title: Configuration
 description: Environment variables, configuration files, feature flags, and project settings
 generated-by: claw-docs
-generated-at: 2026-03-18T00:00:00Z
+generated-at: 2026-03-19T00:00:00Z
 source-files:
   - config/project-config.example.json
+  - config/mcp-server.example.json
   - config/ollama-config.example.json
   - config/issues-tracker.example.json
   - config/releases.example.json
@@ -107,11 +108,20 @@ Project-specific settings used by skills during task creation and releases.
     "gc_ttl_days": 30,
     "max_index_size_mb": 500,
     "conflict_strategy": "auto",
-    "enable_versioned_reads": false
+    "enable_versioned_reads": false,
+    "auto_resolve": {
+      "enabled": false,
+      "strategy": "single-judge",
+      "provider": "ollama",
+      "confidence_threshold": 0.8,
+      "num_votes": 3,
+      "max_auto_resolve_per_run": 10,
+      "model": ""
+    }
   },
   "vector_memory": {
-    "enabled": true,
-    "auto_index": true,
+    "enabled": false,
+    "auto_index": false,
     "embedding_provider": "local",
     "embedding_model": "all-MiniLM-L6-v2",
     "embedding_api_key_env": "",
@@ -119,12 +129,52 @@ Project-specific settings used by skills during task creation and releases.
     "index_path": ".claude/memory/vectors",
     "batch_size": 64,
     "include_patterns": [],
-    "exclude_patterns": []
+    "exclude_patterns": [],
+    "lock_backend": {
+      "type": "file",
+      "sqlite_path": ".claude/memory/locks/lock.db",
+      "redis_url": "redis://localhost:6379",
+      "redis_key_prefix": "claw:",
+      "timeout": 30,
+      "auto_renew_interval": 10
+    },
+    "backend": "lancedb",
+    "sqlite": {
+      "enabled": false,
+      "hybrid_weight_vector": 0.7,
+      "hybrid_weight_text": 0.3,
+      "db_path": ".claude/memory/sqlite/memory.db"
+    },
+    "gpu_acceleration": {
+      "mode": "auto",
+      "log_provider": true
+    },
+    "event_sourcing": {
+      "enabled": false,
+      "compact_interval_seconds": 300,
+      "max_segment_size_mb": 10,
+      "auto_compact_on_search": true
+    },
+    "rlm": {
+      "enabled": false,
+      "provider": "ollama",
+      "max_depth": 3,
+      "max_context_mb": 10,
+      "aggregation": "map-reduce",
+      "timeout_seconds": 120
+    },
+    "orchestrator": {
+      "backends": ["lancedb"],
+      "routing_weights": { "lancedb": 1.0, "sqlite": 0.8, "rlm": 0.6 },
+      "fallback_chain": ["lancedb", "sqlite", "rlm"],
+      "query_routing": { "exact": "sqlite", "semantic": "lancedb", "deep": "rlm" },
+      "rrf_k": 60
+    }
   },
   "mcp_server": {
-    "enabled": true,
+    "enabled": false,
     "transport": "stdio",
-    "auto_start": true
+    "auto_start": false
   },
   "social_announce": {
     "platforms": {
@@ -140,10 +190,17 @@ Project-specific settings used by skills during task creation and releases.
       { "name": "hackernews", "enabled": false, "max_length": 2000, "post_url": "https://news.ycombinator.com/submit" }
     ]
   },
+  "image_generation": {
+    "enabled": false,
+    "provider": "local",
+    "api_key_env": "",
+    "default_size": "1024x1024",
+    "default_style": "natural",
+    "output_dir": "assets/generated"
+  },
   "ollama": {
     "enabled": false,
     "model": "",
-    "offloading": false,
     "offloading_level": 5
   }
 }
@@ -183,12 +240,24 @@ Project-specific settings used by skills during task creation and releases.
 | `conflict_strategy` | How to resolve multi-agent write conflicts: `"auto"` or `"manual"` |
 | `enable_versioned_reads` | Enable versioned reads for concurrent agent safety |
 
+**`memory_consistency.auto_resolve` section:**
+
+| Field | Description |
+|-------|-------------|
+| `enabled` | Enable automatic conflict resolution (default: `false`) |
+| `strategy` | Resolution strategy: `"single-judge"` or `"majority-vote"` |
+| `provider` | LLM provider for conflict resolution (default: `"ollama"`) |
+| `confidence_threshold` | Minimum confidence to accept auto-resolution (default: 0.8) |
+| `num_votes` | Number of votes for majority-vote strategy (default: 3) |
+| `max_auto_resolve_per_run` | Maximum conflicts to auto-resolve per run (default: 10) |
+| `model` | Model name for conflict resolution (auto-detected if empty) |
+
 **`vector_memory` section:**
 
 | Field | Description |
 |-------|-------------|
-| `enabled` | Enable vector memory (always-on in v3.5.1; default: `true`) |
-| `auto_index` | Automatically re-index files on PostToolUse events |
+| `enabled` | Enable vector memory (default: `false`; opt-in via `/setup`) |
+| `auto_index` | Automatically re-index files on PostToolUse events (default: `false`) |
 | `embedding_provider` | `"local"` (all-MiniLM-L6-v2) or `"remote"` |
 | `embedding_model` | Model name for embeddings |
 | `embedding_api_key_env` | Environment variable holding remote API key |
@@ -197,16 +266,86 @@ Project-specific settings used by skills during task creation and releases.
 | `batch_size` | Embedding batch size for indexing (default: 64) |
 | `include_patterns` | Glob patterns of files to always index |
 | `exclude_patterns` | Glob patterns of files to never index |
+| `backend` | Primary backend engine: `"lancedb"` (default) |
 
-> **Prerequisites for vector memory:** `pip install lancedb sentence-transformers mcp`
+**`vector_memory.lock_backend` section:**
+
+Configures distributed locking for multi-agent coordination.
+
+| Field | Description |
+|-------|-------------|
+| `type` | Lock backend type: `"file"` (default, single-machine), `"sqlite"` (networked filesystems), or `"redis"` (distributed, requires `pip install redis`) |
+| `sqlite_path` | SQLite lock database path (default: `.claude/memory/locks/lock.db`) |
+| `redis_url` | Redis connection URL (default: `redis://localhost:6379`) |
+| `redis_key_prefix` | Key prefix for Redis locks (default: `"claw:"`) |
+| `timeout` | Lock acquisition timeout in seconds (default: 30) |
+| `auto_renew_interval` | Interval in seconds to auto-renew held locks (default: 10) |
+
+**`vector_memory.sqlite` section:**
+
+SQLite FTS5 hybrid search backend (alternative/complement to LanceDB).
+
+| Field | Description |
+|-------|-------------|
+| `enabled` | Enable SQLite FTS5 backend (default: `false`) |
+| `hybrid_weight_vector` | Weight for vector similarity in hybrid search (default: 0.7) |
+| `hybrid_weight_text` | Weight for text search in hybrid search (default: 0.3) |
+| `db_path` | SQLite database path (default: `.claude/memory/sqlite/memory.db`) |
+
+**`vector_memory.gpu_acceleration` section:**
+
+| Field | Description |
+|-------|-------------|
+| `mode` | GPU acceleration mode: `"auto"` (default), `"cpu"`, or `"gpu"` |
+| `log_provider` | Log which execution provider is selected (default: `true`) |
+
+**`vector_memory.event_sourcing` section:**
+
+Event-sourced memory for concurrent write safety.
+
+| Field | Description |
+|-------|-------------|
+| `enabled` | Enable event sourcing (default: `false`) |
+| `compact_interval_seconds` | Interval between automatic compactions (default: 300) |
+| `max_segment_size_mb` | Maximum segment file size before compaction (default: 10) |
+| `auto_compact_on_search` | Compact before search if stale (default: `true`) |
+
+**`vector_memory.rlm` section:**
+
+Recursive Language Model (RLM) backend for deep context processing.
+
+| Field | Description |
+|-------|-------------|
+| `enabled` | Enable RLM backend (default: `false`) |
+| `provider` | LLM provider for RLM processing (default: `"ollama"`) |
+| `max_depth` | Maximum recursion depth (default: 3) |
+| `max_context_mb` | Maximum context size in MB (default: 10) |
+| `aggregation` | Aggregation strategy: `"map-reduce"` (default) |
+| `timeout_seconds` | Timeout for RLM processing (default: 120) |
+
+**`vector_memory.orchestrator` section:**
+
+Multi-backend search orchestration with routing and fusion.
+
+| Field | Description |
+|-------|-------------|
+| `backends` | List of active backends (default: `["lancedb"]`) |
+| `routing_weights` | Relevance weights per backend for result ranking |
+| `fallback_chain` | Ordered fallback sequence if primary backend fails |
+| `query_routing` | Maps query types to backends: `exact` → sqlite, `semantic` → lancedb, `deep` → rlm |
+| `rrf_k` | Reciprocal Rank Fusion constant (default: 60) |
+
+> **Prerequisites for vector memory:** `pip install "mcp>=1.0" "lancedb>=0.5.0,<1.0" "sentence-transformers>=2.7.0,<3.0"`
 
 **`mcp_server` section:**
 
 | Field | Description |
 |-------|-------------|
-| `enabled` | Enable the MCP server for vector memory tool access |
+| `enabled` | Enable the MCP server for vector memory tool access (default: `false`; opt-in via `/setup`) |
 | `transport` | Transport protocol (`"stdio"` for Claude Code) |
-| `auto_start` | Start the MCP server automatically on Claude Code launch |
+| `auto_start` | Start the MCP server automatically on Claude Code launch (default: `false`) |
+
+The standalone MCP server configuration file (`config/mcp-server.example.json`) provides additional options for Claude Code integration, including `restart_on_crash`, available tools (`index_repository`, `semantic_search`, `store_memory`, `get_task_context`), and a `memory://status` resource endpoint.
 
 **`social_announce` section:**
 
@@ -214,6 +353,19 @@ Configures release announcement platforms. All platforms are disabled by default
 
 - **Direct posting** (Bluesky, Mastodon, Discord, Slack) — post via API
 - **Clipboard platforms** (Twitter/X, LinkedIn, Reddit, Hacker News) — format and copy to clipboard
+
+**`image_generation` section:**
+
+Configures on-demand image generation with multiple provider backends.
+
+| Field | Description |
+|-------|-------------|
+| `enabled` | Enable image generation (default: `false`) |
+| `provider` | Provider backend: `"local"`, `"dalle"`, `"replicate"`, or `"stability"` (default: `"local"`) |
+| `api_key_env` | Environment variable holding the provider API key |
+| `default_size` | Default image dimensions (default: `"1024x1024"`) |
+| `default_style` | Default style: `"natural"` or `"vivid"` (default: `"natural"`) |
+| `output_dir` | Directory for generated images (default: `"assets/generated"`) |
 
 **`ollama` section (in project-config.json):**
 
@@ -223,7 +375,6 @@ Quick-enable for Ollama. For full Ollama configuration, use `ollama-config.json`
 |-------|-------------|
 | `enabled` | Enable Ollama local model routing |
 | `model` | Model name to use (auto-detected if empty) |
-| `offloading` | Enable task offloading to Ollama |
 | `offloading_level` | Default offloading level 0–10 (default: 5) |
 
 ### ollama-config.json
@@ -400,7 +551,7 @@ CodeClaw uses configuration-driven feature flags rather than compile-time flags:
 | Platform release state | `issues-tracker.json → enabled=true, sync=false` | Stores release state as platform issue |
 | Auto-PR | `agentic-provider.json → auto_pr` | Auto-creates PRs in task pipeline |
 | Yolo mode | Appended to any command | Auto-confirms all non-destructive gates |
-| Vector memory | `project-config.json → vector_memory.enabled` | Always-on semantic indexing |
+| Vector memory | `project-config.json → vector_memory.enabled` | Opt-in semantic indexing (enable via `/setup`) |
 | MCP server | `project-config.json → mcp_server.enabled` | Exposes vector memory via MCP protocol |
 | Ollama routing | `ollama-config.json → enabled` | Routes tool calls/tasks to local model |
 | Social announce | `project-config.json → social_announce.platforms.<name>.enabled` | Enables release announcements |

@@ -2,7 +2,7 @@
 title: Architecture
 description: System architecture, component interactions, data flow, and design decisions
 generated-by: claw-docs
-generated-at: 2026-03-18T00:00:00Z
+generated-at: 2026-03-19T00:00:00Z
 source-files:
   - scripts/task_manager.py
   - scripts/release_manager.py
@@ -15,6 +15,9 @@ source-files:
   - scripts/test_manager.py
   - scripts/ollama_manager.py
   - scripts/vector_memory.py
+  - scripts/mcp_server.py
+  - scripts/memory_protocol.py
+  - scripts/memory_lock.py
   - scripts/hooks/pre_tool_offload.py
   - scripts/analyzers/__init__.py
   - hooks/hooks.json
@@ -74,7 +77,10 @@ flowchart TD
         MB["memory_builder.py<br>Codebase summary generator"]
         TT["test_manager.py<br>Test discovery, gaps, coverage"]
         OM["ollama_manager.py<br>Local model routing + tool calling"]
-        VM["vector_memory.py<br>Always-on semantic indexing + MCP"]
+        VM["vector_memory.py<br>Always-on semantic indexing"]
+        MCS["mcp_server.py<br>MCP stdio server for vector memory"]
+        MP["memory_protocol.py<br>Multi-agent consistency protocol"]
+        ML["memory_lock.py<br>Pluggable advisory locking"]
     end
 
     subgraph "Hooks"
@@ -127,6 +133,10 @@ flowchart TD
 
     OM --> CFG_OL
 
+    VM --> MP & ML
+    MCS --> VM
+    MP --> ML
+
     S_SETUP --> GH & GL & CMD
     S_SETUP --> CFG_IT & CFG_PC & CFG_RL & CFG_AP & CFG_OL
 ```
@@ -135,7 +145,7 @@ flowchart TD
 
 ### task_manager.py
 
-The largest script (~2,100 lines). Manages the full lifecycle of tasks and ideas through plain-text files.
+The largest script (~2,700 lines). Manages the full lifecycle of tasks and ideas through plain-text files.
 
 **Key responsibilities:**
 - Parse and manipulate task/idea blocks in `to-do.txt`, `progressing.txt`, `done.txt`, `ideas.txt`, `idea-disapproved.txt`
@@ -146,7 +156,7 @@ The largest script (~2,100 lines). Manages the full lifecycle of tasks and ideas
 - GitHub/GitLab Issues integration (tri-modal: local-only, platform-only, dual-sync)
 - Worktree setup: on teardown, merges task branch into local develop before removing worktree
 
-**CLI subcommands:** `list`, `parse`, `next-id`, `move`, `sections`, `duplicates`, `hook`, `platform-cmd`, `setup-task-worktree`, `remove-worktree`, `list-release-tasks`, `schedule-tasks`, `create-patch-task`, `sync-from-platform`, `deregister-agent`
+**CLI subcommands:** `list`, `list-ideas`, `parse`, `next-id`, `move`, `remove`, `sections`, `duplicates`, `summary`, `prefixes`, `verify-files`, `semantic-explore`, `is-frontend-task`, `hook`, `platform-cmd`, `setup-task-worktree`, `remove-worktree`, `list-release-tasks`, `schedule-tasks`, `create-patch-task`, `sync-from-platform`, `register-agent`, `deregister-agent`, `add-test-procedure`, `set-release`, `find-files`, `pr-body`, `worktree-info`, `platform-config`
 
 ### release_manager.py
 
@@ -161,7 +171,7 @@ Manages the release lifecycle including version detection, changelog generation,
 - Discover and bump version fields in all manifest files
 - Platform milestone management (close with verification)
 
-**CLI subcommands:** `full-context`, `parse-commits`, `generate-changelog`, `update-versions`, `release-state-get`, `release-state-set`, `release-state-clear`, `release-plan-list`, `release-plan-create`, `release-plan-add-task`, `release-plan-mark-released`, `merge-check`, `list-release-tasks`, `release-close`
+**CLI subcommands:** `full-context`, `current-version`, `parse-commits`, `suggest-bump`, `generate-changelog`, `update-versions`, `release-state-get`, `release-state-set`, `release-state-clear`, `release-generate`, `release-plan-list`, `release-plan-create`, `release-plan-add-task`, `release-plan-remove-task`, `release-plan-next`, `release-plan-mark-released`, `release-plan-set-status`, `merge-check`, `release-close`, `coverage-gate`
 
 ### skill_helper.py
 
@@ -175,7 +185,7 @@ Consolidated helper that eliminates repeated logic across all skills.
 - Branch strategy detection and enforcement
 - Status reports (task counts, in-progress tasks, recommended next tasks)
 
-**CLI subcommands:** `context`, `dispatch`, `setup-task-worktree`, `list-submodules`, `status-report`
+**CLI subcommands:** `context`, `dispatch`, `check-project-state`, `create-project-files`, `detect-branch-strategy`, `setup-task-worktree`, `status-report`, `list-submodules`, `detect-release-config`, `detect-platform`, `refresh-branch-config`, `adapter-invoke`
 
 ### ollama_manager.py
 
@@ -207,11 +217,52 @@ Local model manager for Ollama-powered task offloading and tool calling.
 Always-on semantic memory layer for the project codebase.
 
 **Key responsibilities:**
-- Index project files into a LanceDB vector store (`LanceDB` + `sentence-transformers`, installed via pip)
+- Index project files into a LanceDB vector store (`lancedb` + `sentence-transformers` or `onnxruntime`+`tokenizers`, installed via pip)
 - PostToolUse hook: automatically re-indexes files on every edit/write
-- MCP server: exposes semantic search and memory storage tools via stdio transport
+- Multi-agent session tracking: list agent sessions, detect conflicts between concurrent agents
 - Garbage collection: prune stale entries, compact the index
 - Embedding providers: local `all-MiniLM-L6-v2` (default), or remote via API key
+- Versioned reads via LanceDB dataset versioning for point-in-time queries
+
+### mcp_server.py
+
+MCP stdio server exposing vector memory as tools for any MCP-compatible AI assistant.
+
+**Key responsibilities:**
+- Start an MCP server via stdio transport using the `FastMCP` framework
+- Conditionally register vector memory tools based on the `vector_memory.enabled` config toggle
+- Register tools: `index_repository`, `semantic_search`, `store_memory`, `get_task_context`, `list_backends`, `backend_health`
+- Register resources: `memory://status` (index status and namespaces), `memory://backends` (backend health)
+- Load lock backend configuration from `project-config.json` for tool handlers
+- Lazy-load vector memory dependencies (only needed when tools are invoked)
+
+### memory_protocol.py
+
+Multi-agent memory consistency protocol for shared vector stores.
+
+**Key responsibilities:**
+- Agent session registration and lifecycle management (`AgentSession`, `SessionRegistry`)
+- Entry tagging: every memory entry tagged with `agent_id`, `agent_type`, `task_code`, `session_id`, and timestamp
+- Conflict detection and resolution (`ConflictResolver`): last-writer-wins for factual entries, merge for additive entries, flag-for-review for contradictions
+- Auto-resolution of opinion conflicts via `ConflictJudge` (optional LLM-based judge)
+- LanceDB dataset versioning for point-in-time queries (`versioned_query`, `get_table_version`)
+- Session garbage collection: orphan detection and purging
+
+### memory_lock.py
+
+Cross-platform advisory locking with pluggable backends for vector memory store writes.
+
+**Key responsibilities:**
+- Pluggable `LockBackend` abstraction with three implementations:
+  - `FileLockBackend` (default) -- `fcntl.flock` on Unix, `msvcrt.locking` on Windows
+  - `SQLiteLockBackend` -- SQLite WAL-mode `BEGIN EXCLUSIVE` transactions, portable across networked filesystems
+  - `RedisLockBackend` -- distributed locks via `SET NX EX` with auto-renewal background thread
+- `MemoryLock` context manager for read (shared) and write (exclusive) locking
+- `EventLock` for event-sourced writes: lock-free appends, exclusive compaction
+- Per-backend lock files (`vector_store.lock`, `sqlite_store.lock`, `rlm_store.lock`) so backends can be written to independently
+- Deadlock detection with configurable threshold and warning
+- Lock info files for holder metadata and stale lock cleanup
+- Factory function `create_lock()` for backend selection by name
 
 ### docs_manager.py
 
@@ -224,7 +275,7 @@ Manages the documentation lifecycle with hash-based staleness tracking.
 - Detect static site generators for publishing
 - Diff changed files since a git tag for release-triggered sync
 
-**CLI subcommands:** `discover`, `check-staleness`, `list-sections`, `init-manifest`, `clean`, `detect-site-generator`, `diff-since-tag`
+**CLI subcommands:** `discover`, `check-staleness`, `list-sections`, `init-manifest`, `clean`, `get-visual-richness`, `detect-site-generator`, `diff-since-tag`, `semantic-discover`, `reindex-docs`, `semantic-staleness`
 
 ### agent_runner.py
 
@@ -383,7 +434,7 @@ flowchart LR
 
 CodeClaw integrates with Claude Code via the plugin system:
 
-- **`plugin.json`** — Declares the plugin name (`claw`), version (`3.5.1`), and skills directory
+- **`plugin.json`** — Declares the plugin name (`claw`), version (`4.0.0`), skills directory, and MCP server configuration
 - **`marketplace.json`** — Marketplace listing for discovery and installation
 - **`hooks.json`** — Registers:
   - `PreToolUse` on `Bash|Read|Grep|Glob|Edit|Write` → `pre_tool_offload.py` (Ollama routing)
