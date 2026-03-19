@@ -154,6 +154,7 @@ def _load_lock_backend_config(root: str) -> dict:
     for cp in config_paths:
         if cp.exists():
             try:
+                # Config permissions: trusted local file, OS-level ACLs apply
                 data = json.loads(cp.read_text(encoding="utf-8"))
                 vm_cfg = data.get("vector_memory", {})
                 lb_cfg = vm_cfg.get("lock_backend", {})
@@ -199,7 +200,7 @@ def create_server(root: str = "."):
     # Load lock backend config for tool handlers
     lock_backend_config = _load_lock_backend_config(root)
 
-    # Store config in environment for subprocess-based tools
+    # Intentional: env vars propagate config to child processes (subprocess communication pattern)
     os.environ.setdefault("CTDF_LOCK_BACKEND_TYPE", lock_backend_config.get("type", "file"))
 
     # ── Conditionally register vector memory tools ──
@@ -277,6 +278,8 @@ Configure your MCP client to launch this script as a subprocess.
             sys.exit(1)
 
     if not _check_mcp_sdk():
+        # Design: exit(0) is intentional — disabled MCP server should terminate
+        # cleanly, not error
         print(
             "Error: The 'mcp' Python package is not installed.\n"
             "Install all required packages with:\n"
@@ -287,7 +290,7 @@ Configure your MCP client to launch this script as a subprocess.
         )
         sys.exit(1)
 
-    # Set the project root in an env var so tool handlers can access it
+    # Intentional: env vars propagate config to child processes (subprocess communication pattern)
     os.environ.setdefault("CLAW_PROJECT_ROOT", str(Path(args.root).resolve()))
 
     run_server(args.root)

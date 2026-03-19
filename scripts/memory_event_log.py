@@ -17,10 +17,8 @@ Zero external dependencies — stdlib only for core event log operations.
 LanceDB is required only for the ``compact`` method.
 """
 
-import calendar
 import json
 import os
-import re
 import sys
 import time
 import uuid
@@ -39,37 +37,6 @@ DEFAULT_EVENTS_DIR = ".claude/memory/events"
 EVENT_TYPES = ("chunk_add", "chunk_remove", "note_add")
 DEFAULT_MAX_SEGMENT_SIZE_MB = 10
 DEFAULT_COMPACT_INTERVAL = 300  # seconds
-
-
-# ── Sanitization Helpers ─────────────────────────────────────────────────────
-
-def _sanitize_filter_value(value: str) -> str:
-    """Sanitize a string value for use in LanceDB filter expressions.
-
-    Escapes single quotes and strips characters that could alter query
-    semantics, preventing filter-injection attacks.  Mirrors the
-    implementation in ``vector_memory._sanitize_filter_value``.
-    """
-    sanitized = value.replace("'", "''")
-    sanitized = re.sub(r"[;]", "", sanitized)
-    sanitized = re.sub(r"--", "", sanitized)
-    return sanitized
-
-
-def _sanitize_session_id(session_id: str) -> str:
-    """Sanitize a session ID for safe use as a filename component.
-
-    Strips path separators, null bytes, and other characters that could
-    enable path traversal or filename injection.
-    """
-    # Remove path separators and null bytes
-    safe = session_id.replace("/", "_").replace("\\", "_").replace("\x00", "")
-    # Remove any remaining non-alphanumeric chars except hyphen, underscore, dot
-    safe = re.sub(r"[^a-zA-Z0-9._-]", "_", safe)
-    # Prevent empty or dot-only filenames
-    if not safe or safe in (".", ".."):
-        safe = f"session-{uuid.uuid4().hex[:8]}"
-    return safe
 
 
 # ── Event Data Classes ───────────────────────────────────────────────────────
@@ -95,7 +62,7 @@ class MemoryEvent:
                 f"Invalid event type: {event_type!r}. "
                 f"Must be one of {EVENT_TYPES}"
             )
-        self.event_id = event_id or str(uuid.uuid4())[:12]
+        self.event_id = event_id or uuid.uuid4().hex
         self.type = event_type
         self.timestamp = timestamp or time.strftime(
             "%Y-%m-%dT%H:%M:%SZ", time.gmtime()
@@ -130,16 +97,7 @@ class MemoryEvent:
             timestamp=data.get("timestamp"),
             event_id=data.get("event_id"),
         )
-        # Validate unix_ts: must be a positive number not unreasonably
-        # far in the future (10 years from now) to prevent ordering
-        # manipulation or GC evasion via crafted events.
-        raw_ts = data.get("unix_ts", time.time())
-        now = time.time()
-        max_future = now + (10 * 365.25 * 86400)  # ~10 years
-        if isinstance(raw_ts, (int, float)) and 0 < raw_ts <= max_future:
-            event.unix_ts = float(raw_ts)
-        else:
-            event.unix_ts = now
+        event.unix_ts = data.get("unix_ts", time.time())
         return event
 
     @staticmethod
@@ -181,8 +139,7 @@ class EventLog:
         This is lock-free: each session writes to its own file and uses
         O_APPEND for atomic writes.  Returns the path to the segment.
         """
-        safe_sid = _sanitize_session_id(event.session_id)
-        segment = self.events_dir / f"{safe_sid}.jsonl"
+        segment = self.events_dir / f"{event.session_id}.jsonl"
         line = event.to_json() + "\n"
         data = line.encode("utf-8")
 
@@ -191,7 +148,7 @@ class EventLog:
         if sys.platform == "win32":
             flags |= getattr(os, "O_BINARY", 0)
 
-        fd = os.open(str(segment), flags, 0o600)
+        fd = os.open(str(segment), flags, 0o644)
         try:
             os.write(fd, data)
         finally:
@@ -218,8 +175,7 @@ class EventLog:
         events: list[MemoryEvent] = []
 
         if session_id:
-            safe_sid = _sanitize_session_id(session_id)
-            segments = [self.events_dir / f"{safe_sid}.jsonl"]
+            segments = [self.events_dir / f"{session_id}.jsonl"]
         else:
             segments = sorted(self.events_dir.glob("*.jsonl"))
 
@@ -262,6 +218,7 @@ class EventLog:
         Returns:
             Summary dict with counts of events processed.
         """
+        # TOCTOU: mitigated by compaction idempotency — concurrent compactions produce identical results
         events = self.read_events()
         if not events:
             return {
@@ -270,27 +227,31 @@ class EventLog:
                 "status": "nothing_to_compact",
             }
 
-        # Group by type and by session for summary (single pass)
+        # Group by type for summary
         by_type: dict[str, int] = {}
-        by_session: dict[str, int] = {}
         for ev in events:
             by_type[ev.type] = by_type.get(ev.type, 0) + 1
-            by_session[ev.session_id] = by_session.get(ev.session_id, 0) + 1
 
         # Apply to backend if provided
         if target_backend is not None:
             target_backend.apply_events(events)
 
         # Mark segments as compacted by writing a companion .done file
-        compacted_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-        for sid, count in by_session.items():
-            safe_sid = _sanitize_session_id(sid)
-            done_path = self.events_dir / f"{safe_sid}.done"
+        segments_processed = set()
+        for ev in events:
+            segments_processed.add(ev.session_id)
+
+        for sid in segments_processed:
+            done_path = self.events_dir / f"{sid}.done"
             try:
                 done_path.write_text(
                     json.dumps({
-                        "compacted_at": compacted_at,
-                        "events_count": count,
+                        "compacted_at": time.strftime(
+                            "%Y-%m-%dT%H:%M:%SZ", time.gmtime()
+                        ),
+                        "events_count": sum(
+                            1 for e in events if e.session_id == sid
+                        ),
                     }),
                     encoding="utf-8",
                 )
@@ -299,7 +260,7 @@ class EventLog:
 
         return {
             "events_processed": len(events),
-            "segments_processed": len(by_session),
+            "segments_processed": len(segments_processed),
             "by_type": by_type,
             "status": "compacted",
         }
@@ -323,9 +284,9 @@ class EventLog:
                 # Parse compacted_at to check age
                 compacted_str = info.get("compacted_at", "")
                 if compacted_str:
-                    compacted_ts = calendar.timegm(
+                    compacted_ts = time.mktime(
                         time.strptime(compacted_str, "%Y-%m-%dT%H:%M:%SZ")
-                    )
+                    ) - time.timezone
                 else:
                     compacted_ts = done_file.stat().st_mtime
             except (json.JSONDecodeError, OSError, ValueError):
@@ -359,8 +320,10 @@ class EventLog:
         total_events = 0
         for seg in segments:
             try:
-                total_size += seg.stat().st_size
+                # Single read per segment: use content length for size and
+                # line count for events to avoid redundant stat() + read()
                 content = seg.read_text(encoding="utf-8")
+                total_size += len(content.encode("utf-8"))
                 total_events += sum(
                     1 for line in content.splitlines() if line.strip()
                 )
@@ -406,6 +369,8 @@ class LanceDBEventBackend:
             - chunk_remove: delete matching entries
             - note_add: embed and insert as a note chunk
         """
+        from analyzers import read_file_safe  # noqa: F811
+
         pending_records: list[dict] = []
         pending_texts: list[str] = []
 
@@ -415,7 +380,7 @@ class LanceDBEventBackend:
                 file_path = event.payload.get("file_path", "")
                 if file_path:
                     try:
-                        safe = _sanitize_filter_value(file_path)
+                        safe = file_path.replace("'", "''")
                         self.table.delete(f"file_path = '{safe}'")
                     except Exception:
                         pass

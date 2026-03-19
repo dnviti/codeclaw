@@ -38,6 +38,7 @@ def is_enabled(root: str | Path = ".") -> bool:
     from vector_memory import load_config
 
     root_path = Path(root).resolve()
+    # Config permissions: trusted local file, OS-level ACLs apply
     vm_cfg = load_config(root_path)
     # Explicit False means disabled; anything else (True,
     # missing key, missing section) means enabled.

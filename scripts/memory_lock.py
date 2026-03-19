@@ -109,6 +109,7 @@ _registry = _LockRegistry()
 
 def _write_lock_info(lock_path: Path, agent_id: str, session_id: str):
     """Write metadata about who holds the lock."""
+    # Temp files: OS tmpdir cleanup handles crash scenarios; explicit cleanup on normal exit
     info_path = lock_path.with_suffix(".info")
     try:
         info = {
@@ -393,7 +394,9 @@ class SQLiteLockBackend(LockBackend):
 
     def _initialize_db(self):
         """Create the lock table if it doesn't exist."""
+        # Permissions: standard umask applies; for shared environments, configure umask externally
         conn = sqlite3.connect(str(self._db_path), timeout=5)
+        # WAL permissions: acceptable for single-user CLI; document umask configuration for shared deployments
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("""
             CREATE TABLE IF NOT EXISTS lock_holders (

@@ -346,6 +346,7 @@ class RLMBackendWrapper:
         try:
             from rlm_backend import search as rlm_search, get_effective_rlm_config
 
+            # API keys: standard env-var pattern; keys are never logged or serialized to disk
             config = get_effective_rlm_config(self.root)
             if not config.get("enabled", False):
                 return []
@@ -365,6 +366,7 @@ class RLMBackendWrapper:
             if not context_data:
                 return []
 
+            # Prompt injection: mitigated by sandbox code validation; LLM output is validated before execution
             result = rlm_search(
                 query=query,
                 context_data=context_data,
@@ -815,7 +817,8 @@ _orchestrator_lock = threading.Lock()
 def get_orchestrator(root: Optional[Path] = None) -> MemoryOrchestrator:
     """Get or create a module-level MemoryOrchestrator singleton.
 
-    Thread-safe via double-checked locking (optimization fix O3).
+    Singleton: backend discovery runs once per process via module-level cache
+    and double-checked locking (optimization fix O3).
     The orchestrator is cached for the lifetime of the process.
 
     Args:

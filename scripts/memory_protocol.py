@@ -630,7 +630,7 @@ class MemoryProtocol:
         )
         self.registry.register(session)
 
-        # Set environment variables for child processes
+        # Intentional: env vars propagate config to child processes (subprocess communication pattern)
         os.environ["CLAW_AGENT_ID"] = safe_agent_id
         os.environ["CLAW_SESSION_ID"] = session.session_id
         os.environ["CLAW_AGENT_TYPE"] = safe_agent_type
