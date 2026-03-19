@@ -11,6 +11,7 @@ Modules:
 """
 
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -20,6 +21,34 @@ SCRIPTS_DIR = Path(__file__).resolve().parent.parent
 # Ensure scripts/ is on sys.path for sibling imports (vector_memory, etc.)
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
+
+
+def resolve_main_repo_root(path_hint: str) -> Path:
+    """Resolve path to the main repository root (worktree-aware).
+
+    If *path_hint* is inside a git worktree, returns the main repository
+    root so that vector memory storage is always shared in one location.
+
+    Uses a single ``git rev-parse`` call with both ``--git-common-dir``
+    and ``--git-dir`` flags to minimise subprocess overhead.
+    """
+    resolved = Path(path_hint).resolve()
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--git-common-dir", "--git-dir"],
+            capture_output=True, text=True, check=True,
+            cwd=str(resolved),
+        )
+        lines = result.stdout.strip().splitlines()
+        if len(lines) >= 2:
+            common_path = Path(lines[0]).resolve()
+            git_dir_path = Path(lines[1]).resolve()
+            if common_path != git_dir_path:
+                return common_path.parent
+            return git_dir_path.parent
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        pass
+    return resolved
 
 
 def is_enabled(root: str | Path = ".") -> bool:

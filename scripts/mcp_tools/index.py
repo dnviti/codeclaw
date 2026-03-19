@@ -9,7 +9,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from mcp_tools import SCRIPTS_DIR as _SCRIPT_DIR
+from mcp_tools import SCRIPTS_DIR as _SCRIPT_DIR, resolve_main_repo_root
 
 
 def register(server):
@@ -27,8 +27,8 @@ def register(server):
         Returns:
             JSON object with ``status``, ``message``, and optional diagnostics.
         """
-        # Validate that path resolves to a plausible project directory
-        resolved_path = Path(path).resolve()
+        # Resolve to main repo root (worktree-aware)
+        resolved_path = resolve_main_repo_root(path)
         if not resolved_path.is_dir():
             return json.dumps({
                 "status": "error",
