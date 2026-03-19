@@ -1178,6 +1178,30 @@ def cmd_conflicts(args):
         print()
 
 
+# ── Validate Model Command ──────────────────────────────────────────────────
+
+def cmd_validate_model(args):
+    """Check if the configured embedding model is available or downloadable."""
+    root = Path(args.root).resolve()
+    config = get_effective_config(root)
+    model_name = args.model or config["embedding_model"]
+
+    try:
+        from embeddings.local_onnx import LocalOnnxProvider
+        result = LocalOnnxProvider.validate_model(model_name)
+    except Exception as e:
+        result = {
+            "valid": False,
+            "model": model_name,
+            "path": "",
+            "error": str(e),
+        }
+
+    print(json.dumps(result, indent=2))
+    if not result["valid"]:
+        sys.exit(1)
+
+
 # ── Hook: Incremental Update ────────────────────────────────────────────────
 
 def hook_file_changed(file_path: str):
@@ -1568,6 +1592,13 @@ Examples:
     cfl.add_argument("--json", dest="json_output", action="store_true",
                      help="Output as JSON")
 
+    # ── validate-model ──
+    vm = sub.add_parser("validate-model",
+                        help="Check if the configured embedding model is available")
+    vm.add_argument("--root", default=".", help="Project root directory")
+    vm.add_argument("--model", default=None,
+                    help="Model name to validate (default: from config)")
+
     # ── hook (internal) ──
     hk = sub.add_parser("hook", help="Internal: incremental update hook")
     hk.add_argument("file_path", help="Path to the changed file")
@@ -1594,6 +1625,8 @@ Examples:
         cmd_agents(args)
     elif args.command == "conflicts":
         cmd_conflicts(args)
+    elif args.command == "validate-model":
+        cmd_validate_model(args)
     elif args.command == "hook":
         hook_file_changed(args.file_path)
 
