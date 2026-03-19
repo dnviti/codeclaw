@@ -69,7 +69,7 @@ Every file starts with YAML front-matter:
 ---
 title: Architecture
 description: System architecture, component interactions, and data flow
-generated-by: ctdf-docs
+generated-by: claw-docs
 generated-at: 2026-03-16T14:30:00Z
 source-files:
   - src/app.ts
@@ -116,6 +116,16 @@ Parse result: `languages`, `frameworks`, `role_counts`, `entry_points`, `config_
 
 **2.** If `docs_exist` is `true` and sections already generated → GATE: "Documentation already exists. Overwrite all?" / "Run /docs sync instead" / "Cancel"
 
+**2.5.** Choose visual richness level.
+
+GATE via `AskUserQuestion` with header "Visual Richness":
+- **"Zero — plain Markdown"** — No icons, images, or decorative elements. Clean, text-only output.
+- **"Tiny — logo + emoticons (Recommended)"** — Markdown with a project logo image and Unicode emoticons as section markers.
+- **"Moderate — HTML callouts, badges, icons"** — Embedded HTML within Markdown: badge shields, styled callout boxes, inline SVG icons.
+- **"Large — full HTML-rich docs"** — Styled cards, collapsible sections, colored headers, comprehensive visual treatment.
+
+Store the selection as `visual_richness_level` (`zero`, `tiny`, `moderate`, or `large`) for use in all subsequent generation steps.
+
 **3.** Read CLAUDE.md for project-specific architecture, commands, and patterns.
 
 **4.** Present analysis:
@@ -147,7 +157,18 @@ DM semantic-discover --section <section_name> --top-k 10
 
 Parse `discovered_files` from the result and read those files alongside the role-classified ones. These are files semantically related to the section's topic that the static role classification missed.
 
-**5b. Write the section** following [Documentation Standards](#documentation-standards). Include:
+**5b. Write the section** following [Documentation Standards](#documentation-standards) and the `visual_richness_level` selected in Step 2.5.
+
+**Tier-specific formatting rules:**
+
+| Tier | Formatting |
+|------|------------|
+| **zero** | Standard Markdown only. No emoji, no images, no inline HTML. Plain headings, lists, code blocks, and Mermaid diagrams only. |
+| **tiny** | Prepend each H2 section header with a relevant Unicode emoticon (e.g., `## Configuration`, `## Deployment`). In `index.md`, include `![Project Logo](assets/logo.svg)`. If no logo file exists at `docs/assets/logo.svg`, create a simple project SVG logo using inline SVG markup (geometric shape + project initials, saved via the Write tool). |
+| **moderate** | All of **tiny**, plus: use HTML `<div class="callout callout-info">` / `callout-warning` / `callout-tip` blocks for important notes, tips, and warnings. Use `<img>` badge shields (e.g., `<img src="https://img.shields.io/badge/...">`) for version, status, and license indicators in `index.md`. Use `<table>` with styled headers where Markdown tables are insufficient for complex data. Use inline SVG icons for visual markers. |
+| **large** | All of **moderate**, plus: wrap feature overviews in card-style `<div class="card">` layouts. Use `<details><summary>` collapsible sections for lengthy reference content (e.g., full API listings, exhaustive config tables). Use styled headers via `<h2 style="border-bottom: 2px solid #4A90D9; padding-bottom: 0.3em;">`. Use `<picture>` elements with light/dark mode variants where applicable. Add a CSS `<style>` block at the top of each file defining `.card`, `.callout`, `.badge` classes. |
+
+All tiers include:
 - YAML front-matter with title, description, generation timestamp, source files list (including semantically discovered files)
 - Structured content with H2/H3 headings
 - Mermaid diagrams where the section involves workflows or architecture
@@ -177,10 +198,10 @@ This ensures that subsequent `/docs sync` runs and release pipeline GC (Stage 9d
 
 **8.** Write manifest:
 ```bash
-DM init-manifest --sections-json '[{"name":"architecture","file":"architecture.md","source_files":["src/app.ts",...]}]'
+DM init-manifest --sections-json '[{"name":"architecture","file":"architecture.md","source_files":["src/app.ts",...]}]' --visual-richness <visual_richness_level>
 ```
 
-Pass all sections with their contributing source files.
+Pass all sections with their contributing source files. The `--visual-richness` parameter persists the selected tier so that `/docs sync` preserves the same visual style.
 
 **9.** Present report:
 
@@ -239,9 +260,10 @@ This detects when a change to a utility module affects a documentation section e
 GATE: "Update stale sections" / "Update all" / "Cancel"
 
 **5.** For each stale section:
+- Read the visual richness tier from the manifest: `DM get-visual-richness`. Apply the same tier-specific formatting rules from Generate Flow Step 5b.
 - Read the existing doc file
 - Read all changed source files
-- Update the documentation to reflect changes, **preserving structure and tone**
+- Update the documentation to reflect changes, **preserving structure, tone, and visual richness tier**
 - Update front-matter: `generated-at` timestamp, `source-files` list
 - Write updated file using Edit tool
 

@@ -1,7 +1,7 @@
 ---
 title: Troubleshooting
 description: Common errors, debugging techniques, and frequently asked questions
-generated-by: ctdf-docs
+generated-by: claw-docs
 generated-at: 2026-03-18T00:00:00Z
 source-files:
   - scripts/task_manager.py
@@ -22,9 +22,9 @@ source-files:
 **Symptom:** Slash commands like `/task` or `/idea` are not recognized.
 
 **Causes and fixes:**
-1. **Plugin not installed** — Run `/plugin install ctdf@dnviti-claude-task-development-framework`
-2. **Plugin disabled** — Run `/plugin enable ctdf@dnviti-claude-task-development-framework`
-3. **Local development** — Ensure you started Claude Code with `claude --plugin-dir ./claude-task-development-framework`
+1. **Plugin not installed** — Run `/plugin install claw@dnviti-plugins`
+2. **Plugin disabled** — Run `/plugin enable claw@dnviti-plugins`
+3. **Local development** — Ensure you started Claude Code with `claude --plugin-dir ./codeclaw`
 
 ### "No task files found"
 
@@ -76,7 +76,7 @@ python3 scripts/release_manager.py release-state-get
 python3 scripts/release_manager.py release-state-clear
 ```
 
-**Platform-only mode:** The release state is stored in a `ctdf-release-state` GitHub/GitLab issue. If the issue is missing or corrupt, `release-state-get` returns `{"error": "No release state found"}`. Recreate by running `release-state-set` with the required fields.
+**Platform-only mode:** The release state is stored in a `claw-release-state` GitHub/GitLab issue. If the issue is missing or corrupt, `release-state-get` returns `{"error": "No release state found"}`. Recreate by running `release-state-set` with the required fields.
 
 ### Version Bump Fails
 
@@ -107,7 +107,7 @@ python3 scripts/release_manager.py update-versions --version "0.0.0"
 
 **Checklist:**
 1. Confirm platform-only mode: `"enabled": true, "sync": false` in `.claude/issues-tracker.json`
-2. Run `gh issue list --label ctdf-release-state --state open --repo owner/repo` to verify the state issue exists
+2. Run `gh issue list --label claw-release-state --state open --repo owner/repo` to verify the state issue exists
 3. If missing: the state was cleared or never created — run `/release resume` to recreate it at the current stage
 4. Ensure `gh`/`glab` CLI is authenticated on all machines
 
@@ -279,13 +279,13 @@ git worktree remove .worktrees/task/CODE --force
 
 ## FAQ
 
-**Q: Can I use CTDF with any programming language?**
-A: Yes. CTDF is project-agnostic — it works with any language, framework, or tech stack.
+**Q: Can I use CodeClaw with any programming language?**
+A: Yes. CodeClaw is project-agnostic — it works with any language, framework, or tech stack.
 
 **Q: Do I need a GitHub/GitLab account?**
-A: No. CTDF works in local-only mode by default with plain `.txt` files.
+A: No. CodeClaw works in local-only mode by default with plain `.txt` files.
 
-**Q: Can multiple people use CTDF on the same repo?**
+**Q: Can multiple people use CodeClaw on the same repo?**
 A: Yes. In local mode, task files are plain text committed to git. In platform-only mode, release state is synced through a platform issue so all collaborators share the same state automatically.
 
 **Q: What happens if the release pipeline is interrupted?**
@@ -295,7 +295,7 @@ A: The pipeline state is saved after each stage. Resume with `/release resume`.
 A: The format is fixed (78-dash separators, em dash titles, 2-space indent) to ensure consistent parsing by `task_manager.py`.
 
 **Q: How do I update the plugin?**
-A: Run `/plugin update ctdf@dnviti-claude-task-development-framework`, then `/update` to refresh CTDF-managed files in your project.
+A: Run `/plugin update claw@dnviti-plugins`, then `/update` to refresh CodeClaw-managed files in your project.
 
 **Q: What is yolo mode?**
 A: Appending `yolo` to any command auto-confirms all non-destructive gates, enabling fully autonomous execution. Yolo never auto-selects "Abort release".
@@ -303,5 +303,5 @@ A: Appending `yolo` to any command auto-confirms all non-destructive gates, enab
 **Q: Why is my exclude pattern not blocking a command?**
 A: The pattern matching is NFKC-normalized to handle Unicode variants (e.g., fullwidth space U+3000). Verify the pattern matches the NFKC form of the command. Run: `python3 -c "import unicodedata; print(unicodedata.normalize('NFKC', 'your command'))"`
 
-**Q: Do I need Ollama for CTDF to work?**
+**Q: Do I need Ollama for CodeClaw to work?**
 A: No. Ollama integration is entirely optional. All core features (task management, release pipeline, documentation) work without it.

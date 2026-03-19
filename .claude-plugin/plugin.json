@@ -1,11 +1,11 @@
 {
-  "name": "ctdf",
+  "name": "claw",
   "version": "3.5.2",
   "description": "Project-agnostic task and release management framework with 8 streamlined skills: /task, /idea, /release, /docs, /setup, /update, /tests, /help. Features a gated release pipeline with automatic subagent orchestration.",
   "author": {
     "name": "dnviti"
   },
-  "repository": "https://github.com/dnviti/claude-task-development-framework",
+  "repository": "https://github.com/dnviti/codeclaw",
   "license": "MIT",
   "keywords": [
     "task-management",
@@ -23,7 +23,7 @@
   ],
   "skills": "./skills/",
   "mcp_servers": {
-    "ctdf-vector-memory": {
+    "claw-vector-memory": {
       "command": "python3",
       "args": [
         "./scripts/mcp_server.py"

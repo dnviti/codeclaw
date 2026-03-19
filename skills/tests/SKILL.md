@@ -43,7 +43,7 @@ Route based on `flow` in the JSON result:
 
 ## Scout Flow
 
-Analyze the codebase to identify coverage gaps, untested critical paths, high-complexity functions without tests, and recently changed files lacking test updates.
+Analyze the codebase to identify coverage gaps, untested critical paths, high-complexity functions without tests, and recently changed files lacking test updates. When vector memory is available, perform semantic gap analysis to discover high-risk untested code paths.
 
 ### Scout Step 1: Gather Context
 
@@ -54,7 +54,17 @@ TESTS analyze-gaps --root .
 TESTS suggest --root .
 ```
 
-### Scout Step 2: Analyze Recent Changes
+### Scout Step 2: Semantic Gap Analysis
+
+After structural gap analysis, run semantic search to find high-risk untested code paths (validation, authentication, error handling, payment processing, etc.):
+
+```bash
+TESTS semantic-gaps --root .
+```
+
+If `vector_memory_available` is `false` in the result, skip this step silently and rely on structural analysis only. If available, merge the `semantic_risks` results into the coverage report (Step 3).
+
+### Scout Step 3: Analyze Recent Changes
 
 ```bash
 git log --oneline --name-only -20 2>/dev/null | head -60
@@ -62,17 +72,18 @@ git log --oneline --name-only -20 2>/dev/null | head -60
 
 Cross-reference changed source files against test file mappings from `analyze-gaps`. Identify source files that were recently modified but have no corresponding test file or no recent test updates.
 
-### Scout Step 3: Present Coverage Report
+### Scout Step 4: Present Coverage Report
 
 Present:
 
 1. **Test Framework** — Detected framework, test command, file pattern.
 2. **Coverage Summary** — Total source files, total test files, test-to-source ratio. Per-directory breakdown table (directory, source count, test count, ratio).
 3. **Per-File Gap Analysis** — Table of source files with no matching test file. Sorted by complexity (lines, functions) descending. Limit to top 20.
-4. **High-Priority Targets** — From `suggest` output: files recommended for testing based on complexity, recent changes, and missing coverage. Include rationale.
-5. **Recently Changed Without Tests** — Source files changed in last 20 commits that lack test coverage.
+4. **Semantic Risk Analysis** *(if vector memory available)* — Table of high-risk untested code paths from `semantic-gaps`, grouped by risk category (validation, auth, error handling, etc.). Highlight that these are critical paths discovered via semantic search that go beyond structural coverage mapping.
+5. **High-Priority Targets** — From `suggest` output: files recommended for testing based on complexity, recent changes, and missing coverage. Include rationale. When semantic risks are available, boost priority for files appearing in both structural gaps and semantic risks.
+6. **Recently Changed Without Tests** — Source files changed in last 20 commits that lack test coverage.
 
-### Scout Step 4: GATE — Next Action
+### Scout Step 5: GATE — Next Action
 
 Use `AskUserQuestion`:
 - **"Create tests for the top recommended target"** -> proceed to [Create Flow](#create-flow) with the top suggestion
@@ -105,6 +116,22 @@ STOP.
 3. Identify all functions, classes, methods, and exported symbols.
 4. Determine the appropriate test file path using project conventions (from `test_file_pattern` in context or auto-detected patterns).
 
+### Create Step 2b: Discover Test Patterns
+
+Before generating tests, search for existing test files that cover similar domains to replicate established patterns:
+
+```bash
+TESTS similar-tests --root . --target <target_file>
+```
+
+If `vector_memory_available` is `true` and results are returned:
+- Note the **assertion styles** from `patterns.assertion_styles` (e.g., plain assert, unittest methods, expect())
+- Note the **mocking strategies** from `patterns.mocking_libraries` (e.g., unittest.mock, pytest-mock)
+- Note the **naming conventions** from `patterns.naming_conventions`
+- Review the top 2-3 `similar_tests` content previews for structural patterns (setup/teardown, fixtures, parametrized tests)
+
+Use these patterns in Step 4 when generating the test file. If vector memory is not available, proceed using framework defaults and project config.
+
 ### Create Step 3: GATE — Test Plan
 
 Present the test plan:
@@ -112,6 +139,7 @@ Present the test plan:
 - **Test file path** to be created
 - **Test cases** — bulleted list of functions/methods to test with brief description of what each test verifies
 - **Test framework** and any imports needed
+- **Patterns adopted** *(if similar tests were found)* — mention which existing test patterns will be followed (assertion style, mocking approach, naming convention)
 
 Use `AskUserQuestion`:
 - **"Looks good, create the tests"**
@@ -129,6 +157,7 @@ STOP.
    - Arrange-Act-Assert pattern
    - Edge cases and error paths where applicable
    - Mock external dependencies
+   - When similar test patterns were discovered in Step 2b, replicate the established assertion styles, mocking strategies, and structural conventions
 4. Ensure the file is syntactically valid.
 
 ### Create Step 5: Verify
@@ -141,9 +170,19 @@ TESTS run --root . --target <test_file>
 
 If tests fail, analyze the output and fix issues. Re-run until tests pass or present failures to the user.
 
-### Create Step 6: Report
+### Create Step 6: Reindex
 
-Present: test file created (path), number of test cases, pass/fail status, and any warnings.
+After the test file passes verification, update the vector index so subsequent scout or create runs reflect the new coverage:
+
+```bash
+TESTS reindex-test --root . --target <test_file>
+```
+
+If reindexing fails or vector memory is unavailable, warn but do not block — this is a best-effort step.
+
+### Create Step 7: Report
+
+Present: test file created (path), number of test cases, pass/fail status, vector index updated (yes/no), and any warnings.
 
 ---
 

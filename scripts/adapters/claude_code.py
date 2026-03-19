@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Claude Code platform adapter for CTDF.
+"""Claude Code platform adapter for CodeClaw.
 
 Wraps the existing Claude Code plugin system behavior.  This is the
-"native" adapter -- CTDF was originally built for Claude Code, so this
+"native" adapter -- CodeClaw was originally built for Claude Code, so this
 adapter delegates directly to the skill_helper and plugin.json machinery
 that already exists.
 
@@ -75,7 +75,7 @@ class ClaudeCodeAdapter(PlatformAdapter):
 
         In Claude Code, tool invocation is handled by the LLM runtime
         itself -- the adapter's role is to prepare the call and delegate
-        to the skill_helper when the tool is a CTDF subcommand.
+        to the skill_helper when the tool is a CodeClaw subcommand.
         """
         root = self.get_project_root()
         helper = root / "scripts" / "skill_helper.py"

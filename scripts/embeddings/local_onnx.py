@@ -7,7 +7,7 @@ Requires: onnxruntime, tokenizers, numpy (optional dependencies).
 
 Model download:
     The ONNX model files are auto-downloaded on first use to
-    ~/.cache/ctdf/models/<model_name>/ using urllib (stdlib).
+    ~/.cache/claw/models/<model_name>/ using urllib (stdlib).
 """
 
 import json
@@ -33,7 +33,9 @@ _MODEL_REGISTRY = {
     },
 }
 
-_DEFAULT_CACHE_DIR = Path.home() / ".cache" / "ctdf" / "models"
+_DEFAULT_CACHE_DIR = Path.home() / ".cache" / "claw" / "models"
+# Legacy cache path for backward compatibility with existing installations
+_LEGACY_CACHE_DIR = Path.home() / ".cache" / "ctdf" / "models"
 
 
 class LocalOnnxProvider(EmbeddingProvider):
@@ -54,7 +56,13 @@ class LocalOnnxProvider(EmbeddingProvider):
         if model_dir:
             self._model_dir = Path(model_dir)
         elif model_name_or_path in _MODEL_REGISTRY:
-            self._model_dir = _DEFAULT_CACHE_DIR / model_name_or_path
+            # Check legacy cache path first for backward compatibility,
+            # then use the new default path
+            legacy_dir = _LEGACY_CACHE_DIR / model_name_or_path
+            if legacy_dir.exists() and (legacy_dir / "model.onnx").exists():
+                self._model_dir = legacy_dir
+            else:
+                self._model_dir = _DEFAULT_CACHE_DIR / model_name_or_path
         else:
             self._model_dir = Path(model_name_or_path)
 

@@ -1,7 +1,7 @@
-"""Platform adapters for CTDF multi-agent compatibility.
+"""Platform adapters for CodeClaw multi-agent compatibility.
 
 Each module provides a concrete PlatformAdapter subclass that translates
-CTDF skill operations into the native mechanisms of a specific AI coding
+CodeClaw skill operations into the native mechanisms of a specific AI coding
 platform.
 
 Available adapters:

@@ -1,7 +1,7 @@
 ---
 title: Deployment
 description: CI/CD pipelines, GitHub Actions workflows, GitLab CI templates, Docker tagging strategy, and production setup
-generated-by: ctdf-docs
+generated-by: claw-docs
 generated-at: 2026-03-18T00:00:00Z
 source-files:
   - .github/workflows/ci.yml
@@ -24,11 +24,11 @@ source-files:
 
 ## Overview
 
-CTDF provides CI/CD pipeline templates for both GitHub Actions and GitLab CI/CD. These templates are copied into your project during `/setup init` or `/setup agentic-fleet` and can be customized for your stack.
+CodeClaw provides CI/CD pipeline templates for both GitHub Actions and GitLab CI/CD. These templates are copied into your project during `/setup init` or `/setup agentic-fleet` and can be customized for your stack.
 
-## CTDF's Own CI/CD
+## CodeClaw's Own CI/CD
 
-The CTDF plugin itself uses two GitHub Actions workflows:
+The CodeClaw plugin itself uses two GitHub Actions workflows:
 
 ### CI Pipeline (`.github/workflows/ci.yml`)
 

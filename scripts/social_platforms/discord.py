@@ -1,7 +1,7 @@
 """Discord webhook posting adapter.
 
 Posts release announcements to a Discord channel via webhook URL.
-The webhook URL is stored in CTDF_DISCORD_WEBHOOK.
+The webhook URL is stored in CLAW_DISCORD_WEBHOOK.
 
 Zero external dependencies -- stdlib only (uses urllib.request).
 """
@@ -22,7 +22,7 @@ class DiscordPlatform(SocialPlatform):
     """Discord webhook posting."""
 
     name = "discord"
-    env_vars = ["CTDF_DISCORD_WEBHOOK"]
+    env_vars = ["CLAW_DISCORD_WEBHOOK"]
     max_length = 2000
 
     def post(self, message: str) -> dict[str, Any]:
@@ -31,10 +31,10 @@ class DiscordPlatform(SocialPlatform):
             return {
                 "success": False,
                 "platform": self.name,
-                "error": "Missing credentials. Set CTDF_DISCORD_WEBHOOK.",
+                "error": "Missing credentials. Set CLAW_DISCORD_WEBHOOK.",
             }
 
-        webhook_url = os.environ.get("CTDF_DISCORD_WEBHOOK", "")
+        webhook_url = os.environ.get("CLAW_DISCORD_WEBHOOK", "")
 
         try:
             validate_webhook_url(webhook_url, ["discord.com", "discordapp.com"])

@@ -1,7 +1,7 @@
 ---
 title: Getting Started
 description: Installation, prerequisites, first run, and initial project setup
-generated-by: ctdf-docs
+generated-by: claw-docs
 generated-at: 2026-03-18T00:00:00Z
 source-files:
   - README.md
@@ -14,15 +14,15 @@ source-files:
 
 ## Overview
 
-This guide walks you through installing CTDF, setting up your first project, and running your first workflow cycle from idea to release.
+This guide walks you through installing CodeClaw, setting up your first project, and running your first workflow cycle from idea to release.
 
 ## Prerequisites
 
 | Requirement | Purpose |
 |-------------|---------|
-| [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) | The host AI coding assistant that runs CTDF skills |
-| Python 3 | Runtime for all CTDF automation scripts (stdlib only, no pip packages needed for core features) |
-| Git | Version control; CTDF uses worktrees, branches, and tags |
+| [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) | The host AI coding assistant that runs CodeClaw skills |
+| Python 3 | Runtime for all CodeClaw automation scripts (stdlib only, no pip packages needed for core features) |
+| Git | Version control; CodeClaw uses worktrees, branches, and tags |
 | `gh` CLI (optional) | GitHub Issues integration, PR management, and branch protection setup |
 | `glab` CLI (optional) | GitLab Issues integration |
 | [Ollama](https://ollama.ai) (optional) | Local model integration for tool call offloading |
@@ -36,20 +36,20 @@ pip install lancedb sentence-transformers mcp
 
 ### From Marketplace
 
-The recommended way to install CTDF:
+The recommended way to install CodeClaw:
 
 ```bash
-/plugin marketplace add https://github.com/dnviti/claude-task-development-framework
-/plugin install ctdf@dnviti-claude-task-development-framework
+/plugin marketplace add https://github.com/dnviti/codeclaw
+/plugin install claw@dnviti-plugins
 ```
 
 ### Local Development
 
-For contributing to CTDF or running from source:
+For contributing to CodeClaw or running from source:
 
 ```bash
-git clone https://github.com/dnviti/claude-task-development-framework.git
-claude --plugin-dir ./claude-task-development-framework
+git clone https://github.com/dnviti/codeclaw.git
+claude --plugin-dir ./codeclaw
 ```
 
 ## First-Time Setup
@@ -96,7 +96,7 @@ Three modes are available:
 | `true` | `false` | **Platform only** | GitHub/GitLab Issues (+ release state in platform issue) |
 | `true` | `true` | **Dual sync** | Local files synced to Issues |
 
-> **Multi-user tip:** In platform-only mode, the release pipeline state is stored in a GitHub/GitLab issue (`ctdf-release-state` label), so all collaborators share the same state without needing a `git pull`.
+> **Multi-user tip:** In platform-only mode, the release pipeline state is stored in a GitHub/GitLab issue (`claw-release-state` label), so all collaborators share the same state without needing a `git pull`.
 
 ### 3. Configure Ollama (Optional)
 

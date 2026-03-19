@@ -1,7 +1,7 @@
 ---
 title: MCP Vector Memory
 description: Semantic vector memory layer with MCP server integration — architecture, installation, configuration, and use cases
-generated-by: ctdf-docs
+generated-by: claw-docs
 generated-at: 2026-03-18T18:00:00Z
 source-files:
   - scripts/vector_memory.py
@@ -196,7 +196,7 @@ Stored notes are markdown files with optional YAML frontmatter. They are automat
 ### Prerequisites
 
 - Python 3.8+
-- CTDF plugin installed in Claude Code
+- CodeClaw plugin installed in Claude Code
 
 ### Step 1 — Install Python Dependencies
 
@@ -229,7 +229,7 @@ python3 <plugin-dir>/scripts/deps_check.py
 Expected output when all deps are installed:
 
 ```
-CTDF Vector Memory — Optional Dependencies
+CodeClaw Vector Memory — Optional Dependencies
 =======================================================
   [     OK] LanceDB                  (0.x.x)
   [     OK] ONNX Runtime             (1.x.x)
@@ -248,7 +248,7 @@ Run `/setup` in Claude Code (which triggers indexing automatically), or manually
 python3 <plugin-dir>/scripts/vector_memory.py index --force-init --root .
 ```
 
-On first run, the ONNX model files (`all-MiniLM-L6-v2`, ~22 MB) are auto-downloaded to `~/.cache/ctdf/models/`.
+On first run, the ONNX model files (`all-MiniLM-L6-v2`, ~22 MB) are auto-downloaded to `~/.cache/claw/models/`.
 
 ### Step 4 — Configure MCP Server (Optional)
 
@@ -257,14 +257,14 @@ To expose vector memory to external MCP clients, add the server to your Claude C
 ```json
 {
   "mcpServers": {
-    "ctdf-vector-memory": {
+    "claw-vector-memory": {
       "command": "python3",
       "args": [
         "<plugin-dir>/scripts/mcp_server.py",
         "--root", "<project-root>"
       ],
       "env": {
-        "CTDF_PROJECT_ROOT": "<project-root>"
+        "CLAW_PROJECT_ROOT": "<project-root>"
       }
     }
   }
@@ -398,7 +398,7 @@ python3 <plugin-dir>/scripts/vector_memory.py index --full --root .
 
 ### Automatic Integration (Recommended)
 
-When CTDF is installed as a Claude Code plugin, vector memory integrates automatically:
+When CodeClaw is installed as a Claude Code plugin, vector memory integrates automatically:
 
 ```mermaid
 flowchart TD
@@ -867,7 +867,7 @@ Status: 3 core dependency(ies) missing.
 Failed to download model.onnx from https://huggingface.co/...
 ```
 
-**Fix:** Download manually to `~/.cache/ctdf/models/all-MiniLM-L6-v2/`:
+**Fix:** Download manually to `~/.cache/claw/models/all-MiniLM-L6-v2/`:
 - `model.onnx`
 - `tokenizer.json`
 - `tokenizer_config.json`

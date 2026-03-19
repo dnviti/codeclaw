@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""OpenClaw platform adapter for CTDF.
+"""OpenClaw platform adapter for CodeClaw.
 
 OpenClaw uses a SKILL.md-based format for skill definitions and
 integrates with ClawHub for skill sharing and discovery.  This adapter
-maps CTDF's skill directory structure onto OpenClaw's expectations.
+maps CodeClaw's skill directory structure onto OpenClaw's expectations.
 
 Zero external dependencies -- stdlib only.
 """
@@ -51,7 +51,7 @@ class OpenClawAdapter(PlatformAdapter):
         2. ClawHub: fetch registered skills from the hub (not yet implemented)
 
         Each SKILL.md may contain HTML comment metadata directives:
-            <!-- clawhub-id: ctdf/task -->
+            <!-- clawhub-id: claw/task -->
             <!-- clawhub-version: 1.0.0 -->
         """
         root = self.get_project_root()

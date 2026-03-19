@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Consolidated skill helper for claude-task-development-framework.
+"""Consolidated skill helper for codeclaw.
 
-Eliminates repeated logic across CTDF skills by providing single-call
+Eliminates repeated logic across CodeClaw skills by providing single-call
 subcommands that gather context, dispatch arguments, check state, and
 manage worktrees.
 
@@ -294,13 +294,13 @@ def claude_md_info(root: Path) -> dict:
     """Return metadata about CLAUDE.md."""
     claude_md = root / "CLAUDE.md"
     if not claude_md.exists():
-        return {"exists": False, "lines": 0, "has_ctdf_section": False}
+        return {"exists": False, "lines": 0, "has_claw_section": False}
     content = claude_md.read_text(encoding="utf-8")
     lines = content.splitlines()
     return {
         "exists": True,
         "lines": len(lines),
-        "has_ctdf_section": "<!-- CTDF:START -->" in content,
+        "has_claw_section": "<!-- CodeClaw:START -->" in content,
     }
 
 
@@ -680,6 +680,9 @@ def dispatch_task(parts: list[str]) -> dict:
         code = rest[0].upper() if rest else ""
         remaining = " ".join(rest[1:]) if len(rest) > 1 else ""
         return {**base, "flow": "continue", "task_code": code, "remaining_args": remaining}
+    elif first == "edit":
+        code = rest[0].upper() if rest else ""
+        return {**base, "flow": "edit", "task_code": code, "remaining_args": " ".join(rest[1:])}
     elif first == "schedule":
         # Parse: schedule CODE [CODE2 ...] to VERSION
         to_idx = None
@@ -726,6 +729,9 @@ def dispatch_idea(parts: list[str]) -> dict:
     elif first == "disapprove":
         code = rest[0].upper() if rest else ""
         return {**base, "flow": "disapprove", "task_code": code, "remaining_args": " ".join(rest[1:])}
+    elif first == "edit":
+        code = rest[0].upper() if rest else ""
+        return {**base, "flow": "edit", "task_code": code, "remaining_args": " ".join(rest[1:])}
     elif first == "refactor":
         return {**base, "flow": "refactor", "task_code": "", "remaining_args": " ".join(rest)}
     elif first == "scout":
@@ -792,6 +798,10 @@ def dispatch_release(parts: list[str]) -> dict:
     elif first == "close":
         version = rest[0] if rest and _is_version(rest[0]) else ""
         return {**base, "flow": "close", "version": version,
+                "remaining_args": " ".join(rest[1:]) if len(rest) > 1 else ""}
+    elif first == "edit":
+        version = rest[0] if rest and _is_version(rest[0]) else ""
+        return {**base, "flow": "edit", "version": version,
                 "remaining_args": " ".join(rest[1:]) if len(rest) > 1 else ""}
     elif first == "resume":
         return {**base, "flow": "resume", "remaining_args": " ".join(rest)}
@@ -1353,7 +1363,7 @@ def output_json(data: dict) -> None:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Consolidated skill helper for CTDF",
+        description="Consolidated skill helper for CodeClaw",
     )
     sub = parser.add_subparsers(dest="command")
 

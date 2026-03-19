@@ -1,8 +1,8 @@
 """Bluesky (AT Protocol) posting adapter.
 
 Posts release announcements to Bluesky via the AT Protocol public API.
-Authentication uses an app password stored in CTDF_BLUESKY_APP_PASSWORD.
-The handle is stored in CTDF_BLUESKY_HANDLE.
+Authentication uses an app password stored in CLAW_BLUESKY_APP_PASSWORD.
+The handle is stored in CLAW_BLUESKY_HANDLE.
 
 Zero external dependencies -- stdlib only (uses urllib.request).
 """
@@ -24,15 +24,15 @@ class BlueskyPlatform(SocialPlatform):
     """Bluesky AT Protocol posting."""
 
     name = "bluesky"
-    env_vars = ["CTDF_BLUESKY_HANDLE", "CTDF_BLUESKY_APP_PASSWORD"]
+    env_vars = ["CLAW_BLUESKY_HANDLE", "CLAW_BLUESKY_APP_PASSWORD"]
     max_length = 300
 
     BSKY_API = "https://bsky.social/xrpc"
 
     def _create_session(self) -> dict[str, Any]:
         """Authenticate and create an AT Protocol session."""
-        handle = os.environ.get("CTDF_BLUESKY_HANDLE", "")
-        password = os.environ.get("CTDF_BLUESKY_APP_PASSWORD", "")
+        handle = os.environ.get("CLAW_BLUESKY_HANDLE", "")
+        password = os.environ.get("CLAW_BLUESKY_APP_PASSWORD", "")
 
         url = f"{self.BSKY_API}/com.atproto.server.createSession"
         data = json.dumps({"identifier": handle, "password": password}).encode()
@@ -51,7 +51,7 @@ class BlueskyPlatform(SocialPlatform):
             return {
                 "success": False,
                 "platform": self.name,
-                "error": "Missing credentials. Set CTDF_BLUESKY_HANDLE and CTDF_BLUESKY_APP_PASSWORD.",
+                "error": "Missing credentials. Set CLAW_BLUESKY_HANDLE and CLAW_BLUESKY_APP_PASSWORD.",
             }
 
         try:
@@ -87,7 +87,7 @@ class BlueskyPlatform(SocialPlatform):
             post_uri = result.get("uri", "")
             # Build a web URL from the AT URI
             # at://did:plc:xxx/app.bsky.feed.post/rkey -> profile URL
-            handle = os.environ.get("CTDF_BLUESKY_HANDLE", "")
+            handle = os.environ.get("CLAW_BLUESKY_HANDLE", "")
             rkey = post_uri.rsplit("/", 1)[-1] if "/" in post_uri else ""
             web_url = f"https://bsky.app/profile/{handle}/post/{rkey}" if rkey else ""
 

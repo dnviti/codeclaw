@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Cross-platform utilities for CTDF scripts.
+"""Cross-platform utilities for CodeClaw scripts.
 
 Provides shared helpers that abstract away OS-specific differences
-(Windows vs macOS vs Linux) so that all CTDF scripts work identically
+(Windows vs macOS vs Linux) so that all CodeClaw scripts work identically
 on every supported platform.
 
 Zero external dependencies -- stdlib only.
@@ -173,7 +173,7 @@ def run_command(
 ) -> dict:
     """Run a command using list-format invocation (no shell).
 
-    This is the recommended way to call subprocesses across all CTDF
+    This is the recommended way to call subprocesses across all CodeClaw
     scripts.  Using list-format avoids shell injection risks and works
     identically on Windows, macOS, and Linux.
 

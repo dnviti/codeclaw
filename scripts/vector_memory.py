@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Vector memory layer for CTDF — semantic search over repository content.
+"""Vector memory layer for CodeClaw — semantic search over repository content.
 
 Provides an embedded vector database (LanceDB) that indexes source code,
 tasks, git history, and agent-generated documents for semantic retrieval.
@@ -97,8 +97,11 @@ def load_config(root: Path) -> dict:
             try:
                 data = json.loads(cp.read_text(encoding="utf-8"))
                 return data.get("vector_memory", {})
-            except (json.JSONDecodeError, OSError):
-                pass
+            except (json.JSONDecodeError, OSError) as exc:
+                print(
+                    f"Warning: failed to parse config {cp}: {exc}",
+                    file=sys.stderr,
+                )
     return {}
 
 
@@ -113,8 +116,11 @@ def load_consistency_config(root: Path) -> dict:
             try:
                 data = json.loads(cp.read_text(encoding="utf-8"))
                 return data.get("memory_consistency", {})
-            except (json.JSONDecodeError, OSError):
-                pass
+            except (json.JSONDecodeError, OSError) as exc:
+                print(
+                    f"Warning: failed to parse config {cp}: {exc}",
+                    file=sys.stderr,
+                )
     return {}
 
 
@@ -381,6 +387,32 @@ def _dir_size_mb(path: Path) -> float:
 
 # ── Index Command ────────────────────────────────────────────────────────────
 
+def _check_enabled_or_exit(root: Path, json_output: bool = False) -> dict:
+    """Check if vector memory is enabled; exit with informative message if not.
+
+    Args:
+        root: Project root path.
+        json_output: When True, print a JSON message instead of plain text.
+
+    Returns:
+        The effective configuration dict when vector memory is enabled.
+        Exits the process when disabled, so callers can use the returned
+        config directly without a redundant ``get_effective_config()`` call.
+    """
+    config = get_effective_config(root)
+    if config.get("enabled") is False:
+        msg = (
+            "Vector memory is disabled via vector_memory.enabled=false "
+            "in project-config.json. Set it to true to enable."
+        )
+        if json_output:
+            print(json.dumps({"status": "disabled_by_config", "message": msg}))
+        else:
+            print(f"Vector memory disabled: {msg}", file=sys.stderr)
+        sys.exit(0)
+    return config
+
+
 def cmd_index(args):
     """Full or incremental index of the repository.
 
@@ -388,7 +420,7 @@ def cmd_index(args):
     the index is always built from scratch regardless of existing state.
     """
     root = Path(args.root).resolve()
-    config = get_effective_config(root)
+    config = _check_enabled_or_exit(root)
     index_dir = root / config["index_path"]
     index_dir.mkdir(parents=True, exist_ok=True)
 
@@ -410,8 +442,8 @@ def cmd_index(args):
     lock = None
     try:
         from memory_lock import MemoryLock
-        agent_id = os.environ.get("CTDF_AGENT_ID", f"agent-{os.getpid()}")
-        session_id = os.environ.get("CTDF_SESSION_ID", "")
+        agent_id = os.environ.get("CLAW_AGENT_ID", f"agent-{os.getpid()}")
+        session_id = os.environ.get("CLAW_SESSION_ID", "")
         lock = MemoryLock(index_dir, agent_id=agent_id, session_id=session_id)
     except ImportError:
         pass
@@ -586,7 +618,7 @@ def _save_meta(index_dir: Path, config: dict, file_count: int):
 def cmd_search(args):
     """Semantic search over the vector index."""
     root = Path(args.root).resolve()
-    config = get_effective_config(root)
+    config = _check_enabled_or_exit(root, json_output=getattr(args, "json_output", False))
     index_dir = root / config["index_path"]
 
     ok, msg = _check_deps()
@@ -625,7 +657,7 @@ def cmd_search(args):
     lock = None
     try:
         from memory_lock import MemoryLock
-        agent_id = os.environ.get("CTDF_AGENT_ID", f"agent-{os.getpid()}")
+        agent_id = os.environ.get("CLAW_AGENT_ID", f"agent-{os.getpid()}")
         lock = MemoryLock(index_dir, agent_id=agent_id)
     except ImportError:
         pass
@@ -704,6 +736,27 @@ def cmd_status(args):
     """Show index health, chunk counts, and staleness."""
     root = Path(args.root).resolve()
     config = get_effective_config(root)
+
+    # When disabled, report status without accessing the index
+    if config.get("enabled") is False:
+        status = {
+            "status": "disabled_by_config",
+            "enabled": False,
+            "message": (
+                "Vector memory is disabled via vector_memory.enabled=false "
+                "in project-config.json. Set it to true to enable."
+            ),
+        }
+        if getattr(args, "json_output", False):
+            print(json.dumps(status, indent=2))
+        else:
+            print("Vector Memory Status")
+            print("=" * 40)
+            print(f"  Status:  disabled_by_config")
+            print(f"  Enabled: False")
+            print(f"  {status['message']}")
+        return
+
     index_dir = root / config["index_path"]
 
     # Check dependencies
@@ -810,7 +863,7 @@ def cmd_status(args):
 def cmd_clear(args):
     """Reset the vector index."""
     root = Path(args.root).resolve()
-    config = get_effective_config(root)
+    config = _check_enabled_or_exit(root)
     index_dir = root / config["index_path"]
 
     if not index_dir.exists():
@@ -856,7 +909,7 @@ def cmd_configure(args):
 def cmd_gc(args):
     """Garbage collection: prune old entries, compact tables, clean sessions."""
     root = Path(args.root).resolve()
-    config = get_effective_config(root)
+    config = _check_enabled_or_exit(root, json_output=getattr(args, "json_output", False))
     consistency = get_effective_consistency_config(root)
     index_dir = root / config["index_path"]
 
@@ -990,6 +1043,7 @@ def cmd_gc(args):
 def cmd_agents(args):
     """List active and historical agent sessions."""
     root = Path(args.root).resolve()
+    _check_enabled_or_exit(root, json_output=getattr(args, "json_output", False))
 
     try:
         from memory_protocol import MemoryProtocol
@@ -1040,6 +1094,7 @@ def cmd_agents(args):
 def cmd_conflicts(args):
     """Show flagged contradictions between agents."""
     root = Path(args.root).resolve()
+    _check_enabled_or_exit(root, json_output=getattr(args, "json_output", False))
 
     try:
         from memory_protocol import MemoryProtocol
@@ -1165,8 +1220,8 @@ def hook_file_changed(file_path: str):
         lock = None
         try:
             from memory_lock import MemoryLock
-            agent_id = os.environ.get("CTDF_AGENT_ID", f"agent-{os.getpid()}")
-            session_id = os.environ.get("CTDF_SESSION_ID", "")
+            agent_id = os.environ.get("CLAW_AGENT_ID", f"agent-{os.getpid()}")
+            session_id = os.environ.get("CLAW_SESSION_ID", "")
             lock = MemoryLock(index_dir, agent_id=agent_id, session_id=session_id, timeout=5.0)
         except ImportError:
             pass
@@ -1196,10 +1251,10 @@ def hook_file_changed(file_path: str):
                 embeddings = cache.embed_with_cache(provider, texts)
 
                 # Tag entries with agent metadata if available
-                agent_id = os.environ.get("CTDF_AGENT_ID", "")
-                agent_type = os.environ.get("CTDF_AGENT_TYPE", "task")
-                session_id = os.environ.get("CTDF_SESSION_ID", "")
-                task_code = os.environ.get("CTDF_TASK_CODE", "")
+                agent_id = os.environ.get("CLAW_AGENT_ID", "")
+                agent_type = os.environ.get("CLAW_AGENT_TYPE", "task")
+                session_id = os.environ.get("CLAW_SESSION_ID", "")
+                task_code = os.environ.get("CLAW_TASK_CODE", "")
 
                 records = []
                 for chunk, emb in zip(chunks, embeddings):
@@ -1485,7 +1540,7 @@ def try_vector_index(root: Path, content: str, doc_name: str,
 
 def main():
     parser = argparse.ArgumentParser(
-        description="CTDF Vector Memory — semantic search over repository content",
+        description="CodeClaw Vector Memory — semantic search over repository content",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:

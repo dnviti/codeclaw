@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Optional dependency checker for CTDF vector memory layer.
+"""Optional dependency checker for CodeClaw vector memory layer.
 
 Validates that opt-in dependencies (LanceDB, ONNX Runtime, sentence-transformers
 tokenizer) are installed and provides clear installation instructions when they
@@ -137,7 +137,7 @@ def install_instructions(missing: list[str] | None = None) -> str:
 def print_status():
     """Print a human-readable status table of all optional deps."""
     statuses = check_all()
-    print("CTDF Vector Memory — Optional Dependencies")
+    print("CodeClaw Vector Memory — Optional Dependencies")
     print("=" * 55)
     for s in statuses:
         mark = "OK" if s.installed else "MISSING"
