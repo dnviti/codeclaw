@@ -54,14 +54,7 @@ def _check_mcp_sdk() -> bool:
 
 # ── Resource Helpers ─────────────────────────────────────────────────────────
 
-def _is_vector_memory_enabled(root: str) -> bool:
-    """Check whether vector memory is enabled in project configuration.
-
-    Reads ``vector_memory.enabled`` from the project config.  Returns
-    ``False`` only when the flag is explicitly set to ``false``.
-    """
-    from mcp_tools import is_enabled
-    return is_enabled(root)
+from mcp_tools import is_enabled
 
 
 def _build_status(root: str) -> dict:
@@ -69,7 +62,7 @@ def _build_status(root: str) -> dict:
     root_path = Path(root).resolve()
 
     # If vector memory is disabled by config, return immediately
-    if not _is_vector_memory_enabled(root):
+    if not is_enabled(root):
         return {
             "status": "disabled_by_config",
             "enabled": False,
@@ -141,7 +134,7 @@ def create_server(root: str = "."):
     server = FastMCP("ctdf-vector-memory")
 
     # ── Conditionally register vector memory tools ──
-    vm_enabled = _is_vector_memory_enabled(root)
+    vm_enabled = is_enabled(root)
 
     if vm_enabled:
         from mcp_tools import index, search, store, task_context

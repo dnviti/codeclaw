@@ -26,7 +26,7 @@
     "enable_versioned_reads": false
   },
   "vector_memory": {
-    "enabled": true,
+    "enabled": false,
     "auto_index": false,
     "embedding_provider": "local",
     "embedding_model": "all-MiniLM-L6-v2",

@@ -97,8 +97,11 @@ def load_config(root: Path) -> dict:
             try:
                 data = json.loads(cp.read_text(encoding="utf-8"))
                 return data.get("vector_memory", {})
-            except (json.JSONDecodeError, OSError):
-                pass
+            except (json.JSONDecodeError, OSError) as exc:
+                print(
+                    f"Warning: failed to parse config {cp}: {exc}",
+                    file=sys.stderr,
+                )
     return {}
 
 
@@ -113,8 +116,11 @@ def load_consistency_config(root: Path) -> dict:
             try:
                 data = json.loads(cp.read_text(encoding="utf-8"))
                 return data.get("memory_consistency", {})
-            except (json.JSONDecodeError, OSError):
-                pass
+            except (json.JSONDecodeError, OSError) as exc:
+                print(
+                    f"Warning: failed to parse config {cp}: {exc}",
+                    file=sys.stderr,
+                )
     return {}
 
 
@@ -381,14 +387,17 @@ def _dir_size_mb(path: Path) -> float:
 
 # ── Index Command ────────────────────────────────────────────────────────────
 
-def _check_enabled_or_exit(root: Path, json_output: bool = False):
+def _check_enabled_or_exit(root: Path, json_output: bool = False) -> dict:
     """Check if vector memory is enabled; exit with informative message if not.
 
     Args:
         root: Project root path.
         json_output: When True, print a JSON message instead of plain text.
 
-    Returns only if vector memory is enabled.
+    Returns:
+        The effective configuration dict when vector memory is enabled.
+        Exits the process when disabled, so callers can use the returned
+        config directly without a redundant ``get_effective_config()`` call.
     """
     config = get_effective_config(root)
     if config.get("enabled") is False:
@@ -401,6 +410,7 @@ def _check_enabled_or_exit(root: Path, json_output: bool = False):
         else:
             print(f"Vector memory disabled: {msg}", file=sys.stderr)
         sys.exit(0)
+    return config
 
 
 def cmd_index(args):
@@ -410,8 +420,7 @@ def cmd_index(args):
     the index is always built from scratch regardless of existing state.
     """
     root = Path(args.root).resolve()
-    _check_enabled_or_exit(root)
-    config = get_effective_config(root)
+    config = _check_enabled_or_exit(root)
     index_dir = root / config["index_path"]
     index_dir.mkdir(parents=True, exist_ok=True)
 
@@ -609,8 +618,7 @@ def _save_meta(index_dir: Path, config: dict, file_count: int):
 def cmd_search(args):
     """Semantic search over the vector index."""
     root = Path(args.root).resolve()
-    _check_enabled_or_exit(root, json_output=getattr(args, "json_output", False))
-    config = get_effective_config(root)
+    config = _check_enabled_or_exit(root, json_output=getattr(args, "json_output", False))
     index_dir = root / config["index_path"]
 
     ok, msg = _check_deps()
@@ -855,8 +863,7 @@ def cmd_status(args):
 def cmd_clear(args):
     """Reset the vector index."""
     root = Path(args.root).resolve()
-    _check_enabled_or_exit(root)
-    config = get_effective_config(root)
+    config = _check_enabled_or_exit(root)
     index_dir = root / config["index_path"]
 
     if not index_dir.exists():
@@ -902,8 +909,7 @@ def cmd_configure(args):
 def cmd_gc(args):
     """Garbage collection: prune old entries, compact tables, clean sessions."""
     root = Path(args.root).resolve()
-    _check_enabled_or_exit(root, json_output=getattr(args, "json_output", False))
-    config = get_effective_config(root)
+    config = _check_enabled_or_exit(root, json_output=getattr(args, "json_output", False))
     consistency = get_effective_consistency_config(root)
     index_dir = root / config["index_path"]
 
