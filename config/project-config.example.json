@@ -78,6 +78,21 @@
       "max_context_mb": 10,
       "aggregation": "map-reduce",
       "timeout_seconds": 120
+    },
+    "orchestrator": {
+      "backends": ["lancedb"],
+      "routing_weights": {
+        "lancedb": 1.0,
+        "sqlite": 0.8,
+        "rlm": 0.6
+      },
+      "fallback_chain": ["lancedb", "sqlite", "rlm"],
+      "query_routing": {
+        "exact": "sqlite",
+        "semantic": "lancedb",
+        "deep": "rlm"
+      },
+      "rrf_k": 60
     }
   },
   "mcp_server": {
