@@ -25,6 +25,12 @@ _SCRIPT_DIR = Path(__file__).resolve().parent
 if str(_SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPT_DIR))
 
+# ── Optional locked config support ─────────────────────────────────────────
+try:
+    from config_lock import locked_config_write as _locked_config_write
+except ImportError:
+    _locked_config_write = None
+
 # ── Constants ───────────────────────────────────────────────────────────────
 
 SEPARATOR = "-" * 78
@@ -338,10 +344,9 @@ def _write_platform_config(root: Path, data: dict) -> str:
         target = root / ".claude" / "issues-tracker.json"
         target.parent.mkdir(parents=True, exist_ok=True)
 
-    try:
-        from config_lock import locked_config_write
-        locked_config_write(target, data)
-    except ImportError:
+    if _locked_config_write is not None:
+        _locked_config_write(target, data)
+    else:
         target.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
     return str(target)

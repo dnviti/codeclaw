@@ -13,6 +13,7 @@ Zero external dependencies in this module itself — stdlib only.
 
 import importlib
 import json
+import logging
 import os
 import platform
 import site
@@ -20,6 +21,14 @@ import subprocess
 import sys
 from pathlib import Path
 from typing import NamedTuple
+
+logger = logging.getLogger(__name__)
+
+# ── Optional locked config support ─────────────────────────────────────────
+try:
+    from config_lock import locked_config_update as _locked_config_update
+except ImportError:
+    _locked_config_update = None
 
 
 class DepStatus(NamedTuple):
@@ -521,34 +530,32 @@ def _persist_gpu_lib_paths(paths: list[str]) -> bool:
     if not valid_paths:
         return False
 
-    try:
-        from config_lock import locked_config_update
+    def _update(config: dict) -> dict:
+        vm = config.setdefault("vector_memory", {})
+        gpu_cfg = vm.setdefault("gpu_acceleration", {})
+        gpu_cfg["lib_paths"] = valid_paths
+        return config
 
-        def _update(config: dict) -> dict:
-            vm = config.setdefault("vector_memory", {})
-            gpu_cfg = vm.setdefault("gpu_acceleration", {})
-            gpu_cfg["lib_paths"] = valid_paths
-            return config
-
-        return locked_config_update(config_path, _update)
-    except ImportError:
-        # Fallback: direct write if config_lock not available
+    if _locked_config_update is not None:
         try:
-            with open(config_path, "r", encoding="utf-8") as f:
-                config = json.load(f)
-
-            vm = config.setdefault("vector_memory", {})
-            gpu_cfg = vm.setdefault("gpu_acceleration", {})
-            gpu_cfg["lib_paths"] = valid_paths
-
-            with open(config_path, "w", encoding="utf-8") as f:
-                json.dump(config, f, indent=2)
-                f.write("\n")
-
-            return True
-        except (json.JSONDecodeError, OSError):
+            return _locked_config_update(config_path, _update)
+        except Exception as exc:
+            logger.debug("Failed to persist GPU lib paths: %s", exc)
             return False
-    except Exception:
+
+    # Fallback: direct write if config_lock not available
+    try:
+        with open(config_path, "r", encoding="utf-8") as f:
+            config = json.load(f)
+
+        updated = _update(config)
+
+        with open(config_path, "w", encoding="utf-8") as f:
+            json.dump(updated, f, indent=2)
+            f.write("\n")
+
+        return True
+    except (json.JSONDecodeError, OSError):
         return False
 
 
