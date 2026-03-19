@@ -175,6 +175,32 @@ python3 ${CLAUDE_PLUGIN_ROOT}/scripts/frontend_wizard.py list-palettes
 
 Ask: "Ready to start implementation, or would you like to adjust the approach?"
 
+#### Step 5.5: Image Generation (on-demand)
+
+During implementation, if the task requires visual assets (detected from description keywords like "icon", "banner", "mockup", "diagram", "placeholder image", "logo", or explicit user request), offer image generation using the CTDF image generator.
+
+**Prerequisites:** Image generation must be enabled in `project-config.json` > `image_generation` > `enabled`. If disabled, skip this step.
+
+**Workflow:**
+
+1. **Detect need:** Scan the task description and technical details for visual asset keywords. If found, or if the user explicitly requests an image, proceed.
+2. **Generate:** Run `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/image_generator.py generate "<prompt>" --size <size> --style <style>`. Parse the JSON response for `image_path`.
+3. **Preview:** The generator auto-opens a cross-platform preview. Inform the user: "Image preview opened. Review the generated image."
+4. **Confirm/Regenerate/Cancel loop:**
+   - **Normal mode:** Use `AskUserQuestion` with options: **"Confirm (save to project)"** | **"Regenerate (new attempt)"** | **"Regenerate with modified prompt"** | **"Cancel"**. STOP until user responds.
+   - **Yolo mode:** Auto-confirm the first generated image. Log: "Auto-accepted generated image (yolo mode)." Save to the configured output directory.
+5. **Save:** On confirm, run `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/image_generator.py generate "<prompt>" --output <target_path> --no-preview` or copy the temp file to the project path.
+6. **On regenerate:** Repeat from step 2 with the same or modified prompt.
+7. **On cancel:** Discard the temp file and continue implementation without the image.
+
+**Configuration reference** (`project-config.json` > `image_generation`):
+- `enabled`: bool (default `false`)
+- `provider`: `"local"` | `"dalle"` | `"replicate"` | `"stability"` (default `"local"`)
+- `api_key_env`: env var name for cloud API key
+- `default_size`: default `"1024x1024"`
+- `default_style`: default `"natural"`
+- `output_dir`: default `"assets/generated"`
+
 ---
 
 #### Step 6: Post-Implementation — Confirm, Close & Commit

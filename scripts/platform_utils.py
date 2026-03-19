@@ -233,6 +233,52 @@ def run_command(
         }
 
 
+# -- File Opener --------------------------------------------------------------
+
+def open_file(path: str | Path) -> bool:
+    """Open a file with the system's default application.
+
+    Cross-platform: uses ``xdg-open`` on Linux, ``open`` on macOS, and
+    ``os.startfile`` on Windows.
+
+    Parameters
+    ----------
+    path : str | Path
+        Path to the file to open.
+
+    Returns
+    -------
+    bool
+        True if the file open command was launched successfully.
+    """
+    path = Path(path)
+    if not path.exists():
+        return False
+
+    try:
+        if IS_WINDOWS:
+            os.startfile(str(path))
+            return True
+        elif IS_MACOS:
+            subprocess.Popen(
+                ["open", str(path)],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            return True
+        elif IS_LINUX:
+            subprocess.Popen(
+                ["xdg-open", str(path)],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            return True
+    except (OSError, FileNotFoundError):
+        pass
+
+    return False
+
+
 # -- CLI Entry Point ----------------------------------------------------------
 
 def main() -> None:

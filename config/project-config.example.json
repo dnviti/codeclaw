@@ -85,6 +85,14 @@
       }
     ]
   },
+  "image_generation": {
+    "enabled": false,
+    "provider": "local",
+    "api_key_env": "",
+    "default_size": "1024x1024",
+    "default_style": "natural",
+    "output_dir": "assets/generated"
+  },
   "ollama": {
     "enabled": false,
     "model": "",
