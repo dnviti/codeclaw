@@ -34,8 +34,12 @@ import shutil
 import sys
 import time
 from contextlib import nullcontext
+from fnmatch import fnmatch
 from pathlib import Path
 from typing import Optional
+
+# Maximum allowed length for a single glob pattern (prevents pathological input)
+_MAX_GLOB_LEN = 256
 
 # Add scripts/ to path for sibling package imports
 _SCRIPT_DIR = Path(__file__).resolve().parent
@@ -647,6 +651,15 @@ def cmd_search(args):
     top_k = args.top_k
     file_filter = args.file_filter
     file_globs = getattr(args, "file_glob", None) or []
+    # Validate glob patterns: reject traversal, null bytes, excessive length
+    if file_globs:
+        file_globs = [
+            p for p in file_globs
+            if isinstance(p, str)
+            and ".." not in p
+            and "\x00" not in p
+            and len(p) <= _MAX_GLOB_LEN
+        ]
     type_filter = args.type_filter
 
     # Initialize provider and embed query
@@ -707,11 +720,10 @@ def cmd_search(args):
             safe_type = _sanitize_filter_value(type_filter)
             results = results.where(f"chunk_type = '{safe_type}'")
 
-        df = results.limit(fetch_limit).to_pandas()
+        df = results.to_pandas()
 
     # Apply glob-based file path filtering client-side
     if file_globs and not df.empty:
-        from fnmatch import fnmatch
         mask = df["file_path"].apply(
             lambda fp: any(fnmatch(fp, pat) for pat in file_globs)
         )

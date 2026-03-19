@@ -7,9 +7,13 @@ Performs semantic search over the vector index via
 import json
 import subprocess
 import sys
+from fnmatch import fnmatch
 from pathlib import Path
 
 from mcp_tools import SCRIPTS_DIR as _SCRIPT_DIR
+
+# Maximum allowed length for a single glob pattern (prevents pathological input)
+_MAX_GLOB_LEN = 256
 
 
 def register(server):
@@ -56,9 +60,25 @@ def register(server):
                 "message": "vector_memory.py not found. VMEM-0017 must be installed.",
             })
 
+        # Validate and sanitize glob patterns
+        if file_globs is not None:
+            if not isinstance(file_globs, list):
+                file_globs = None
+            else:
+                sanitized = []
+                for pat in file_globs:
+                    if not isinstance(pat, str):
+                        continue
+                    if ".." in pat or "\x00" in pat:
+                        continue
+                    if len(pat) > _MAX_GLOB_LEN:
+                        continue
+                    sanitized.append(pat)
+                file_globs = sanitized or None
+
         # When glob patterns are provided, fetch extra results so we can
         # filter client-side and still return up to top_k matches.
-        effective_top_k = top_k * 3 if file_globs else top_k
+        effective_top_k = top_k * 5 if file_globs else top_k
 
         cmd = [
             sys.executable, str(vm_script), "search",
@@ -89,7 +109,6 @@ def register(server):
 
             # Apply glob filtering client-side if requested
             if file_globs:
-                from fnmatch import fnmatch
                 try:
                     records = json.loads(raw)
                 except (json.JSONDecodeError, TypeError):
