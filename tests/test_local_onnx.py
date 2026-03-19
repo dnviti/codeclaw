@@ -119,7 +119,14 @@ class TestPersistGpuLibPaths:
 
         monkeypatch.chdir(tmp_path)
 
-        result = _persist_gpu_lib_paths([str(cuda_dir), str(cudnn_dir)])
+        # Mock allowlist validation to accept tmp_path dirs
+        with patch(
+            "deps_check.validate_gpu_paths",
+            return_value=(
+                [str(cuda_dir), str(cudnn_dir)], []
+            ),
+        ):
+            result = _persist_gpu_lib_paths([str(cuda_dir), str(cudnn_dir)])
 
         assert result is True
         saved = json.loads(config_file.read_text())
@@ -294,3 +301,238 @@ class TestRetryGpuSession:
         mock_inject.assert_not_called()
         assert result is True
         assert provider._active_provider == "CUDAExecutionProvider"
+
+
+# ============================================================================
+# deps_check: GPU path allowlist tests
+# ============================================================================
+
+class TestGpuPathAllowlist:
+    """Tests for the GPU path allowlist validation in deps_check."""
+
+    def test_default_allowlist_permits_usr_lib(self):
+        """Standard /usr/lib paths pass the default allowlist."""
+        from deps_check import (
+            _path_matches_allowlist,
+            DEFAULT_GPU_PATH_ALLOWLIST,
+        )
+
+        assert _path_matches_allowlist(
+            "/usr/lib/x86_64-linux-gnu", DEFAULT_GPU_PATH_ALLOWLIST
+        )
+
+    def test_default_allowlist_permits_cuda(self):
+        """CUDA-style paths pass the default allowlist."""
+        from deps_check import (
+            _path_matches_allowlist,
+            DEFAULT_GPU_PATH_ALLOWLIST,
+        )
+
+        assert _path_matches_allowlist(
+            "/usr/local/cuda-12.2/lib64", DEFAULT_GPU_PATH_ALLOWLIST
+        )
+
+    def test_default_allowlist_permits_rocm(self):
+        """ROCm paths pass the default allowlist."""
+        from deps_check import (
+            _path_matches_allowlist,
+            DEFAULT_GPU_PATH_ALLOWLIST,
+        )
+
+        assert _path_matches_allowlist(
+            "/opt/rocm/lib", DEFAULT_GPU_PATH_ALLOWLIST
+        )
+
+    def test_arbitrary_path_rejected(self):
+        """An arbitrary path outside known GPU directories is rejected."""
+        from deps_check import (
+            _path_matches_allowlist,
+            DEFAULT_GPU_PATH_ALLOWLIST,
+        )
+
+        assert not _path_matches_allowlist(
+            "/tmp/evil/lib", DEFAULT_GPU_PATH_ALLOWLIST
+        )
+
+    def test_home_dir_rejected(self):
+        """Home directory paths are rejected by the default allowlist."""
+        from deps_check import (
+            _path_matches_allowlist,
+            DEFAULT_GPU_PATH_ALLOWLIST,
+        )
+
+        assert not _path_matches_allowlist(
+            "/home/user/.local/evil/lib", DEFAULT_GPU_PATH_ALLOWLIST
+        )
+
+    def test_validate_gpu_paths_splits_correctly(self):
+        """validate_gpu_paths returns correct allowed and rejected lists."""
+        from deps_check import validate_gpu_paths
+
+        allowed_path = "/usr/lib/nvidia"
+        rejected_path = "/tmp/suspicious/lib"
+
+        # Use an explicit allowlist for deterministic testing
+        allowlist = ["/usr/lib", "/usr/local/lib"]
+
+        allowed, rejected = validate_gpu_paths(
+            [allowed_path, rejected_path],
+            allowlist=allowlist,
+        )
+
+        assert allowed_path in allowed
+        assert rejected_path in rejected
+
+    def test_validate_gpu_paths_empty_allowlist_rejects_all(self):
+        """An empty allowlist rejects all paths."""
+        from deps_check import validate_gpu_paths
+
+        allowed, rejected = validate_gpu_paths(
+            ["/usr/lib/nvidia", "/opt/rocm/lib"],
+            allowlist=[],
+        )
+
+        assert allowed == []
+        assert len(rejected) == 2
+
+    def test_glob_patterns_in_allowlist(self):
+        """Glob patterns with wildcards work correctly."""
+        from deps_check import _path_matches_allowlist
+
+        allowlist = ["/usr/local/cuda*/lib*"]
+        assert _path_matches_allowlist(
+            "/usr/local/cuda-12.2/lib64", allowlist
+        )
+        assert not _path_matches_allowlist(
+            "/tmp/cuda-fake/lib64", allowlist
+        )
+
+    def test_build_effective_allowlist_uses_defaults(self):
+        """When config_allowlist is None, defaults are used."""
+        from deps_check import _build_effective_allowlist
+
+        result = _build_effective_allowlist(config_allowlist=None)
+        # Should contain at least the default system paths
+        assert any("/usr/lib" in p for p in result)
+
+    def test_build_effective_allowlist_merges_config(self):
+        """User config allowlist is merged with site-packages patterns."""
+        from deps_check import _build_effective_allowlist
+
+        custom = ["/my/custom/gpu/path"]
+        result = _build_effective_allowlist(config_allowlist=custom)
+        assert "/my/custom/gpu/path" in result
+
+    def test_build_effective_allowlist_rejects_wildcard_only(self):
+        """Overly-broad patterns like '*' are stripped from config allowlist."""
+        from deps_check import _build_effective_allowlist
+
+        config = ["*", "/my/safe/path", "?", "/*"]
+        result = _build_effective_allowlist(config_allowlist=config)
+        assert "*" not in result
+        assert "?" not in result
+        assert "/*" not in result
+        assert "/my/safe/path" in result
+
+    def test_load_allowlist_from_config(self, tmp_path, monkeypatch):
+        """Allowlist is loaded from project-config.json."""
+        from deps_check import _load_gpu_path_allowlist_from_config
+
+        config_dir = tmp_path / ".claude"
+        config_dir.mkdir()
+        config_file = config_dir / "project-config.json"
+        config_file.write_text(json.dumps({
+            "vector_memory": {
+                "gpu_acceleration": {
+                    "gpu_path_allowlist": ["/custom/allowed/path"]
+                }
+            }
+        }))
+
+        monkeypatch.chdir(tmp_path)
+
+        result = _load_gpu_path_allowlist_from_config()
+        assert result == ["/custom/allowed/path"]
+
+    def test_load_allowlist_absent_returns_none(self, tmp_path, monkeypatch):
+        """When gpu_path_allowlist is not in config, returns None."""
+        from deps_check import _load_gpu_path_allowlist_from_config
+
+        config_dir = tmp_path / ".claude"
+        config_dir.mkdir()
+        config_file = config_dir / "project-config.json"
+        config_file.write_text(json.dumps({
+            "vector_memory": {
+                "gpu_acceleration": {
+                    "lib_paths": []
+                }
+            }
+        }))
+
+        monkeypatch.chdir(tmp_path)
+
+        result = _load_gpu_path_allowlist_from_config()
+        assert result is None
+
+    def test_persist_rejects_disallowed_paths(self, tmp_path, monkeypatch):
+        """_persist_gpu_lib_paths filters out paths not in the allowlist."""
+        from deps_check import _persist_gpu_lib_paths
+
+        config_dir = tmp_path / ".claude"
+        config_dir.mkdir()
+        config_file = config_dir / "project-config.json"
+        config_file.write_text(json.dumps({"vector_memory": {}}))
+
+        # Create real directories
+        allowed_dir = tmp_path / "usr" / "lib" / "nvidia"
+        allowed_dir.mkdir(parents=True)
+        rejected_dir = tmp_path / "evil" / "lib"
+        rejected_dir.mkdir(parents=True)
+
+        monkeypatch.chdir(tmp_path)
+
+        # Use explicit allowlist that only allows the first path
+        with patch(
+            "deps_check.validate_gpu_paths",
+            return_value=([str(allowed_dir)], [str(rejected_dir)]),
+        ):
+            result = _persist_gpu_lib_paths(
+                [str(allowed_dir), str(rejected_dir)]
+            )
+
+        assert result is True
+        saved = json.loads(config_file.read_text())
+        saved_paths = saved["vector_memory"]["gpu_acceleration"]["lib_paths"]
+        assert str(allowed_dir) in saved_paths
+        assert str(rejected_dir) not in saved_paths
+
+    def test_inject_lib_paths_filters_by_allowlist(
+        self, tmp_path, monkeypatch
+    ):
+        """_inject_lib_paths in deps_check validates against allowlist."""
+        from deps_check import _inject_lib_paths
+
+        # Create real directories
+        gpu_dir = tmp_path / "nvidia" / "lib"
+        gpu_dir.mkdir(parents=True)
+        bad_dir = tmp_path / "bad" / "lib"
+        bad_dir.mkdir(parents=True)
+
+        monkeypatch.delenv("LD_LIBRARY_PATH", raising=False)
+
+        lib_info = {
+            "paths": [str(gpu_dir), str(bad_dir)],
+            "env_var": "LD_LIBRARY_PATH",
+            "platform": "linux",
+        }
+
+        # Mock validate_gpu_paths to only allow gpu_dir
+        with patch(
+            "deps_check.validate_gpu_paths",
+            return_value=([str(gpu_dir)], [str(bad_dir)]),
+        ):
+            _inject_lib_paths(lib_info)
+
+        ld_path = os.environ.get("LD_LIBRARY_PATH", "")
+        assert str(gpu_dir) in ld_path
+        assert str(bad_dir) not in ld_path

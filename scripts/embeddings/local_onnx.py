@@ -11,6 +11,7 @@ Model download:
 """
 
 import json
+import logging
 import os
 import platform
 import re
@@ -22,6 +23,8 @@ from pathlib import Path
 from typing import Optional
 
 from embeddings import EmbeddingProvider
+
+logger = logging.getLogger(__name__)
 
 
 # ── Model Name Validation ────────────────────────────────────────────────────
@@ -138,8 +141,9 @@ def _inject_gpu_lib_paths(paths: list[str]) -> None:
     macOS:  no-op (CoreML is framework-based)
 
     Only injects paths that are not already present in the env var.
-    Validates that each path is an existing directory before injection
-    to prevent injection of arbitrary paths from config files.
+    Validates that each path is an existing directory **and** passes the
+    GPU path allowlist before injection to prevent injection of arbitrary
+    paths from config files.
     """
     if not paths:
         return
@@ -159,10 +163,35 @@ def _inject_gpu_lib_paths(paths: list[str]) -> None:
     current = os.environ.get(env_var, "")
     current_set = set(current.split(separator)) if current else set()
     # Only inject paths that exist as directories and are not already present
-    new_paths = [
+    candidate_paths = [
         p for p in paths
         if p not in current_set and Path(p).is_dir()
     ]
+
+    # Validate against GPU path allowlist
+    try:
+        scripts_dir = Path(__file__).resolve().parent.parent
+        if str(scripts_dir) not in sys.path:
+            sys.path.insert(0, str(scripts_dir))
+        from deps_check import validate_gpu_paths
+        new_paths, rejected = validate_gpu_paths(candidate_paths)
+        if rejected:
+            logger.warning(
+                "Blocked %d GPU library path(s) from %s injection "
+                "(not in gpu_path_allowlist): %s",
+                len(rejected),
+                env_var,
+                ", ".join(rejected),
+            )
+    except ImportError:
+        # deps_check unavailable -- fall back to accepting all candidates
+        logger.warning(
+            "deps_check module not available; GPU path allowlist "
+            "validation skipped for %d candidate path(s). Install the "
+            "full CodeClaw plugin to enable path validation.",
+            len(candidate_paths),
+        )
+        new_paths = candidate_paths
 
     if new_paths:
         prefix = separator.join(new_paths)
