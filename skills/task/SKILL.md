@@ -2,7 +2,7 @@
 name: task
 description: "Unified task management: pick up, create, continue, or check status of project tasks."
 disable-model-invocation: true
-argument-hint: "[pick [CODE | all [sequential]]] [create [description | all [sequential]]] [continue [CODE | all [sequential]]] [schedule CODE [CODE2...] to X.X.X] [status] [yolo]"
+argument-hint: "[pick [CODE | all [sequential]]] [create [description | all [sequential]]] [continue [CODE | all [sequential]]] [edit CODE] [schedule CODE [CODE2...] to X.X.X] [status] [yolo]"
 ---
 
 # Task Manager
@@ -39,7 +39,7 @@ Submodules are automatically initialized (`git submodule update --init --recursi
 
 ## Argument Dispatch
 
-`SH dispatch --skill task --args "$ARGUMENTS"` → routes to: `pick`, `pick-all`, `create`, `create-all`, `continue`, `continue-all`, `schedule`, or `status` flow.
+`SH dispatch --skill task --args "$ARGUMENTS"` → routes to: `pick`, `pick-all`, `create`, `create-all`, `continue`, `continue-all`, `edit`, `schedule`, or `status` flow.
 
 Also returns `yolo: true/false`. When `yolo` is `true`, **auto-select the recommended (first) option at every GATE** without waiting for user input. Log each auto-selected choice. Yolo never auto-selects destructive or cancel options.
 
@@ -137,6 +137,37 @@ For each file in "Files involved":
 - If marked CREATE, check target directory and similar files for patterns
 - Identify relevant interfaces, types, and patterns
 
+**Semantic exploration (vector store):** After the above file exploration, run:
+```bash
+TM semantic-explore TASK-CODE
+```
+This searches the vector index using the task description, surfacing conceptually related code not listed in "Files involved." If `related_files` are returned, read the top 3-5 most relevant files to discover hidden dependencies, shared patterns, or code that should be updated alongside the task. Include these as "Additional related files" in the implementation briefing (Step 5).
+
+#### Step 4.5: Frontend Design Wizard (conditional)
+
+After codebase exploration, check if the task involves frontend code:
+
+```bash
+TM is-frontend-task TASK-CODE
+```
+
+**Platform-only alternative:** Pass issue body as JSON: `TM is-frontend-task TASK-CODE --json-body '{"title":"...","description":"...","files_create":[...],"files_modify":[...]}'`
+
+If `is_frontend` is `true`, run the frontend design wizard:
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/frontend_wizard.py detect-framework --root <PROJECT_ROOT>
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/frontend_wizard.py search-templates --framework <DETECTED> --query "<task keywords>"
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/frontend_wizard.py list-palettes
+```
+
+1. **Present 3 template options** from `search-templates` results. In **yolo mode**, auto-select the first template.
+2. **Ask palette selection**: show bundled palettes (Open Color, Radix Colors, Tailwind, Material Design) plus "Generate from seed color". In **yolo mode**, auto-select the recommended palette.
+3. **Apply constraints**: `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/frontend_wizard.py apply-constraints --template <SELECTED> --palette <SELECTED> --typography modern`
+4. Include the generated CSS variables, typography, and motion settings as **design constraints** in the implementation briefing.
+
+**Skip conditions:** Skip this step if `is_frontend` is `false` or if the wizard has already been run for this task (check `.claude/frontend-config.json`).
+
 #### Step 5: Present the implementation briefing
 
 1. **Task Selected**: Code, title, priority
@@ -144,17 +175,54 @@ For each file in "Files involved":
 3. **Scope Summary**: What needs to be done
 4. **Technical Approach**: Implementation steps based on task details and codebase exploration
 5. **Files to Create/Modify**: Every file with what needs to happen
-6. **Dependencies**: Status of all dependencies
-7. **Risks**: Any concerns found during exploration
-8. **Quality Gate**: Remind that verify command must pass before closing
+6. **Additional Related Files** (from semantic exploration): Files surfaced by vector search that may need attention — hidden dependencies, shared patterns, or related implementations. Omit if none found.
+7. **Dependencies**: Status of all dependencies
+8. **Risks**: Any concerns found during exploration
+9. **Quality Gate**: Remind that verify command must pass before closing
 
 Ask: "Ready to start implementation, or would you like to adjust the approach?"
+
+#### Step 5.5: Image Generation (on-demand)
+
+During implementation, if the task requires visual assets (detected from description keywords like "icon", "banner", "mockup", "diagram", "placeholder image", "logo", or explicit user request), offer image generation using the CTDF image generator.
+
+**Prerequisites:** Image generation must be enabled in `project-config.json` > `image_generation` > `enabled`. If disabled, skip this step.
+
+**Workflow:**
+
+1. **Detect need:** Scan the task description and technical details for visual asset keywords. If found, or if the user explicitly requests an image, proceed.
+2. **Generate:** Run `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/image_generator.py generate "<prompt>" --size <size> --style <style>`. Parse the JSON response for `image_path`.
+3. **Preview:** The generator auto-opens a cross-platform preview. Inform the user: "Image preview opened. Review the generated image."
+4. **Confirm/Regenerate/Cancel loop:**
+   - **Normal mode:** Use `AskUserQuestion` with options: **"Confirm (save to project)"** | **"Regenerate (new attempt)"** | **"Regenerate with modified prompt"** | **"Cancel"**. STOP until user responds.
+   - **Yolo mode:** Auto-confirm the first generated image. Log: "Auto-accepted generated image (yolo mode)." Save to the configured output directory.
+5. **Save:** On confirm, run `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/image_generator.py generate "<prompt>" --output <target_path> --no-preview` or copy the temp file to the project path.
+6. **On regenerate:** Repeat from step 2 with the same or modified prompt.
+7. **On cancel:** Discard the temp file and continue implementation without the image.
+
+**Configuration reference** (`project-config.json` > `image_generation`):
+- `enabled`: bool (default `false`)
+- `provider`: `"local"` | `"dalle"` | `"replicate"` | `"stability"` (default `"local"`)
+- `api_key_env`: env var name for cloud API key
+- `default_size`: default `"1024x1024"`
+- `default_style`: default `"natural"`
+- `output_dir`: default `"assets/generated"`
 
 ---
 
 #### Step 6: Post-Implementation — Confirm, Close & Commit
 
 After full implementation and quality gate passes:
+
+**6-pre. Update vector index:**
+
+Trigger incremental re-index of changed files so subsequent searches (by other agents or Continue Flow) see fresh results:
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/vector_memory.py hook <changed_file>
+```
+
+Run this for each file that was created or modified during implementation. This is non-blocking and silent on failure.
 
 **6a. Generate the Testing Guide (do NOT present yet):**
 
@@ -294,6 +362,14 @@ Report: {{ code, success, summary, files_changed[], pr_url, error_if_any }}"
 
 Wait for **all agents in the current batch** to complete before proceeding to the next batch.
 
+**Post-batch vector re-index:** After each batch completes, run a consolidated incremental re-index to ensure the next batch sees updated search results:
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/vector_memory.py index --root .
+```
+
+This is non-blocking — if the index is unavailable or dependencies are missing, it will be silently skipped. Parallel agents tolerate slightly stale results (eventual consistency) since each works in an isolated worktree.
+
 #### Step 3b: Sequential execution (`/task pick all sequential`)
 
 For each task in dependency order, execute the standard **Pick Flow** (from Step 1 through Step 6) one at a time. Wait for user confirmation at each task's closing gate before moving to the next.
@@ -357,6 +433,11 @@ Use `next_number` from next-id JSON. Numbering is globally sequential across all
 1. Read relevant existing files based on task description.
 2. Look at similar completed tasks for pattern reference.
 3. Identify files to create/modify — verify paths with `Glob`.
+4. If vector memory is available, run a semantic search with the task description to discover related code patterns:
+   ```bash
+   python3 ${CLAUDE_PLUGIN_ROOT}/scripts/vector_memory.py search "<task description keywords>" --root . --top-k 10 --json
+   ```
+   Use results to inform the "Files involved" section and identify dependencies.
 
 #### Step 5: Draft the Task Block
 
@@ -522,9 +603,11 @@ If `reused_existing`: "Entering existing worktree." If `created`: "Created fresh
 **MODIFY files:** Read and `Grep` for key changes. Note: applied vs still needed.
 Cross-check each technical requirement against code artifacts.
 
+**Semantic assessment:** Run `TM semantic-explore TASK-CODE` to discover any new or modified files across the project that are conceptually related to this task. This catches changes made by other agents or parallel tasks since the task was last active, revealing integration points that may need attention.
+
 #### Step 4: Explore Related Code
 
-Read all related files: those to be modified, similar files for patterns, related types/interfaces/imports.
+Read all related files: those to be modified, similar files for patterns, related types/interfaces/imports. Include any high-relevance files surfaced by the semantic exploration in Step 3.
 
 #### Step 5: Present the Continuation Briefing
 
@@ -645,6 +728,74 @@ Present results table:
 | CODE2 | Title | Failed (reason) |
 
 Suggest: "Start the release with `/release continue X.X.X`" or "Schedule more tasks with `/task schedule`."
+
+---
+
+## Edit Flow
+
+Modify fields of an existing task in-place without changing its status.
+
+### Edit Flow — Locate Task
+
+- **Task code from dispatch:** `task_code` field. If empty, ask: "Which task do you want to edit? Enter the task code." STOP.
+- **Platform-only:** `PM view-issue` using the task code to search. Parse current fields (title, priority, dependencies, description, technical details, files involved).
+- **Local/dual:** `TM parse TASK-CODE`. Parse current fields from the task block.
+
+### Edit Flow Instructions
+
+#### Step 1: Present Current Fields
+
+Display the task's current values:
+
+| # | Field | Current Value |
+|---|-------|---------------|
+| 1 | Title | [current title] |
+| 2 | Priority | [HIGH/MEDIUM/LOW] |
+| 3 | Dependencies | [deps or None] |
+| 4 | Release | [version or None] |
+| 5 | Description | [first line or summary] |
+| 6 | Technical Details | [first line or summary] |
+| 7 | Files Involved | [count of files] |
+
+#### Step 2: Select Fields to Edit
+
+`AskUserQuestion` multiSelect: "Which fields do you want to edit?" with options:
+- **"Title"**
+- **"Priority"**
+- **"Dependencies"**
+- **"Release"**
+- **"Description"**
+- **"Technical Details"**
+- **"Files Involved"**
+- **"Cancel"**
+
+STOP.
+
+#### Step 3: Accept New Values
+
+For each selected field, present the current value and ask for the new value. Validate inputs before proceeding:
+- **Priority:** Must be one of `HIGH`, `MEDIUM`, or `LOW` (case-insensitive). Reject other values and re-prompt.
+- **Release:** Must match semver format `X.X.X` and exist in `RM release-plan-list`. If not found, warn and re-prompt.
+- **Multi-line fields** (Description, Technical Details): Accept the full replacement text.
+
+#### Step 4: Confirm Changes
+
+Present a diff-style summary of old vs new values for each modified field.
+
+`AskUserQuestion`: **"Apply these changes"** | **"Needs adjustments"** | **"Cancel"**
+
+STOP.
+
+#### Step 5: Apply Changes
+
+Based on mode:
+- **Platform-only:** `PM edit-issue` to update the issue title, body, and labels as needed. For priority changes, swap priority labels (remove old, add new). For release changes, update milestone and `release:` label.
+- **Local/dual:** Use `Edit` tool to modify the task block in the appropriate file (`to-do.txt`, `progressing.txt`, or `done.txt`). Preserve exact formatting: 78-dash separators, 2-space indent, field order.
+- **Dual sync:** Apply both local edit and platform update. If platform fails, warn but keep local changes.
+
+#### Step 6: Confirm
+
+Report: "Task [TASK-CODE] updated. Fields changed: [list]." Include platform issue URL if applicable.
 
 ---
 

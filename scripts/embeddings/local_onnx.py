@@ -7,7 +7,7 @@ Requires: onnxruntime, tokenizers, numpy (optional dependencies).
 
 Model download:
     The ONNX model files are auto-downloaded on first use to
-    ~/.cache/ctdf/models/<model_name>/ using urllib (stdlib).
+    ~/.cache/claw/models/<model_name>/ using urllib (stdlib).
 """
 
 import json
@@ -33,28 +33,110 @@ _MODEL_REGISTRY = {
     },
 }
 
-_DEFAULT_CACHE_DIR = Path.home() / ".cache" / "ctdf" / "models"
+_DEFAULT_CACHE_DIR = Path.home() / ".cache" / "claw" / "models"
+# Legacy cache path for backward compatibility with existing installations
+_LEGACY_CACHE_DIR = Path.home() / ".cache" / "ctdf" / "models"
+
+
+# ── GPU Provider Detection ────────────────────────────────────────────────────
+
+# Ranked by preference: best GPU provider first, CPU last
+_PROVIDER_PREFERENCE = [
+    "CUDAExecutionProvider",
+    "ROCMExecutionProvider",
+    "CoreMLExecutionProvider",
+    "DmlExecutionProvider",
+    "OpenVINOExecutionProvider",
+    "CPUExecutionProvider",
+]
+
+_VALID_GPU_MODES = ("auto", "gpu", "cpu")
+
+
+def _detect_execution_providers(gpu_mode: str = "auto") -> list[str]:
+    """Detect the best available ONNX Runtime execution providers.
+
+    Args:
+        gpu_mode: "auto" (try GPU, fall back to CPU), "gpu" (require GPU),
+                  or "cpu" (force CPU only).
+
+    Returns:
+        Ordered list of providers to pass to InferenceSession.
+
+    Raises:
+        ValueError: If gpu_mode is not one of "auto", "gpu", "cpu".
+        RuntimeError: If gpu_mode is "gpu" but no GPU provider is available.
+    """
+    if gpu_mode not in _VALID_GPU_MODES:
+        raise ValueError(
+            f"Invalid gpu_mode={gpu_mode!r}. "
+            f"Must be one of: {', '.join(_VALID_GPU_MODES)}"
+        )
+
+    if gpu_mode == "cpu":
+        return ["CPUExecutionProvider"]
+
+    try:
+        import onnxruntime as ort
+        available = ort.get_available_providers()
+    except (ImportError, AttributeError):
+        return ["CPUExecutionProvider"]
+
+    # Select providers in preference order, filtered to what's available
+    selected = [p for p in _PROVIDER_PREFERENCE if p in available]
+
+    if not selected:
+        selected = ["CPUExecutionProvider"]
+
+    if gpu_mode == "gpu":
+        gpu_providers = [p for p in selected if p != "CPUExecutionProvider"]
+        if not gpu_providers:
+            raise RuntimeError(
+                "gpu_mode='gpu' requested but no GPU execution provider is "
+                "available. Install onnxruntime-gpu (NVIDIA), "
+                "onnxruntime-rocm (AMD), onnxruntime-directml (Windows), "
+                "or onnxruntime-silicon (macOS). "
+                f"Available providers: {available}"
+            )
+        return gpu_providers
+
+    # auto mode: return all available in preference order (GPU first, CPU last)
+    return selected
 
 
 class LocalOnnxProvider(EmbeddingProvider):
     """Embedding provider using ONNX Runtime for local inference.
+
+    Supports GPU acceleration with auto-detection. When gpu_mode is "auto"
+    (default), the best available GPU provider is used with CPU fallback.
 
     Gracefully fails with clear error messages when dependencies
     are not installed.
     """
 
     def __init__(self, model_name_or_path: str = "all-MiniLM-L6-v2",
-                 model_dir: str | None = None):
+                 model_dir: str | None = None,
+                 gpu_mode: str = "auto",
+                 log_provider: bool = True):
         self._model_id = model_name_or_path
         self._session = None
         self._tokenizer = None
         self._np = None
+        self._gpu_mode = gpu_mode
+        self._log_provider = log_provider
+        self._active_provider = None
 
         # Determine model directory
         if model_dir:
             self._model_dir = Path(model_dir)
         elif model_name_or_path in _MODEL_REGISTRY:
-            self._model_dir = _DEFAULT_CACHE_DIR / model_name_or_path
+            # Check legacy cache path first for backward compatibility,
+            # then use the new default path
+            legacy_dir = _LEGACY_CACHE_DIR / model_name_or_path
+            if legacy_dir.exists() and (legacy_dir / "model.onnx").exists():
+                self._model_dir = legacy_dir
+            else:
+                self._model_dir = _DEFAULT_CACHE_DIR / model_name_or_path
         else:
             self._model_dir = Path(model_name_or_path)
 
@@ -105,12 +187,24 @@ class LocalOnnxProvider(EmbeddingProvider):
         sess_options.graph_optimization_level = (
             ort.GraphOptimizationLevel.ORT_ENABLE_ALL
         )
-        # Use CPU provider for maximum compatibility
+
+        # Select execution providers based on gpu_mode
+        providers = _detect_execution_providers(self._gpu_mode)
         self._session = ort.InferenceSession(
             str(model_path),
             sess_options,
-            providers=["CPUExecutionProvider"],
+            providers=providers,
         )
+
+        # Record which provider is actually active
+        self._active_provider = self._session.get_providers()[0] \
+            if self._session.get_providers() else providers[0]
+        if self._log_provider:
+            print(
+                f"  ONNX provider: {self._active_provider} "
+                f"(mode={self._gpu_mode})",
+                file=sys.stderr, flush=True,
+            )
 
         self._initialized = True
 
@@ -216,3 +310,9 @@ class LocalOnnxProvider(EmbeddingProvider):
 
     def model_name(self) -> str:
         return self._model_id
+
+    def active_provider(self) -> str:
+        """Return the name of the active ONNX execution provider."""
+        if not self._initialized:
+            return "not initialized"
+        return self._active_provider or "unknown"

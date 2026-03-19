@@ -155,8 +155,12 @@ def create_provider(config: dict) -> EmbeddingProvider:
         from embeddings.local_onnx import LocalOnnxProvider
         model = config.get("model", "all-MiniLM-L6-v2")
         model_dir = config.get("model_dir")
+        gpu_mode = config.get("gpu_mode", "auto")
+        log_provider = config.get("log_provider", True)
         return LocalOnnxProvider(model_name_or_path=model,
-                                 model_dir=model_dir)
+                                 model_dir=model_dir,
+                                 gpu_mode=gpu_mode,
+                                 log_provider=log_provider)
 
     elif provider_type in ("openai", "voyage"):
         from embeddings.api_provider import ApiEmbeddingProvider

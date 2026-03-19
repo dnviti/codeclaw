@@ -1,7 +1,7 @@
 ---
 title: Configuration
 description: Environment variables, configuration files, feature flags, and project settings
-generated-by: ctdf-docs
+generated-by: claw-docs
 generated-at: 2026-03-18T00:00:00Z
 source-files:
   - config/project-config.example.json
@@ -18,7 +18,7 @@ source-files:
 
 ## Overview
 
-CTDF uses JSON configuration files stored in the `.claude/` directory of your project and a `CLAUDE.md` file for project-specific variables. Configuration is layered: CLI flags override environment variables, which override config files, which override defaults.
+CodeClaw uses JSON configuration files stored in the `.claude/` directory of your project and a `CLAUDE.md` file for project-specific variables. Configuration is layered: CLI flags override environment variables, which override config files, which override defaults.
 
 ## Configuration Files
 
@@ -64,7 +64,7 @@ Controls GitHub/GitLab Issues integration.
 | `enabled` | `boolean` | Enable platform Issues integration |
 | `sync` | `boolean` | Enable bidirectional sync between local files and platform Issues |
 | `repo` | `string` | Repository identifier (e.g., `"owner/repo"`) |
-| `labels.source` | `string` | Label applied to all CTDF-created issues |
+| `labels.source` | `string` | Label applied to all CodeClaw-created issues |
 | `labels.task` | `string` | Label for task issues |
 | `labels.idea` | `string` | Label for idea issues |
 | `labels.priority` | `object` | Maps priority levels to label names |
@@ -72,7 +72,7 @@ Controls GitHub/GitLab Issues integration.
 | `labels.sections` | `object` | Custom section labels for task organization |
 | `labels.release_prefix` | `string` | Prefix for release milestone labels |
 
-> **Platform-only mode note:** When `enabled: true` and `sync: false`, the release pipeline also stores `release-state.json` content in a `ctdf-release-state` platform issue so all collaborators share the same pipeline state without needing a `git pull`.
+> **Platform-only mode note:** When `enabled: true` and `sync: false`, the release pipeline also stores `release-state.json` content in a `claw-release-state` platform issue so all collaborators share the same pipeline state without needing a `git pull`.
 
 ### project-config.json
 
@@ -391,7 +391,7 @@ These variables are parsed by `skill_helper.py` and `test_manager.py` at runtime
 
 ## Feature Flags
 
-CTDF uses configuration-driven feature flags rather than compile-time flags:
+CodeClaw uses configuration-driven feature flags rather than compile-time flags:
 
 | Flag | Config location | Effect |
 |------|-----------------|--------|

@@ -3,9 +3,10 @@
 Higher-level orchestration tool that retrieves task-specific context by
 combining:
   1. Task file parsing (to-do.txt / progressing.txt / done.txt)
-  2. Semantic search for code related to the task
-  3. Dependency information
-  4. Related memory notes
+  2. Keyword-based semantic search for code related to the task ID
+  3. Description-based semantic search for conceptually related code
+  4. Dependency information
+  5. Related memory notes
 """
 
 import json
@@ -128,6 +129,67 @@ def _semantic_search_for_task(task_id: str, root: str) -> list[dict]:
     return []
 
 
+def _semantic_search_by_description(task_info: dict | None, root: str) -> list[dict]:
+    """Run semantic search using the full task description as query.
+
+    Unlike ``_semantic_search_for_task`` which searches by task ID,
+    this searches using the task's description and technical details
+    to find conceptually related code that may not mention the task
+    code directly.  Results are filtered to exclude files already
+    listed in the task's "Files involved".
+    """
+    if not task_info:
+        return []
+
+    # Build a rich query from title + description
+    title = task_info.get("title", "")
+    description = task_info.get("description", "")
+    query = f"{title} {description}".strip()
+    if not query:
+        return []
+    # Truncate for embedding model limits
+    if len(query) > 1000:
+        query = query[:1000]
+
+    vm_script = _SCRIPT_DIR / "vector_memory.py"
+    if not vm_script.exists():
+        return []
+
+    try:
+        result = subprocess.run(
+            [
+                sys.executable, str(vm_script), "search",
+                query,
+                "--root", root,
+                "--top-k", "15",
+                "--json",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            raw = json.loads(result.stdout.strip())
+            # Deduplicate by file_path, keeping best score per file
+            seen: dict[str, dict] = {}
+            for entry in raw:
+                fp = entry.get("file_path", "")
+                score = entry.get("score", 999.0)
+                if fp and (fp not in seen or score < seen[fp]["score"]):
+                    seen[fp] = {
+                        "file_path": fp,
+                        "score": round(score, 4) if isinstance(score, float) else score,
+                        "chunk_type": entry.get("chunk_type", ""),
+                        "name": entry.get("name", ""),
+                        "language": entry.get("language", ""),
+                    }
+            return sorted(seen.values(), key=lambda x: x.get("score", 999))
+    except Exception as exc:
+        print(f"[task_context] description-based semantic search failed: {exc}",
+              file=sys.stderr)
+    return []
+
+
 def _find_memory_notes(root: Path, task_id: str) -> list[dict]:
     """Find memory notes mentioning this task."""
     notes_dir = root / ".claude" / "memory" / "notes"
@@ -185,10 +247,15 @@ def register(server):
         # 1. Parse task from task files
         task_info = _parse_task_from_files(root_path, task_id)
 
-        # 2. Semantic search for related code
+        # 2. Keyword-based semantic search (searches by task ID)
         related_code = _semantic_search_for_task(task_id, str(root_path))
 
-        # 3. Parse dependency tasks
+        # 3. Description-based semantic search (searches by task content)
+        semantic_related = _semantic_search_by_description(
+            task_info, str(root_path)
+        )
+
+        # 4. Parse dependency tasks
         dep_tasks = []
         if task_info and task_info.get("dependencies"):
             dep_codes = [
@@ -201,13 +268,15 @@ def register(server):
                 if dep_info:
                     dep_tasks.append(dep_info)
 
-        # 4. Find related memory notes
+        # 5. Find related memory notes
         memory_notes = _find_memory_notes(root_path, task_id)
 
         return json.dumps({
             "status": "ok",
             "task": task_info,
             "related_code": related_code[:10] if related_code else [],
+            "semantic_related_code": semantic_related[:10]
+                if semantic_related else [],
             "dependency_tasks": dep_tasks,
             "memory_notes": memory_notes[:5] if memory_notes else [],
             "message": (

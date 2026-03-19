@@ -80,7 +80,7 @@ _EXCLUDE_RE = [re.compile(p) for p in EXCLUDE_PATTERNS]
 
 # ccpkg archive extension and naming
 CCPKG_EXTENSION = ".ccpkg"
-ARCHIVE_NAME_TEMPLATE = "ctdf-{version}{ext}"
+ARCHIVE_NAME_TEMPLATE = "claw-{version}{ext}"
 
 # Default output directory
 DEFAULT_OUTPUT_DIR = REPO_ROOT / "dist"
@@ -180,7 +180,7 @@ def parse_skill_md(skill_path: Path) -> dict[str, Any] | None:
     """Parse a SKILL.md file into structured component data.
 
     Mirrors the parsing logic from platform_exporter.py for consistency
-    across the CTDF toolchain.
+    across the CodeClaw toolchain.
     """
     if not skill_path.exists():
         return None
@@ -457,9 +457,9 @@ def _target_destination(target: str, skill_name: str) -> str:
         "claude-code": f".claude/skills/{skill_name}/SKILL.md",
         "opencode": f".opencode/plugins/{skill_name}.js",
         "openclaw": f".openclaw/skills/{skill_name}/SKILL.md",
-        "cursor": f".cursor/rules/ctdf-{skill_name}.mdc",
-        "windsurf": f".windsurf/rules/ctdf-{skill_name}.md",
-        "continue": f".continue/assistants/ctdf-{skill_name}.json",
+        "cursor": f".cursor/rules/claw-{skill_name}.mdc",
+        "windsurf": f".windsurf/rules/claw-{skill_name}.md",
+        "continue": f".continue/assistants/claw-{skill_name}.json",
         "copilot": ".github/copilot-instructions.md",
         "aider": ".aider/instructions.md",
         "agents_md": "AGENTS.md",
@@ -507,16 +507,16 @@ def build_manifest(
 
     manifest = {
         "ccpkg_version": "1.0.0",
-        "name": plugin_meta.get("name", "ctdf"),
+        "name": plugin_meta.get("name", "claw"),
         "version": version,
         "description": plugin_meta.get(
             "description",
-            "Claude Task Development Framework",
+            "CodeClaw",
         ),
         "author": plugin_meta.get("author", {"name": "dnviti"}),
         "repository": plugin_meta.get(
             "repository",
-            "https://github.com/dnviti/claude-task-development-framework",
+            "https://github.com/dnviti/codeclaw",
         ),
         "license": plugin_meta.get("license", "MIT"),
         "keywords": plugin_meta.get("keywords", []),
@@ -550,9 +550,9 @@ def build_lock_data(version: str, archive_path: Path) -> dict[str, Any]:
         "ccpkg_lock_version": "1.0.0",
         "locked_at": now,
         "packages": {
-            "ctdf": {
+            "claw": {
                 "version": version,
-                "resolved": f"ctdf-{version}.ccpkg",
+                "resolved": f"claw-{version}.ccpkg",
                 "integrity": f"sha256-{archive_hash}",
                 "requires_python": ">=3.10",
                 "network_required": False,
@@ -619,7 +619,7 @@ def build_ccpkg(
     if verbose:
         print(f"[ccpkg] Creating archive: {archive_path}")
 
-    prefix = f"ctdf-{version}"
+    prefix = f"claw-{version}"
 
     with zipfile.ZipFile(archive_path, "w", zipfile.ZIP_DEFLATED) as zf:
         # Bundle all collected files
@@ -655,7 +655,7 @@ def build_ccpkg(
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     """Parse command-line arguments."""
     parser = argparse.ArgumentParser(
-        description="Build a .ccpkg archive for CTDF cross-tool distribution.",
+        description="Build a .ccpkg archive for CodeClaw cross-tool distribution.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=textwrap.dedent("""\
             Examples:
@@ -704,7 +704,7 @@ def main(argv: list[str] | None = None) -> int:
     output_dir = Path(args.output) if args.output else DEFAULT_OUTPUT_DIR
 
     if not args.json_output:
-        print(f"Building CTDF .ccpkg package v{version}...")
+        print(f"Building CodeClaw .ccpkg package v{version}...")
 
     try:
         archive_path = build_ccpkg(

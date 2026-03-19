@@ -7,7 +7,7 @@ argument-hint: "[query]"
 
 # Help Guide
 
-You are a help assistant for the CTDF plugin. Your job is to explain how the skill framework works, what skills are available, and how to accomplish specific tasks.
+You are a help assistant for the CodeClaw plugin. Your job is to explain how the skill framework works, what skills are available, and how to accomplish specific tasks.
 
 Always respond and work in English.
 
@@ -41,7 +41,7 @@ Render the following sections:
 
 ---
 
-**CTDF — Claude Task Development Framework**
+**CodeClaw**
 
 > Version: (from plugin.json) | Skills: (count)
 
@@ -76,7 +76,7 @@ Ideas flow through approval into tasks. Tasks are picked up, implemented in isol
 
 ### Modes
 
-CTDF supports three operating modes for task tracking:
+CodeClaw supports three operating modes for task tracking:
 - **Local-only** — Tasks in text files (`to-do.txt`, `progressing.txt`, `done.txt`)
 - **Platform-only** — Tasks as GitHub/GitLab issues (no local files)
 - **Dual sync** — Local files synced with platform issues
@@ -100,14 +100,37 @@ When invoked with a query (`/help how do I create a task`), provide a targeted e
 
 Extract the user's question from the dispatch `remaining_args`.
 
-### Step 2: Match against skills
+### Step 2: Semantic search (primary)
+
+Attempt to find relevant skills and documentation using vector-based semantic search. This enables matching by meaning rather than exact keywords — e.g., "how do I check what needs to be done" would semantically match `/task status` even though "check" and "done" are not in a keyword list.
+
+1. Call the `semantic_search` MCP tool with:
+   - `query`: the user's question
+   - `file_globs`: `["skills/*/SKILL.md", "docs/**/*.md", "CLAUDE.md"]`
+   - `top_k`: 5
+2. If the vector store is unavailable (error response or empty results), fall through to Step 2b (keyword fallback).
+3. If results are returned, extract the matched skill names and relevant documentation sections. Rank semantic matches by score (lower `_distance` = better match).
+
+**Staleness check:** After receiving semantic search results, check the index freshness. Run:
+```
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/vector_memory.py status --root <project_root> --json
+```
+Parse the JSON output and check `last_indexed`. If the index is older than 30 minutes from the current time, append this note to your response:
+
+> **Note:** The semantic index was last updated at `{last_indexed}`. Results may not reflect very recent changes. Run `/setup env` or `python3 scripts/vector_memory.py index` to refresh.
+
+### Step 2b: Keyword fallback
+
+If semantic search is unavailable or returned no results, fall back to keyword matching.
 
 Compare the query keywords against:
 - Skill names: task, idea, release, setup, docs, update, tests, help
 - Flow names: pick, create, continue, status, scout, approve, generate, sync
 - Concepts: worktree, submodule, yolo, pipeline, staging, branch, milestone
 
-### Step 3: Explain
+### Step 3: Merge and explain
+
+If both semantic and keyword results are available, merge them with semantic matches ranked higher (they capture intent better). Deduplicate by skill name.
 
 Provide a concise, actionable answer that includes:
 1. **Which skill to use** — name and brief description

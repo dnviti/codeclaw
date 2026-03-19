@@ -1,15 +1,15 @@
 {
-  "_comment": "CTDF Vector Memory MCP Server configuration template.",
+  "_comment": "CodeClaw Vector Memory MCP Server configuration template.",
   "_comment2": "Copy this file to your project and adjust as needed.",
   "mcpServers": {
-    "ctdf-vector-memory": {
+    "claw-vector-memory": {
       "command": "python3",
       "args": [
-        "${CTDF_SCRIPTS}/mcp_server.py",
+        "${CLAW_SCRIPTS}/mcp_server.py",
         "--root", "${PROJECT_ROOT}"
       ],
       "env": {
-        "CTDF_PROJECT_ROOT": "${PROJECT_ROOT}"
+        "CLAW_PROJECT_ROOT": "${PROJECT_ROOT}"
       }
     }
   },

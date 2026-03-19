@@ -1,8 +1,8 @@
-# CTDF — Claude Task Development Framework
+# CodeClaw
 
 A project-agnostic task and idea management plugin for [Claude Code](https://docs.anthropic.com/en/docs/claude-code).
 
-CTDF gives your AI-assisted development workflow a structured backbone: ideas are captured, evaluated, promoted to tasks, implemented with quality gates, and tracked to completion — all through plain-text files and Claude Code slash commands. A gated release pipeline with parallel sub-agent orchestration enforces strict development rules from branch creation to production tagging.
+CodeClaw gives your AI-assisted development workflow a structured backbone: ideas are captured, evaluated, promoted to tasks, implemented with quality gates, and tracked to completion — all through plain-text files and Claude Code slash commands. A gated release pipeline with parallel sub-agent orchestration enforces strict development rules from branch creation to production tagging.
 
 > **[Full Documentation](docs/index.md)** — Architecture, API reference, configuration, deployment, troubleshooting, and more.
 
@@ -35,15 +35,15 @@ CTDF gives your AI-assisted development workflow a structured backbone: ideas ar
 ### From Marketplace
 
 ```
-/plugin marketplace add https://github.com/dnviti/claude-task-development-framework
-/plugin install ctdf@dnviti-claude-task-development-framework
+/plugin marketplace add https://github.com/dnviti/codeclaw
+/plugin install claw@dnviti-plugins
 ```
 
 ### Local Development
 
 ```bash
-git clone https://github.com/dnviti/claude-task-development-framework.git
-claude --plugin-dir ./claude-task-development-framework
+git clone https://github.com/dnviti/codeclaw.git
+claude --plugin-dir ./codeclaw
 ```
 
 ## Getting Started
@@ -75,7 +75,7 @@ claude --plugin-dir ./claude-task-development-framework
 
 ## How It Works
 
-CTDF enforces strict development rules through two connected pipelines and a gated release process.
+CodeClaw enforces strict development rules through two connected pipelines and a gated release process.
 
 ### Idea Pipeline
 
@@ -215,7 +215,7 @@ flowchart LR
 | `/setup init` | `/setup init [purpose]` | Full project scaffold: choose stack, configure git, adapt all skills |
 | `/setup branch-strategy` | `/setup branch-strategy` | Configure develop/staging/main branch strategy |
 | `/setup agentic-fleet` | `/setup agentic-fleet` | Set up AI-powered CI/CD pipelines for idea scouting and task implementation |
-| `/update` | `/update [category]` | Update CTDF-managed files (pipelines, scripts, prompts, skills, CLAUDE.md) to the latest plugin version |
+| `/update` | `/update [category]` | Update CodeClaw-managed files (pipelines, scripts, prompts, skills, CLAUDE.md) to the latest plugin version |
 
 ### Task Management
 
@@ -303,7 +303,7 @@ cp <plugin-dir>/config/issues-tracker.example.json .claude/issues-tracker.json
 
 ## Agentic Fleet Pipelines
 
-CTDF includes automated CI/CD pipelines that use Claude Code to perform idea scouting and task implementation without human intervention.
+CodeClaw includes automated CI/CD pipelines that use Claude Code to perform idea scouting and task implementation without human intervention.
 
 | Pipeline | Trigger | What it does |
 |----------|---------|--------------|
@@ -347,13 +347,13 @@ Key formatting rules: 78-dash separators, em dash (`—`) in title, 2-space inde
 ## Plugin Structure
 
 ```
-claude-task-development-framework/
+codeclaw/
 ├── .claude-plugin/
 │   ├── plugin.json              # Plugin manifest
 │   └── marketplace.json         # Marketplace definition
 ├── skills/                      # 5 unified Claude Code skills
 │   ├── setup/                   # Initialize, configure, scaffold projects
-│   ├── update/                  # Update CTDF-managed files
+│   ├── update/                  # Update CodeClaw-managed files
 │   ├── task/                    # Pick, create, continue, status
 │   ├── idea/                    # Create, approve, disapprove, refactor, scout
 │   ├── release/                 # Release management (create, generate, continue, close)
@@ -391,21 +391,21 @@ claude-task-development-framework/
 
 ```bash
 # Update the plugin
-/plugin update ctdf@dnviti-claude-task-development-framework
+/plugin update claw@dnviti-plugins
 
-# After updating the plugin, refresh CTDF-managed files in your project
+# After updating the plugin, refresh CodeClaw-managed files in your project
 /update
 ```
 
 ```bash
 # Disable temporarily
-/plugin disable ctdf@dnviti-claude-task-development-framework
+/plugin disable claw@dnviti-plugins
 
 # Re-enable
-/plugin enable ctdf@dnviti-claude-task-development-framework
+/plugin enable claw@dnviti-plugins
 
 # Uninstall
-/plugin uninstall ctdf@dnviti-claude-task-development-framework
+/plugin uninstall claw@dnviti-plugins
 ```
 
 ## License

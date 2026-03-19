@@ -1,7 +1,7 @@
 ---
 title: Development
 description: Contributing guidelines, local development setup, testing, branch strategy, and coding conventions
-generated-by: ctdf-docs
+generated-by: claw-docs
 generated-at: 2026-03-18T00:00:00Z
 source-files:
   - README.md
@@ -20,15 +20,15 @@ source-files:
 
 ## Overview
 
-CTDF is developed using its own workflow: ideas are captured, evaluated, promoted to tasks, implemented in worktrees, and released through the gated pipeline.
+CodeClaw is developed using its own workflow: ideas are captured, evaluated, promoted to tasks, implemented in worktrees, and released through the gated pipeline.
 
 ## Local Development Setup
 
 ### Clone and Run
 
 ```bash
-git clone https://github.com/dnviti/claude-task-development-framework.git
-cd claude-task-development-framework
+git clone https://github.com/dnviti/codeclaw.git
+cd codeclaw
 
 # Run Claude Code with the local plugin
 claude --plugin-dir .
@@ -49,7 +49,7 @@ pip install lancedb sentence-transformers mcp
 ### Project Structure
 
 ```
-claude-task-development-framework/
+codeclaw/
 ├── .claude-plugin/
 │   ├── plugin.json              # Plugin manifest (name, version, skills path)
 │   └── marketplace.json         # Marketplace listing
@@ -197,7 +197,7 @@ flowchart LR
 
 ### Running Tests on Target Projects
 
-CTDF provides test management through the `/tests` skill and `test_manager.py`:
+CodeClaw provides test management through the `/tests` skill and `test_manager.py`:
 
 ```bash
 # Discover test files

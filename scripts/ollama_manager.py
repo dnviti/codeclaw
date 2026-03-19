@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Ollama local model manager for CTDF.
+"""Ollama local model manager for CodeClaw.
 
 Provides hardware detection, model recommendation, Ollama installation,
 model pulling, and querying for local LLM offloading.
@@ -858,7 +858,7 @@ def execute_tool(name: str, arguments: dict) -> str:
                 return "Error: no url provided."
             req = urllib.request.Request(
                 url,
-                headers={"User-Agent": "Mozilla/5.0 (compatible; CTDF/1.0)"},
+                headers={"User-Agent": "Mozilla/5.0 (compatible; CodeClaw/1.0)"},
             )
             with urllib.request.urlopen(req, timeout=30) as resp:
                 raw = resp.read().decode("utf-8", errors="replace")
@@ -877,7 +877,7 @@ def execute_tool(name: str, arguments: dict) -> str:
             url = f"https://lite.duckduckgo.com/lite/?{encoded}"
             req = urllib.request.Request(
                 url,
-                headers={"User-Agent": "Mozilla/5.0 (compatible; CTDF/1.0)"},
+                headers={"User-Agent": "Mozilla/5.0 (compatible; CodeClaw/1.0)"},
             )
             with urllib.request.urlopen(req, timeout=15) as resp:
                 html = resp.read().decode("utf-8", errors="replace")
@@ -1230,6 +1230,17 @@ def health_check(expected_model: str | None = None) -> dict:
     return result
 
 
+def is_available() -> bool:
+    """Quick check whether the Ollama server is reachable.
+
+    Returns True if the server responds to a model list request,
+    False otherwise.  This is a lightweight probe intended for use
+    by ``ConflictJudge`` to decide which provider to fall back to.
+    """
+    running, _ = _fetch_model_list()
+    return running
+
+
 # ── Configuration Management ───────────────────────────────────────────────
 
 def load_ollama_config(config_path: str | None = None) -> dict | None:
@@ -1524,7 +1535,7 @@ def is_offloadable(task_description: str) -> bool:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Ollama local model manager for CTDF.",
+        description="Ollama local model manager for CodeClaw.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Examples:\n"

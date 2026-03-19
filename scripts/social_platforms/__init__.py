@@ -1,4 +1,4 @@
-"""Social media platform adapters for CTDF release announcements.
+"""Social media platform adapters for CodeClaw release announcements.
 
 Each module provides a concrete SocialPlatform subclass that handles
 posting release announcements to a specific social media platform.

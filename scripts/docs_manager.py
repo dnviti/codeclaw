@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Documentation manager CLI for CTDF.
+"""Documentation manager CLI for CodeClaw.
 
 Provides deterministic operations for documentation lifecycle:
 discover codebase structure, track staleness via manifest hashes,
@@ -58,6 +58,8 @@ def get_main_repo_root() -> Path:
 
 DOCS_DIR_NAME = "docs"
 MANIFEST_NAME = ".docs-manifest.json"
+VISUAL_RICHNESS_LEVELS = ("zero", "tiny", "moderate", "large")
+VISUAL_RICHNESS_DEFAULT = "tiny"
 
 # Standard documentation sections
 SECTIONS = [
@@ -302,15 +304,25 @@ def cmd_init_manifest(args):
                 .replace("+00:00", "Z"),
         })
 
+    # Visual richness tier
+    vr = getattr(args, "visual_richness", None)
+    if vr is None or vr not in VISUAL_RICHNESS_LEVELS:
+        vr = VISUAL_RICHNESS_DEFAULT
+
     manifest = {
         "version": "1.0",
         "generated_at": datetime.now(timezone.utc).isoformat()
             .replace("+00:00", "Z"),
+        "visual_richness": vr,
         "sections": manifest_sections,
     }
 
     _write_manifest(root, manifest)
-    print(json.dumps({"success": True, "sections_count": len(manifest_sections)}))
+    print(json.dumps({
+        "success": True,
+        "sections_count": len(manifest_sections),
+        "visual_richness": vr,
+    }))
 
 
 # ── Subcommand: clean ──────────────────────────────────────────────────────
@@ -353,6 +365,31 @@ def cmd_clean(args):
         "deleted": deleted,
         "count": len(deleted),
     }, indent=2))
+
+
+# ── Subcommand: get-visual-richness ────────────────────────────────────────
+
+def cmd_get_visual_richness(args):
+    """Return the visual richness tier stored in the docs manifest."""
+    root = get_main_repo_root()
+    manifest = _read_manifest(root)
+
+    if not manifest:
+        print(json.dumps({
+            "visual_richness": VISUAL_RICHNESS_DEFAULT,
+            "source": "default",
+            "message": "No manifest found. Using default tier.",
+        }))
+        return
+
+    vr = manifest.get("visual_richness", VISUAL_RICHNESS_DEFAULT)
+    if vr not in VISUAL_RICHNESS_LEVELS:
+        vr = VISUAL_RICHNESS_DEFAULT
+
+    print(json.dumps({
+        "visual_richness": vr,
+        "source": "manifest",
+    }))
 
 
 # ── Subcommand: detect-site-generator ──────────────────────────────────────
@@ -466,11 +503,322 @@ def cmd_diff_since_tag(args):
     }, indent=2))
 
 
+# ── Subcommand: semantic-discover ──────────────────────────────────────────
+
+# Section topic keywords used as semantic queries
+SECTION_TOPICS = {
+    "architecture": "system architecture component design patterns middleware routing",
+    "getting-started": "installation setup prerequisites quickstart first run",
+    "configuration": "configuration environment variables config files feature flags settings",
+    "api-reference": "API endpoints routes controllers handlers functions CLI commands",
+    "deployment": "deployment CI CD Docker build pipeline infrastructure production",
+    "development": "development contributing testing local dev branch strategy linting",
+    "troubleshooting": "error handling logging debugging troubleshooting health check FAQ",
+}
+
+
+def cmd_semantic_discover(args):
+    """Use vector memory semantic search to find cross-cutting source files.
+
+    For a given documentation section, performs a semantic search with the
+    section topic as the query and returns related source files that are
+    not already in the section's tracked source list. This discovers
+    cross-cutting concerns (logging, error handling, middleware, utilities)
+    that don't fit neatly into a single role classification but are
+    essential to the documentation.
+    """
+    root = get_main_repo_root()
+    section = args.section
+    top_k = min(args.top_k, 100)  # Cap to prevent excessive vector queries
+
+    # Get existing tracked source files from the manifest
+    manifest = _read_manifest(root)
+    existing_sources: set[str] = set()
+    if manifest:
+        for sec in manifest.get("sections", []):
+            if sec["name"] == section:
+                existing_sources = {
+                    s["path"] for s in sec.get("source_files", [])
+                }
+                break
+
+    # Also accept explicit exclude list (must be a JSON array of strings)
+    if args.exclude:
+        try:
+            exclude_list = json.loads(args.exclude)
+            if isinstance(exclude_list, list):
+                existing_sources.update(
+                    str(p) for p in exclude_list if isinstance(p, str)
+                )
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    # Determine the semantic query for this section
+    topic = args.topic if args.topic else SECTION_TOPICS.get(section, section)
+
+    # Call vector_memory.py search with JSON output
+    vm_script = Path(__file__).resolve().parent / "vector_memory.py"
+    try:
+        result = subprocess.run(
+            [
+                sys.executable, str(vm_script), "search", topic,
+                "--root", str(root),
+                "--top-k", str(top_k * 2),  # Fetch extra to filter
+                "--json",
+            ],
+            capture_output=True, text=True, timeout=60,
+        )
+        if result.returncode != 0:
+            print(json.dumps({
+                "section": section,
+                "topic": topic,
+                "discovered_files": [],
+                "error": result.stderr.strip() or "Search failed",
+            }))
+            return
+    except (subprocess.TimeoutExpired, OSError) as e:
+        print(json.dumps({
+            "section": section,
+            "topic": topic,
+            "discovered_files": [],
+            "error": str(e),
+        }))
+        return
+
+    # Parse search results
+    try:
+        search_results = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        print(json.dumps({
+            "section": section,
+            "topic": topic,
+            "discovered_files": [],
+            "error": "Failed to parse search results",
+        }))
+        return
+
+    # Collect unique file paths not already tracked, preserving relevance order
+    discovered: list[dict] = []
+    seen_paths: set[str] = set()
+    for hit in search_results:
+        fp = hit.get("file_path", "")
+        if not fp or fp in existing_sources or fp in seen_paths:
+            continue
+        # Skip documentation files themselves to avoid circular references
+        if fp.startswith("docs/") and fp.endswith(".md"):
+            continue
+        seen_paths.add(fp)
+        discovered.append({
+            "path": fp,
+            "score": hit.get("score", 0.0),
+            "chunk_type": hit.get("chunk_type", ""),
+            "name": hit.get("name", ""),
+        })
+        if len(discovered) >= top_k:
+            break
+
+    print(json.dumps({
+        "section": section,
+        "topic": topic,
+        "discovered_files": discovered,
+        "count": len(discovered),
+        "existing_source_count": len(existing_sources),
+    }, indent=2))
+
+
+# ── Subcommand: reindex-docs ───────────────────────────────────────────────
+
+def cmd_reindex_docs(args):
+    """Trigger incremental re-index of the docs/ directory.
+
+    After documentation generation or sync, call this to ensure the
+    vector index includes the latest documentation content. Uses
+    vector_memory.py hook-batch for efficient batch processing.
+    """
+    root = get_main_repo_root()
+    docs_dir = root / DOCS_DIR_NAME
+
+    if not docs_dir.is_dir():
+        print(json.dumps({
+            "success": False,
+            "error": "No docs/ directory found",
+            "indexed_files": [],
+        }))
+        return
+
+    # Collect all markdown files in docs/
+    doc_files: list[str] = []
+    for md_file in sorted(docs_dir.glob("*.md")):
+        doc_files.append(str(md_file))
+
+    if not doc_files:
+        print(json.dumps({
+            "success": True,
+            "indexed_files": [],
+            "message": "No documentation files to index",
+        }))
+        return
+
+    # Call vector_memory.py hook-batch
+    vm_script = Path(__file__).resolve().parent / "vector_memory.py"
+    try:
+        result = subprocess.run(
+            [sys.executable, str(vm_script), "hook-batch"] + doc_files,
+            capture_output=True, text=True, timeout=120,
+        )
+        if result.returncode != 0:
+            print(json.dumps({
+                "success": False,
+                "error": result.stderr.strip() or "Re-index failed",
+                "indexed_files": [
+                    os.path.basename(f) for f in doc_files
+                ],
+            }))
+            return
+    except (subprocess.TimeoutExpired, OSError) as e:
+        print(json.dumps({
+            "success": False,
+            "error": str(e),
+            "indexed_files": [],
+        }))
+        return
+
+    # Parse batch result
+    batch_result = {}
+    try:
+        batch_result = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        pass
+
+    print(json.dumps({
+        "success": True,
+        "indexed_files": [os.path.basename(f) for f in doc_files],
+        "count": len(doc_files),
+        "batch_result": batch_result,
+    }, indent=2))
+
+
+# ── Subcommand: semantic-staleness ─────────────────────────────────────────
+
+def cmd_semantic_staleness(args):
+    """Supplement hash-based staleness with semantic similarity.
+
+    For each changed file, perform a semantic search against existing
+    documentation sections to detect if a utility/cross-cutting change
+    affects a section even if the file is not in that section's tracked
+    source list.
+    """
+    root = get_main_repo_root()
+    manifest = _read_manifest(root)
+
+    if not manifest:
+        print(json.dumps({
+            "has_manifest": False,
+            "affected_sections": [],
+            "message": "No manifest found.",
+        }))
+        return
+
+    # Parse changed files list (must be a JSON array of strings)
+    try:
+        changed_files = json.loads(args.changed_files)
+    except json.JSONDecodeError:
+        print(json.dumps({
+            "error": "Invalid changed_files JSON",
+            "affected_sections": [],
+        }))
+        return
+
+    if not isinstance(changed_files, list):
+        print(json.dumps({
+            "error": "changed_files must be a JSON array",
+            "affected_sections": [],
+        }))
+        return
+
+    if not changed_files:
+        print(json.dumps({
+            "affected_sections": [],
+            "message": "No changed files provided",
+        }))
+        return
+
+    # For each changed file, read its content and search for semantic
+    # similarity against doc sections
+    vm_script = Path(__file__).resolve().parent / "vector_memory.py"
+    affected_sections: dict[str, list[str]] = {}
+
+    for changed_file in changed_files:
+        if not isinstance(changed_file, str):
+            continue
+        # Validate path stays within project root (prevent traversal)
+        fp = (root / changed_file).resolve()
+        try:
+            fp.relative_to(root)
+        except ValueError:
+            continue  # Path escapes project root
+        if not fp.exists():
+            continue
+
+        # Read first 500 chars of the file to build a semantic query
+        try:
+            content = fp.read_text(encoding="utf-8", errors="replace")[:500]
+        except OSError:
+            continue
+
+        # Use file name and content snippet as query
+        query = f"{changed_file} {content}"
+
+        try:
+            result = subprocess.run(
+                [
+                    sys.executable, str(vm_script), "search", query,
+                    "--root", str(root),
+                    "--top-k", "5",
+                    "--file-filter", "docs/",
+                    "--json",
+                ],
+                capture_output=True, text=True, timeout=30,
+            )
+            if result.returncode != 0:
+                continue
+        except (subprocess.TimeoutExpired, OSError):
+            continue
+
+        try:
+            hits = json.loads(result.stdout)
+        except json.JSONDecodeError:
+            continue
+
+        # Map doc file hits back to section names
+        for hit in hits:
+            hit_path = hit.get("file_path", "")
+            if not hit_path.startswith("docs/"):
+                continue
+            # Find matching section
+            for sec_info in SECTIONS:
+                if hit_path == f"docs/{sec_info['file']}":
+                    sec_name = sec_info["name"]
+                    if sec_name not in affected_sections:
+                        affected_sections[sec_name] = []
+                    if changed_file not in affected_sections[sec_name]:
+                        affected_sections[sec_name].append(changed_file)
+                    break
+
+    print(json.dumps({
+        "affected_sections": [
+            {"name": name, "related_changes": files}
+            for name, files in sorted(affected_sections.items())
+        ],
+        "count": len(affected_sections),
+    }, indent=2))
+
+
 # ── CLI ────────────────────────────────────────────────────────────────────
 
 def main():
     parser = argparse.ArgumentParser(
-        description="CTDF Documentation Manager",
+        description="CodeClaw Documentation Manager",
     )
     sub = parser.add_subparsers(dest="command")
 
@@ -489,9 +837,16 @@ def main():
                        help="Create/update .docs-manifest.json")
     p.add_argument("--sections-json", required=True,
                    help="JSON array of section data")
+    p.add_argument("--visual-richness", default=VISUAL_RICHNESS_DEFAULT,
+                   choices=VISUAL_RICHNESS_LEVELS,
+                   help="Visual richness tier (default: tiny)")
 
     # clean
     sub.add_parser("clean", help="Remove all generated doc files")
+
+    # get-visual-richness
+    sub.add_parser("get-visual-richness",
+                   help="Return the visual richness tier from manifest")
 
     # detect-site-generator
     sub.add_parser("detect-site-generator",
@@ -501,6 +856,28 @@ def main():
     p = sub.add_parser("diff-since-tag",
                        help="Return changed files since a git tag")
     p.add_argument("--tag", required=True, help="Git tag to diff from")
+
+    # semantic-discover
+    p = sub.add_parser("semantic-discover",
+                       help="Find cross-cutting source files via semantic search")
+    p.add_argument("--section", required=True,
+                   help="Documentation section name")
+    p.add_argument("--topic", default="",
+                   help="Custom search topic (default: section keywords)")
+    p.add_argument("--top-k", type=int, default=10,
+                   help="Max files to return (default: 10)")
+    p.add_argument("--exclude", default="",
+                   help="JSON array of file paths to exclude")
+
+    # reindex-docs
+    sub.add_parser("reindex-docs",
+                   help="Re-index docs/ directory into vector memory")
+
+    # semantic-staleness
+    p = sub.add_parser("semantic-staleness",
+                       help="Semantic similarity check for staleness detection")
+    p.add_argument("--changed-files", required=True,
+                   help="JSON array of changed file paths")
 
     args = parser.parse_args()
     if not args.command:
@@ -513,8 +890,12 @@ def main():
         "list-sections": cmd_list_sections,
         "init-manifest": cmd_init_manifest,
         "clean": cmd_clean,
+        "get-visual-richness": cmd_get_visual_richness,
         "detect-site-generator": cmd_detect_site_generator,
         "diff-since-tag": cmd_diff_since_tag,
+        "semantic-discover": cmd_semantic_discover,
+        "reindex-docs": cmd_reindex_docs,
+        "semantic-staleness": cmd_semantic_staleness,
     }
 
     cmd_map[args.command](args)

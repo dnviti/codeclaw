@@ -105,8 +105,8 @@ CO_AUTHORED_BY = {
     "ollama": "Co-Authored-By: Ollama Local ({model}) <noreply@ollama.com>",
 }
 
-# CTDF plugin repo URL
-CTDF_REPO_URL = "https://github.com/dnviti/claude-task-development-framework.git"
+# CodeClaw plugin repo URL
+CLAW_REPO_URL = "https://github.com/dnviti/codeclaw.git"
 
 
 # ── Configuration ───────────────────────────────────────────────────────────
@@ -256,12 +256,12 @@ def install_cli(provider: str) -> None:
 # ── Plugin Setup (Claude only) ──────────────────────────────────────────────
 
 def setup_plugin(provider: str) -> None:
-    """Install the CTDF plugin for Claude Code. No-op for other providers."""
+    """Install the CodeClaw plugin for Claude Code. No-op for other providers."""
     if provider != "claude":
         print(f"  Skipping plugin setup (not needed for {provider}).")
         return
 
-    print("  Setting up CTDF plugin for Claude Code...")
+    print("  Setting up CodeClaw plugin for Claude Code...")
 
     plugin_dir = Path.home() / ".claude" / "plugins"
     market_dir = plugin_dir / "marketplaces" / "dnviti-plugins"
@@ -270,15 +270,15 @@ def setup_plugin(provider: str) -> None:
     # Clone if not already present
     if not market_dir.exists():
         result = subprocess.run(
-            ["git", "clone", "--depth", "1", CTDF_REPO_URL, str(market_dir)],
+            ["git", "clone", "--depth", "1", CLAW_REPO_URL, str(market_dir)],
             capture_output=True,
             text=True,
         )
         if result.returncode != 0:
-            print(f"Warning: Could not clone CTDF plugin repo:\n{result.stderr}", file=sys.stderr)
+            print(f"Warning: Could not clone CodeClaw plugin repo:\n{result.stderr}", file=sys.stderr)
             return
     else:
-        print("  CTDF plugin repo already cloned.")
+        print("  CodeClaw plugin repo already cloned.")
 
     # Read version
     plugin_json = market_dir / ".claude-plugin" / "plugin.json"
@@ -288,7 +288,7 @@ def setup_plugin(provider: str) -> None:
         print("Warning: Could not read plugin version.", file=sys.stderr)
         return
 
-    cache_dir = plugin_dir / "cache" / "dnviti-plugins" / "ctdf" / version
+    cache_dir = plugin_dir / "cache" / "dnviti-plugins" / "claw" / version
     cache_dir.mkdir(parents=True, exist_ok=True)
 
     # Copy plugin files to cache (cross-platform: uses shutil instead of cp -r)
@@ -301,7 +301,7 @@ def setup_plugin(provider: str) -> None:
     installed = {
         "version": 2,
         "plugins": {
-            "ctdf@dnviti-plugins": [{
+            "claw@dnviti-plugins": [{
                 "scope": "user",
                 "installPath": str(cache_dir),
                 "version": version,
@@ -314,7 +314,7 @@ def setup_plugin(provider: str) -> None:
 
     known = {
         "dnviti-plugins": {
-            "source": {"source": "git", "url": CTDF_REPO_URL},
+            "source": {"source": "git", "url": CLAW_REPO_URL},
             "installLocation": str(market_dir),
             "lastUpdated": now,
         },
@@ -329,10 +329,10 @@ def setup_plugin(provider: str) -> None:
             settings = json.loads(settings_file.read_text())
         except (json.JSONDecodeError, OSError):
             pass
-    settings.setdefault("enabledPlugins", {})["ctdf@dnviti-plugins"] = True
+    settings.setdefault("enabledPlugins", {})["claw@dnviti-plugins"] = True
     settings_file.write_text(json.dumps(settings))
 
-    print(f"  CTDF plugin v{version} installed and enabled.")
+    print(f"  CodeClaw plugin v{version} installed and enabled.")
 
 
 # ── Prompt Building ─────────────────────────────────────────────────────────
@@ -980,7 +980,7 @@ def run_agent(
         setup_plugin(provider)
     else:
         if provider == "claude":
-            print("  [dry-run] Would install CTDF plugin.")
+            print("  [dry-run] Would install CodeClaw plugin.")
         else:
             print(f"  [dry-run] Skipping plugin setup (not needed for {provider}).")
 
@@ -992,9 +992,9 @@ def run_agent(
         if agent_id:
             print(f"  Agent registered: {agent_id} (session={session_id})")
             # Set env vars so child processes inherit agent identity
-            os.environ["CTDF_AGENT_ID"] = agent_id
-            os.environ["CTDF_SESSION_ID"] = session_id
-            os.environ["CTDF_AGENT_TYPE"] = pipeline
+            os.environ["CLAW_AGENT_ID"] = agent_id
+            os.environ["CLAW_SESSION_ID"] = session_id
+            os.environ["CLAW_AGENT_TYPE"] = pipeline
         else:
             print("  Memory protocol not available — running without coordination.")
     else:
@@ -1053,7 +1053,7 @@ def run_agent(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Multi-provider agent runner for CTDF agentic fleet pipelines.",
+        description="Multi-provider agent runner for CodeClaw agentic fleet pipelines.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Examples:\n"
