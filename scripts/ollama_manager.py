@@ -1086,9 +1086,10 @@ def query_ollama_with_tools(
 
 # ── RLM Support ────────────────────────────────────────────────────────────
 
-# RLM-specific model recommendations — models that excel at code generation
-# for the REPL analysis step in recursive context processing.
-RLM_MODEL_RECOMMENDATIONS = [
+# RLM-specific model recommendations (flat list with capabilities) used by
+# recommend_rlm_model(). The canonical dict keyed by provider is defined at
+# module top level and imported by rlm_backend.
+_RLM_OLLAMA_RECS = [
     {
         "min_ram": 32,
         "name": "qwen2.5-coder:32b",
@@ -1137,7 +1138,7 @@ def recommend_rlm_model(ram_gb: float = 0.0, vram_gb: float = 0.0) -> dict:
 
     effective_memory = max(ram_gb, vram_gb) if vram_gb > 0 else ram_gb
 
-    for rec in RLM_MODEL_RECOMMENDATIONS:
+    for rec in _RLM_OLLAMA_RECS:
         if effective_memory >= rec["min_ram"]:
             return {
                 "model": rec["name"],
@@ -1147,9 +1148,9 @@ def recommend_rlm_model(ram_gb: float = 0.0, vram_gb: float = 0.0) -> dict:
             }
 
     return {
-        "model": RLM_MODEL_RECOMMENDATIONS[-1]["name"],
-        "reason": RLM_MODEL_RECOMMENDATIONS[-1]["reason"],
-        "capabilities": RLM_MODEL_RECOMMENDATIONS[-1]["capabilities"],
+        "model": _RLM_OLLAMA_RECS[-1]["name"],
+        "reason": _RLM_OLLAMA_RECS[-1]["reason"],
+        "capabilities": _RLM_OLLAMA_RECS[-1]["capabilities"],
         "effective_memory_gb": effective_memory,
     }
 
