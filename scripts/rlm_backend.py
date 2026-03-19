@@ -51,38 +51,11 @@ MAX_LLM_CALLS = 50
 # Chunk overlap for context splitting (percentage of chunk size)
 CHUNK_OVERLAP_RATIO = 0.1
 
-# RLM-specific model recommendations — models that excel at code generation
-# needed for the REPL analysis step
-RLM_MODEL_RECOMMENDATIONS = {
-    "ollama": [
-        {
-            "min_ram": 32,
-            "name": "qwen2.5-coder:32b",
-            "reason": "Best code generation for RLM analysis steps",
-        },
-        {
-            "min_ram": 16,
-            "name": "codestral:22b",
-            "reason": "Strong code generation for RLM decomposition",
-        },
-        {
-            "min_ram": 8,
-            "name": "qwen2.5-coder:7b",
-            "reason": "Efficient code generation for basic RLM queries",
-        },
-        {
-            "min_ram": 0,
-            "name": "qwen2.5-coder:1.5b",
-            "reason": "Lightweight option for simple RLM analysis",
-        },
-    ],
-    "claude": [
-        {
-            "name": "claude-sonnet-4-20250514",
-            "reason": "Recommended Claude model for RLM processing",
-        },
-    ],
-}
+# RLM model recommendations — imported from canonical source in ollama_manager
+try:
+    from ollama_manager import RLM_MODEL_RECOMMENDATIONS
+except ImportError:
+    RLM_MODEL_RECOMMENDATIONS = {"ollama": [], "claude": []}
 
 
 # ── Configuration ────────────────────────────────────────────────────────────
@@ -342,6 +315,7 @@ def decompose(query: str, context_summary: str, config: dict) -> list[str]:
     Returns:
         List of sub-query strings. Returns [query] if decomposition fails.
     """
+    # Prompt injection: inherent to LLM-in-the-loop; mitigated by sandbox validation of generated code
     prompt = textwrap.dedent(f"""\
         You are decomposing a complex query into simpler sub-queries for
         recursive analysis of a large codebase context.
@@ -425,6 +399,7 @@ def _analyze_chunk(query: str, context_chunk: str, config: dict) -> dict:
         pass
 
     # Fallback: direct LLM analysis
+    # Prompt injection: inherent to LLM-in-the-loop; mitigated by sandbox validation of generated code
     prompt = textwrap.dedent(f"""\
         Analyze the following context to answer this query.
 
@@ -753,6 +728,7 @@ def _recursive_search(
         call_counter = [0]
 
     # Base case: max depth reached or single small slice
+    # Sequential: thread safety of LLM client not guaranteed; parallelization deferred pending client audit
     if depth >= max_depth or len(context_slices) <= 1:
         results = []
         for ctx_slice in context_slices:

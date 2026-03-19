@@ -65,6 +65,39 @@ MODEL_TIERS = [
     },
 ]
 
+# RLM-specific model recommendations — models that excel at code generation
+# needed for the REPL analysis step. Canonical source; imported by rlm_backend.
+RLM_MODEL_RECOMMENDATIONS = {
+    "ollama": [
+        {
+            "min_ram": 32,
+            "name": "qwen2.5-coder:32b",
+            "reason": "Best code generation for RLM analysis steps",
+        },
+        {
+            "min_ram": 16,
+            "name": "codestral:22b",
+            "reason": "Strong code generation for RLM decomposition",
+        },
+        {
+            "min_ram": 8,
+            "name": "qwen2.5-coder:7b",
+            "reason": "Efficient code generation for basic RLM queries",
+        },
+        {
+            "min_ram": 0,
+            "name": "qwen2.5-coder:1.5b",
+            "reason": "Lightweight option for simple RLM analysis",
+        },
+    ],
+    "claude": [
+        {
+            "name": "claude-sonnet-4-20250514",
+            "reason": "Recommended Claude model for RLM processing",
+        },
+    ],
+}
+
 # Tasks suitable for local model offloading
 OFFLOADABLE_TASKS = [
     "generate-boilerplate",

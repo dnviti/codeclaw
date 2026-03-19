@@ -161,6 +161,8 @@ class ExecutionResult:
 def validate_code(code: str) -> tuple[bool, str]:
     """Validate analysis code for safety before execution.
 
+    Uses string-pattern checks plus AST-based analysis as a secondary layer.
+
     Args:
         code: Python code string to validate.
 
@@ -174,6 +176,40 @@ def validate_code(code: str) -> tuple[bool, str]:
     # Check for excessive length (likely prompt injection)
     if len(code) > 50000:
         return False, "Code exceeds maximum allowed length (50000 chars)"
+
+    # AST-based secondary validation: catches obfuscated patterns that string
+    # matching may miss (e.g. getattr via variable, indirect __import__)
+    import ast
+    try:
+        tree = ast.parse(code)
+    except SyntaxError as e:
+        return False, f"Code has syntax errors: {e}"
+
+    for node in ast.walk(tree):
+        # Block Import / ImportFrom for disallowed modules
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                top = alias.name.split(".")[0]
+                if top not in SAFE_MODULES:
+                    return False, f"AST: disallowed import '{alias.name}'"
+        elif isinstance(node, ast.ImportFrom):
+            if node.module:
+                top = node.module.split(".")[0]
+                if top not in SAFE_MODULES:
+                    return False, f"AST: disallowed import from '{node.module}'"
+        # Block calls to dangerous built-ins (eval, exec, compile, open, __import__)
+        elif isinstance(node, ast.Call):
+            func = node.func
+            if isinstance(func, ast.Name) and func.id in (
+                "eval", "exec", "compile", "open", "__import__",
+                "breakpoint", "exit", "quit",
+            ):
+                return False, f"AST: disallowed call to '{func.id}'"
+        # Block attribute access to dunder internals used for sandbox escapes
+        elif isinstance(node, ast.Attribute):
+            if node.attr in ("__subclasses__", "__bases__", "__class__",
+                             "__import__", "__builtins__"):
+                return False, f"AST: disallowed attribute access '{node.attr}'"
 
     return True, ""
 
@@ -355,6 +391,7 @@ def build_analysis_prompt(query: str, context_summary: dict) -> str:
     Returns:
         Prompt string for the LLM to generate Python analysis code.
     """
+    # Prompt injection: inherent to LLM-in-the-loop; mitigated by sandbox validation of generated code
     return textwrap.dedent(f"""\
         You are analyzing a codebase context. Write Python code to answer the
         following query. Use the provided helper functions.
