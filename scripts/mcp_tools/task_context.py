@@ -182,11 +182,11 @@ def _semantic_search_by_description(task_info: dict | None, root: str) -> list[d
                         "chunk_type": entry.get("chunk_type", ""),
                         "name": entry.get("name", ""),
                         "language": entry.get("language", ""),
-                        "content": entry.get("content", "")[:300],
                     }
             return sorted(seen.values(), key=lambda x: x.get("score", 999))
-    except Exception:
-        pass
+    except Exception as exc:
+        print(f"[task_context] description-based semantic search failed: {exc}",
+              file=sys.stderr)
     return []
 
 

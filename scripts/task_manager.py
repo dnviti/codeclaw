@@ -781,6 +781,15 @@ def cmd_verify_files(args):
 
 # ── Subcommand: semantic-explore ─────────────────────────────────────────────
 
+def _sanitize_query(text: str) -> str:
+    """Strip control characters from query text to avoid downstream issues."""
+    import unicodedata
+    return "".join(
+        ch for ch in text
+        if unicodedata.category(ch)[0] != "C" or ch in ("\n", "\t")
+    )
+
+
 def semantic_explore(task_code: str, root: Path) -> dict:
     """Explore the codebase semantically for a task.
 
@@ -805,6 +814,16 @@ def semantic_explore(task_code: str, root: Path) -> dict:
         "files_involved": [],
         "skipped_reason": None,
     }
+
+    # Validate task code format
+    if not TASK_CODE_RE.search(task_code):
+        result["skipped_reason"] = f"Invalid task code format: {task_code!r}"
+        return result
+
+    # Early-return if vector_memory.py is not available
+    if not vm_script.exists():
+        result["skipped_reason"] = "vector_memory.py not found"
+        return result
 
     # --- 1. Parse task description ---
     block, _fname = find_block_in_all(root, task_code, TASK_FILES)
@@ -848,8 +867,8 @@ def semantic_explore(task_code: str, root: Path) -> dict:
         result["skipped_reason"] = f"Could not find task {task_code} or extract description"
         return result
 
-    # Build the search query from title + description (truncated for embedding)
-    query = f"{title} {description}".strip()
+    # Build the search query from title + description (sanitized and truncated)
+    query = _sanitize_query(f"{title} {description}".strip())
     # Limit query length to avoid excessively long embeddings
     if len(query) > 1000:
         query = query[:1000]
@@ -857,9 +876,6 @@ def semantic_explore(task_code: str, root: Path) -> dict:
     result["files_involved"] = files_involved
 
     # --- 2. Run semantic search ---
-    if not vm_script.exists():
-        result["skipped_reason"] = "vector_memory.py not found"
-        return result
 
     try:
         search_result = subprocess.run(
@@ -877,7 +893,7 @@ def semantic_explore(task_code: str, root: Path) -> dict:
         if search_result.returncode != 0:
             stderr = search_result.stderr.strip()
             if "No vector index found" in stderr or "Error" in stderr:
-                result["skipped_reason"] = f"Vector index unavailable: {stderr}"
+                result["skipped_reason"] = "Vector index unavailable"
             else:
                 result["skipped_reason"] = f"Search failed (exit {search_result.returncode})"
             return result
@@ -886,8 +902,8 @@ def semantic_explore(task_code: str, root: Path) -> dict:
     except subprocess.TimeoutExpired:
         result["skipped_reason"] = "Semantic search timed out"
         return result
-    except (json.JSONDecodeError, Exception) as exc:
-        result["skipped_reason"] = f"Failed to parse search results: {exc}"
+    except (json.JSONDecodeError, Exception):
+        result["skipped_reason"] = "Failed to parse search results"
         return result
 
     # --- 3. Filter and deduplicate ---
@@ -921,15 +937,12 @@ def semantic_explore(task_code: str, root: Path) -> dict:
 
 
 def _get_repo_slug() -> str:
-    """Return 'owner/repo' slug from git remote or config."""
+    """Return 'owner/repo' slug from platform config or git remote."""
     try:
         cfg = _load_platform_config()
-        repo_url = cfg.get("repo_url", "")
-        if repo_url:
-            # Extract owner/repo from URL
-            m = re.search(r"github\.com[/:]([^/]+/[^/.]+)", repo_url)
-            if m:
-                return m.group(1)
+        repo = cfg.get("repo", "")
+        if repo:
+            return repo
     except Exception:
         pass
     try:
