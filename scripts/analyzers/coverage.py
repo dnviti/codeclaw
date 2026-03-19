@@ -261,7 +261,13 @@ def compare_snapshots(old: dict, new: dict) -> dict:
 # ── Core: report ──────────────────────────────────────────────────────────────
 
 def generate_report(manifest: dict) -> str:
-    """Generate a human-readable Markdown coverage report from a manifest."""
+    """Generate a human-readable Markdown coverage report from a manifest.
+
+    If the manifest contains a ``semantic_risks`` section (populated by
+    semantic gap analysis), it is included as an additional section in the
+    report highlighting high-risk untested code paths discovered via vector
+    memory semantic search.
+    """
     lines: list[str] = []
     summary = manifest.get("summary", {})
     ts = manifest.get("timestamp", "unknown")
@@ -293,6 +299,39 @@ def generate_report(manifest: dict) -> str:
                 f"| {entry.get('functions', 0)} |"
             )
         lines.append("")
+
+    # Semantic risks section (from vector memory gap analysis)
+    semantic_risks = manifest.get("semantic_risks", [])
+    if semantic_risks:
+        lines.append("## Semantic Risk Analysis\n")
+        lines.append(
+            "> High-risk untested code paths discovered via semantic search. "
+            "These are source code sections matching critical patterns "
+            "(validation, auth, error handling, etc.) that have no "
+            "corresponding test file.\n"
+        )
+        lines.append("| File | Symbol | Category | Lines |")
+        lines.append("| --- | --- | --- | --- |")
+        for risk in semantic_risks[:30]:
+            lines.append(
+                f"| {risk.get('file_path', '')} "
+                f"| {risk.get('name', '')} "
+                f"| {risk.get('category', '')} "
+                f"| {risk.get('start_line', 0)}-{risk.get('end_line', 0)} |"
+            )
+        lines.append("")
+
+        # Category summary
+        categories: dict[str, int] = {}
+        for risk in semantic_risks:
+            cat = risk.get("category", "other")
+            categories[cat] = categories.get(cat, 0) + 1
+        if categories:
+            lines.append("### Risk Categories\n")
+            for cat, count in sorted(categories.items(),
+                                     key=lambda x: -x[1]):
+                lines.append(f"- **{cat}:** {count} untested path(s)")
+            lines.append("")
 
     # Covered files table
     covered = [f for f in files if f.get("test_file")]
