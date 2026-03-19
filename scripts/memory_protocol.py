@@ -595,12 +595,19 @@ class MemoryProtocol:
 
     Integrates session management, entry tagging, locking, conflict
     detection, and versioned reads into a single interface.
+
+    The optional ``lock_backend`` parameter accepts a lock backend
+    configuration dict (with keys like ``type``, ``sqlite_path``,
+    ``redis_url``, etc.) that is forwarded to ``memory_lock.create_lock()``
+    for session-level locking. When not provided, locking is handled
+    externally by callers (e.g., ``vector_memory.py``).
     """
 
-    def __init__(self, root: Path):
+    def __init__(self, root: Path, lock_backend: Optional[dict] = None):
         self.root = root
         self.registry = SessionRegistry(root)
         self.resolver = ConflictResolver(root)
+        self.lock_backend_config = lock_backend or {}
 
     def register_agent(
         self,
@@ -676,6 +683,32 @@ class MemoryProtocol:
 
         return tagged, conflicts
 
+    def create_session_lock(self, store_path, agent_id: str = "", session_id: str = ""):
+        """Create a MemoryLock using the configured lock backend.
+
+        Returns a MemoryLock instance configured with the backend specified
+        in ``self.lock_backend_config``, or None if memory_lock is unavailable.
+        """
+        try:
+            from memory_lock import create_lock
+        except ImportError:
+            return None
+
+        backend_type = self.lock_backend_config.get("type", "file")
+        timeout = self.lock_backend_config.get("timeout", 30)
+
+        return create_lock(
+            backend_name=backend_type,
+            store_path=store_path,
+            agent_id=agent_id,
+            session_id=session_id,
+            timeout=timeout,
+            sqlite_path=self.lock_backend_config.get("sqlite_path"),
+            redis_url=self.lock_backend_config.get("redis_url", "redis://localhost:6379"),
+            redis_key_prefix=self.lock_backend_config.get("redis_key_prefix", "ctdf:"),
+            auto_renew_interval=self.lock_backend_config.get("auto_renew_interval", 10),
+        )
+
     def get_status(self) -> dict:
         """Return protocol status: active agents, pending conflicts."""
         active = self.registry.list_sessions(status="active")
@@ -694,6 +727,7 @@ class MemoryProtocol:
             ],
             "pending_conflicts": len(pending),
             "conflicts": pending[:10],  # Cap at 10 for summary
+            "lock_backend": self.lock_backend_config.get("type", "file"),
         }
 
     def gc_sessions(

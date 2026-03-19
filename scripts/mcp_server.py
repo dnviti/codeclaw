@@ -118,10 +118,50 @@ def _list_namespaces(root_path: Path) -> list[str]:
 
 # ── Server Setup ─────────────────────────────────────────────────────────────
 
+def _load_lock_backend_config(root: str) -> dict:
+    """Load the lock_backend configuration from project-config.json.
+
+    Returns the lock_backend section with defaults applied.
+    Falls back gracefully if the config file is missing or malformed.
+    """
+    config_paths = [
+        Path(root).resolve() / ".claude" / "project-config.json",
+        Path(root).resolve() / "config" / "project-config.json",
+    ]
+    for cp in config_paths:
+        if cp.exists():
+            try:
+                data = json.loads(cp.read_text(encoding="utf-8"))
+                vm_cfg = data.get("vector_memory", {})
+                lb_cfg = vm_cfg.get("lock_backend", {})
+                return {
+                    "type": lb_cfg.get("type", "file"),
+                    "sqlite_path": lb_cfg.get(
+                        "sqlite_path", ".claude/memory/locks/lock.db"
+                    ),
+                    "redis_url": lb_cfg.get(
+                        "redis_url", "redis://localhost:6379"
+                    ),
+                    "redis_key_prefix": lb_cfg.get(
+                        "redis_key_prefix", "ctdf:"
+                    ),
+                    "timeout": lb_cfg.get("timeout", 30),
+                    "auto_renew_interval": lb_cfg.get(
+                        "auto_renew_interval", 10
+                    ),
+                }
+            except (json.JSONDecodeError, OSError):
+                pass
+    return {"type": "file", "timeout": 30}
+
+
 def create_server(root: str = "."):
     """Create and configure the MCP server instance.
 
     Returns the ``FastMCP`` object ready for ``run()``.
+
+    Loads the lock backend configuration and passes it to the
+    server context so tool handlers can access it.
 
     When ``vector_memory.enabled`` is ``false`` in the project config, the
     server starts without registering vector memory tools (index_repository,
@@ -132,6 +172,12 @@ def create_server(root: str = "."):
     from mcp.server.fastmcp import FastMCP
 
     server = FastMCP("claw-vector-memory")
+
+    # Load lock backend config for tool handlers
+    lock_backend_config = _load_lock_backend_config(root)
+
+    # Store config in environment for subprocess-based tools
+    os.environ.setdefault("CTDF_LOCK_BACKEND_TYPE", lock_backend_config.get("type", "file"))
 
     # ── Conditionally register vector memory tools ──
     vm_enabled = is_enabled(root)
@@ -148,7 +194,9 @@ def create_server(root: str = "."):
     @server.resource("memory://status")
     async def resource_status() -> str:
         """Current vector memory index status and available namespaces."""
-        return json.dumps(_build_status(root), indent=2)
+        status = _build_status(root)
+        status["lock_backend"] = lock_backend_config.get("type", "file")
+        return json.dumps(status, indent=2)
 
     return server
 
