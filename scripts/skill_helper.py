@@ -1231,6 +1231,41 @@ def _is_worktree_enabled(root: Path) -> bool:
     return False
 
 
+def _get_active_release_version(root: Path) -> str | None:
+    """Query the active release version from release-state.json.
+
+    Returns the version string (e.g. '4.0.2') if an active release exists,
+    or None if no release state is found.
+    """
+    state_file = root / ".claude" / "release-state.json"
+    if state_file.exists():
+        try:
+            data = json.loads(state_file.read_text(encoding="utf-8"))
+            version = data.get("version", "")
+            if version:
+                return version
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    # Fallback: try running release_manager.py release-state-get
+    try:
+        result = subprocess.run(
+            [sys.executable, str(_SCRIPT_DIR / "release_manager.py"), "release-state-get"],
+            capture_output=True, text=True, timeout=15,
+            cwd=str(root),
+        )
+        if result.returncode == 0:
+            data = json.loads(result.stdout.strip())
+            version = data.get("version", "")
+            if version and "error" not in data:
+                return version
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired,
+            json.JSONDecodeError, FileNotFoundError, OSError):
+        pass
+
+    return None
+
+
 def cmd_setup_task_worktree(args) -> dict:
     """Consolidate 5-step worktree creation into one command.
 
@@ -1247,9 +1282,16 @@ def cmd_setup_task_worktree(args) -> dict:
 
     # [BETA] Check if worktree isolation is enabled in project config
     if not _is_worktree_enabled(root):
-        # Fallback: standard branch switching
-        code_lower = task_code.lower()
-        branch_name = f"task/{code_lower}"
+        # Fallback: use shared release/<version> branch for all tasks
+        # Query active release to determine the release branch name
+        release_version = _get_active_release_version(root)
+        if not release_version:
+            return {
+                "success": False,
+                "error": "No active release. Run /release create X.X.X first.",
+            }
+
+        branch_name = f"release/{release_version}"
 
         # Fetch latest base branch
         git_run("fetch", "origin", base_branch, cwd=str(root))
@@ -1285,6 +1327,7 @@ def cmd_setup_task_worktree(args) -> dict:
             "created": not branch_exists,
             "reused_existing": branch_exists,
             "worktree_mode": False,
+            "release_version": release_version,
         }
     code_lower = task_code.lower()
     branch_name = f"task/{code_lower}"

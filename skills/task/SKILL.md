@@ -123,7 +123,12 @@ If the task has **no release assigned**:
 SH setup-task-worktree --task-code <CODE> --base-branch <DEVELOPMENT_BRANCH>
 ```
 
-If `reused_existing`, inform user. Change working directory to `worktree_dir`. Inform: worktree path, branch, base branch, main repo root. All subsequent steps operate within the worktree.
+**Branching behavior depends on worktree config:**
+
+- **Worktrees enabled (`worktrees.enabled: true`):** Creates an isolated git worktree at `.worktrees/task/<code>/` with a dedicated `task/<code>` branch. Each task gets its own branch.
+- **Worktrees disabled (default):** All tasks for the current release share a single `release/<version>` branch (e.g., `release/4.0.2`). The command queries the active release from `release-state.json` and checks out (or creates) the shared release branch. **If no active release exists, the setup aborts** with: "No active release. Run /release create X.X.X first." — inform the user and stop.
+
+If `reused_existing`, inform user. Change working directory to `worktree_dir`. Inform: worktree path, branch, base branch, main repo root. All subsequent steps operate within the worktree (or the shared release branch when worktrees are disabled).
 
 #### Step 3: Read the full task details
 
@@ -268,7 +273,8 @@ Inform: "Task [TASK-CODE] has been closed."
 
 `TM remove-worktree --task-code <CODE>`
 
-Inform: "Worktree removed. Branch preserved for PR. Use `/task continue [TASK-CODE]` to re-enter."
+- **Worktrees enabled:** Removes the worktree directory. Branch preserved for PR. Inform: "Worktree removed. Branch preserved for PR. Use `/task continue [TASK-CODE]` to re-enter."
+- **Worktrees disabled:** The shared `release/<version>` branch is **not deleted** (it is shared across all tasks in the release and must persist until the release pipeline merges it). Inform: "Task closed. Shared release branch preserved for remaining tasks."
 
 **6d. Ask to commit:**
 
