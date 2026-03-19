@@ -235,8 +235,7 @@ def _detect_gpu_hardware() -> tuple:
             capture_output=True, text=True, timeout=10,
         )
         if result.returncode == 0 and result.stdout.strip():
-            import json as _json
-            data = _json.loads(result.stdout)
+            data = json.loads(result.stdout)
             total_bytes = 0
             for card_key, card_data in data.items():
                 if isinstance(card_data, dict):
@@ -245,7 +244,7 @@ def _detect_gpu_hardware() -> tuple:
                         total_bytes += total_val
             if total_bytes > 0:
                 return "amd", round(total_bytes / (1024 ** 3), 1)
-    except (OSError, subprocess.TimeoutExpired, ValueError):
+    except (OSError, subprocess.TimeoutExpired, json.JSONDecodeError):
         pass
 
     # Check Apple Silicon (unified memory)
