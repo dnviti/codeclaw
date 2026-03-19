@@ -257,7 +257,9 @@ STOP.
 
 **Step 3 — Accept New Values:**
 
-For each selected field, present the current value and ask for the new value. For multi-line fields (Description, Motivation), accept the full replacement text.
+For each selected field, present the current value and ask for the new value. Validate inputs before proceeding:
+- **Category:** Must be a recognized category from the project's idea taxonomy. Reject freeform values and re-prompt.
+- **Multi-line fields** (Description, Motivation): Accept the full replacement text. Warn if content exceeds 4000 characters (platform API limits).
 
 **Step 4 — Confirm Changes:**
 

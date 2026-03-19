@@ -663,11 +663,20 @@ STOP.
 
 **7.** Apply changes:
 
+For **status** changes:
 ```bash
 RM release-plan-set-status --version X.X.X --status <new_status>
 ```
 
-For theme and target date, update via `gh api PATCH /repos/{owner}/{repo}/milestones/{milestone_number}` with the appropriate JSON payload (if `CTX.platform.enabled`). Also update local `releases.json` via `RM release-plan-set-status` or direct edit.
+For **theme** and **target date** changes (if `CTX.platform.enabled`): use `PM edit-issue` to update the milestone title and due date. If the platform manager does not support milestone-level edits, fall back to `gh api` with explicit `--field` flags to prevent shell injection:
+```bash
+gh api --method PATCH "/repos/{owner}/{repo}/milestones/{milestone_number}" \
+  --field title="<sanitized_theme>" \
+  --field due_on="<YYYY-MM-DDT00:00:00Z>"
+```
+Validate user-supplied values before applying: theme must be non-empty and under 256 characters; target date must match `YYYY-MM-DD` format. Reject or truncate values that fail validation.
+
+Also update local `releases.json` via `RM release-plan-set-status` or direct edit.
 
 **8.** Report: "Release X.X.X updated. Fields changed: [list]." Include milestone URL if applicable.
 

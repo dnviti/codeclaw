@@ -690,7 +690,10 @@ STOP.
 
 #### Step 3: Accept New Values
 
-For each selected field, present the current value and ask for the new value. For multi-line fields (Description, Technical Details), accept the full replacement text.
+For each selected field, present the current value and ask for the new value. Validate inputs before proceeding:
+- **Priority:** Must be one of `HIGH`, `MEDIUM`, or `LOW` (case-insensitive). Reject other values and re-prompt.
+- **Release:** Must match semver format `X.X.X` and exist in `RM release-plan-list`. If not found, warn and re-prompt.
+- **Multi-line fields** (Description, Technical Details): Accept the full replacement text.
 
 #### Step 4: Confirm Changes
 
