@@ -85,6 +85,9 @@
       }
     ]
   },
+  "worktrees": {
+    "enabled": false
+  },
   "ollama": {
     "enabled": true,
     "model": "qwen3.5:latest",
