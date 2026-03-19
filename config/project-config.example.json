@@ -161,5 +161,9 @@
     "enabled": false,
     "model": "",
     "offloading_level": 5
+  },
+  "worktrees": {
+    "enabled": false,
+    "_comment": "[BETA] When true, /task pick creates isolated git worktrees per task. When false (default), standard branch switching is used."
   }
 }

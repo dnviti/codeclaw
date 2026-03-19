@@ -19,6 +19,33 @@ _SAFE_NAMESPACE_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
 from mcp_tools import SCRIPTS_DIR as _SCRIPT_DIR
 
 
+def _resolve_main_repo_root(path_hint: str) -> Path:
+    """Resolve path to the main repository root (worktree-aware).
+
+    If *path_hint* is inside a git worktree, returns the main repository
+    root so that memory notes are stored in one shared location.
+    """
+    resolved = Path(path_hint).resolve()
+    try:
+        common = subprocess.run(
+            ["git", "rev-parse", "--git-common-dir"],
+            capture_output=True, text=True, check=True,
+            cwd=str(resolved),
+        ).stdout.strip()
+        git_dir = subprocess.run(
+            ["git", "rev-parse", "--git-dir"],
+            capture_output=True, text=True, check=True,
+            cwd=str(resolved),
+        ).stdout.strip()
+        common_path = Path(common).resolve()
+        git_dir_path = Path(git_dir).resolve()
+        if common_path != git_dir_path:
+            return common_path.parent
+        return git_dir_path.parent
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        return resolved
+
+
 def register(server):
     """Register the store_memory tool on *server*."""
 
@@ -55,7 +82,8 @@ def register(server):
                            f"hyphens, and underscores.",
             })
 
-        root_path = Path(root).resolve()
+        # Resolve to main repo root (worktree-aware)
+        root_path = _resolve_main_repo_root(root)
         notes_dir = root_path / ".claude" / "memory" / "notes" / namespace
         # Verify resolved path stays within expected directory
         expected_base = root_path / ".claude" / "memory" / "notes"

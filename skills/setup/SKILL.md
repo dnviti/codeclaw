@@ -195,6 +195,26 @@ STOP.
 
 Store the preference. If "Full pipeline", ensure branch strategy includes staging.
 
+### Step 8.5: Worktree-Based Task Isolation [BETA] (Optional)
+
+Use `AskUserQuestion`:
+- **"Yes, enable worktree-based task isolation [BETA]"** — each `/task pick` creates an isolated git worktree
+- **"No, use standard branch switching (default)"** — `/task pick` uses `git checkout` (recommended for most projects)
+
+STOP.
+
+**If "Yes":**
+1. Ensure `.claude/project-config.json` exists (copy from example if not).
+2. Set `worktrees.enabled = true` in `.claude/project-config.json`.
+3. Add `.worktrees/` to `.gitignore` if not already present.
+4. Inform: "Worktree isolation enabled. Each task will get its own directory under `.worktrees/task/<code>/`. This is a [BETA] feature — you can disable it later by setting `worktrees.enabled` to `false` in `.claude/project-config.json`."
+
+**If "No":**
+1. Ensure `.claude/project-config.json` exists (copy from example if not).
+2. Set `worktrees.enabled = false` in `.claude/project-config.json` (this is the default).
+
+Then return here for Step 9.
+
 ### Step 9: Agentic Fleet (Optional)
 
 Use `AskUserQuestion`:

@@ -34,6 +34,9 @@ if str(_SCRIPT_DIR) not in sys.path:
 
 # ── Constants ────────────────────────────────────────────────────────────────
 
+# Relative paths — callers must resolve against the *main* repository root
+# (not a worktree root) via get_main_repo_root() or _find_project_root()
+# so that sessions and conflicts are shared across all worktrees.
 DEFAULT_SESSIONS_DIR = ".claude/memory/sessions"
 DEFAULT_CONFLICTS_DIR = ".claude/memory/conflicts"
 

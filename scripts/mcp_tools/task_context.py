@@ -24,13 +24,40 @@ STATUS_MAP = {"[ ]": "todo", "[~]": "progressing", "[x]": "done", "[!]": "blocke
 
 
 def _find_project_root(root_hint: str) -> Path:
-    """Resolve project root."""
-    p = Path(root_hint).resolve()
+    """Resolve project root, following git worktrees to the main repo.
+
+    Uses ``git rev-parse --git-common-dir`` vs ``--git-dir`` to detect if
+    the resolved hint is inside a worktree, returning the main repository
+    root so that task files and memory storage are shared across worktrees.
+    """
+    import subprocess as _sp
+    hint = Path(root_hint).resolve()
+    try:
+        common = _sp.run(
+            ["git", "rev-parse", "--git-common-dir"],
+            capture_output=True, text=True, check=True,
+            cwd=str(hint),
+        ).stdout.strip()
+        git_dir = _sp.run(
+            ["git", "rev-parse", "--git-dir"],
+            capture_output=True, text=True, check=True,
+            cwd=str(hint),
+        ).stdout.strip()
+        common_path = Path(common).resolve()
+        git_dir_path = Path(git_dir).resolve()
+        if common_path != git_dir_path:
+            return common_path.parent
+        return git_dir_path.parent
+    except (FileNotFoundError, _sp.CalledProcessError):
+        pass
+
+    # Fallback: walk up from the hint directory
+    p = hint
     while p != p.parent:
         if (p / ".claude").is_dir() or (p / ".git").exists():
             return p
         p = p.parent
-    return Path(root_hint).resolve()
+    return hint
 
 
 def _parse_task_from_files(root: Path, task_id: str) -> dict | None:
