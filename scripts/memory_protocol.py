@@ -76,6 +76,7 @@ class AgentSession:
         self.ended_at: Optional[float] = None
         self.status = "active"
         self.entries_written = 0
+        self.events_appended = 0
         self.conflicts_detected = 0
 
     def to_dict(self) -> dict:
@@ -91,6 +92,7 @@ class AgentSession:
             "status": self.status,
             "pid": os.getpid(),
             "entries_written": self.entries_written,
+            "events_appended": self.events_appended,
             "conflicts_detected": self.conflicts_detected,
         }
 
@@ -118,6 +120,7 @@ class AgentSession:
         session.ended_at = data.get("ended_at")
         session.status = data.get("status", "active")
         session.entries_written = data.get("entries_written", 0)
+        session.events_appended = data.get("events_appended", 0)
         session.conflicts_detected = data.get("conflicts_detected", 0)
         return session
 

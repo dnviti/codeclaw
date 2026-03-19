@@ -1051,6 +1051,134 @@ def query_ollama_with_tools(
     }
 
 
+# ── RLM Support ────────────────────────────────────────────────────────────
+
+# RLM-specific model recommendations — models that excel at code generation
+# for the REPL analysis step in recursive context processing.
+RLM_MODEL_RECOMMENDATIONS = [
+    {
+        "min_ram": 32,
+        "name": "qwen2.5-coder:32b",
+        "reason": "Best code generation for RLM analysis steps",
+        "capabilities": ["rlm-decompose", "rlm-analyze", "rlm-aggregate"],
+    },
+    {
+        "min_ram": 16,
+        "name": "codestral:22b",
+        "reason": "Strong code generation for RLM decomposition",
+        "capabilities": ["rlm-decompose", "rlm-analyze"],
+    },
+    {
+        "min_ram": 8,
+        "name": "qwen2.5-coder:7b",
+        "reason": "Efficient code generation for basic RLM queries",
+        "capabilities": ["rlm-analyze"],
+    },
+    {
+        "min_ram": 0,
+        "name": "qwen2.5-coder:1.5b",
+        "reason": "Lightweight option for simple RLM analysis",
+        "capabilities": ["rlm-analyze"],
+    },
+]
+
+
+def recommend_rlm_model(ram_gb: float = 0.0, vram_gb: float = 0.0) -> dict:
+    """Recommend an Ollama model for RLM recursive context processing.
+
+    RLM processing requires strong code generation capabilities since
+    the model generates Python analysis code for the REPL executor.
+
+    Args:
+        ram_gb: Available system RAM in GB (auto-detected if 0).
+        vram_gb: Available GPU VRAM in GB.
+
+    Returns:
+        Dict with recommended model name and details.
+    """
+    if ram_gb <= 0:
+        ram_gb = _get_ram_gb()
+    if vram_gb <= 0:
+        hw = detect_hardware()
+        vram_gb = hw.get("vram_gb", 0.0)
+
+    effective_memory = max(ram_gb, vram_gb) if vram_gb > 0 else ram_gb
+
+    for rec in RLM_MODEL_RECOMMENDATIONS:
+        if effective_memory >= rec["min_ram"]:
+            return {
+                "model": rec["name"],
+                "reason": rec["reason"],
+                "capabilities": rec["capabilities"],
+                "effective_memory_gb": effective_memory,
+            }
+
+    return {
+        "model": RLM_MODEL_RECOMMENDATIONS[-1]["name"],
+        "reason": RLM_MODEL_RECOMMENDATIONS[-1]["reason"],
+        "capabilities": RLM_MODEL_RECOMMENDATIONS[-1]["capabilities"],
+        "effective_memory_gb": effective_memory,
+    }
+
+
+def query_with_tools(
+    model: str,
+    prompt: str,
+    context: str | None = None,
+    tools: list[dict] | None = None,
+    temperature: float = 0.1,
+    max_tokens: int = 4096,
+    max_tool_rounds: int = 10,
+) -> dict:
+    """Send a tool-augmented query with optional context for RLM decomposition.
+
+    Wraps query_ollama_with_tools with context injection. The context is
+    prepended to the user prompt as structured data, enabling the model to
+    reference it during tool-assisted analysis.
+
+    This is the primary interface for RLM-style recursive processing where
+    the model needs to generate code or invoke tools to analyze context.
+
+    Args:
+        model: The Ollama model name to query.
+        prompt: The user prompt / analysis instruction.
+        context: Optional context string to include with the prompt.
+        tools: Tool definitions (defaults to OLLAMA_TOOLS).
+        temperature: Sampling temperature.
+        max_tokens: Maximum tokens per response.
+        max_tool_rounds: Maximum tool-calling round trips.
+
+    Returns:
+        Dict with 'success', 'response', 'tool_rounds', and optional 'error'.
+    """
+    # Build message with context injection
+    if context:
+        full_prompt = (
+            f"<context>\n{context}\n</context>\n\n"
+            f"<instruction>\n{prompt}\n</instruction>"
+        )
+    else:
+        full_prompt = prompt
+
+    messages = [{"role": "user", "content": full_prompt}]
+
+    system_prompt = (
+        "You are an RLM (Recursive Language Model) analysis agent. "
+        "You analyze code and context by generating precise Python code "
+        "and using tools. Be concise and focus on the query."
+    )
+
+    return query_ollama_with_tools(
+        model=model,
+        messages=messages,
+        tools=tools,
+        system_prompt=system_prompt,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        max_tool_rounds=max_tool_rounds,
+    )
+
+
 # ── Health Check ────────────────────────────────────────────────────────────
 
 def health_check(expected_model: str | None = None) -> dict:

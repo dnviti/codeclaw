@@ -839,9 +839,76 @@ class MemoryLock:
     def force_release(self):
         """Force-release a stale lock (e.g., from a crashed agent).
 
-        Use with caution — only when certain the holding agent is dead.
+        Use with caution -- only when certain the holding agent is dead.
         """
         self._backend.force_release()
+
+
+# ── EventLock ────────────────────────────────────────────────────────────────
+
+class EventLock:
+    """Lock strategy for event-sourced memory writes.
+
+    Agents use ``EventLock.append()`` (no lock) for writing events to the
+    append-only log, and ``EventLock.compact()`` (exclusive lock) for merging
+    events into the vector store.  This replaces the per-write exclusive
+    locking of ``MemoryLock`` with optimistic concurrency -- multiple agents
+    can write simultaneously without blocking.
+
+    Usage::
+
+        elock = EventLock(store_path, agent_id="agent-001")
+
+        with elock.append():
+            # ... append events to the log -- no lock held ...
+
+        with elock.compact():
+            # ... exclusive lock for merging events into the index ...
+    """
+
+    def __init__(
+        self,
+        store_path: str | Path,
+        agent_id: str = "",
+        session_id: str = "",
+        timeout: float = DEFAULT_TIMEOUT,
+        lock_dir: Optional[str | Path] = None,
+    ):
+        self.agent_id = agent_id or f"agent-{os.getpid()}"
+        self.session_id = session_id or ""
+        # Delegate to MemoryLock for actual compaction locking
+        self._memory_lock = MemoryLock(
+            store_path=store_path,
+            agent_id=self.agent_id,
+            session_id=self.session_id,
+            timeout=timeout,
+            lock_dir=lock_dir,
+        )
+
+    @contextmanager
+    def append(self):
+        """Context manager for event appends -- no lock is acquired.
+
+        Event appends are lock-free because each agent writes to its own
+        segment file using O_APPEND, which is atomic on POSIX.
+        """
+        yield
+
+    @contextmanager
+    def compact(self):
+        """Context manager for event compaction -- acquires exclusive lock.
+
+        Only one agent may compact at a time to prevent duplicate
+        application of events to the vector store.
+        """
+        with self._memory_lock.write():
+            yield
+
+    def status(self) -> dict:
+        """Return lock status for diagnostics."""
+        base = self._memory_lock.status()
+        base["lock_type"] = "event_lock"
+        return base
 
 
 # ── Backend Factory ──────────────────────────────────────────────────────────

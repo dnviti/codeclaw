@@ -54,9 +54,30 @@
       "auto_renew_interval": 10,
       "_comment": "Lock backend for multi-agent coordination. Types: file (default, single-machine), sqlite (networked filesystems), redis (distributed, requires pip install redis)"
     },
+    "backend": "lancedb",
+    "sqlite": {
+      "enabled": false,
+      "hybrid_weight_vector": 0.7,
+      "hybrid_weight_text": 0.3,
+      "db_path": ".claude/memory/sqlite/memory.db"
+    },
     "gpu_acceleration": {
       "mode": "auto",
       "log_provider": true
+    },
+    "event_sourcing": {
+      "enabled": false,
+      "compact_interval_seconds": 300,
+      "max_segment_size_mb": 10,
+      "auto_compact_on_search": true
+    },
+    "rlm": {
+      "enabled": false,
+      "provider": "ollama",
+      "max_depth": 3,
+      "max_context_mb": 10,
+      "aggregation": "map-reduce",
+      "timeout_seconds": 120
     }
   },
   "mcp_server": {
