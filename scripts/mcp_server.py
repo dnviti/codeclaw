@@ -61,8 +61,15 @@ from mcp_tools import is_enabled
 
 
 def _build_status(root: str) -> dict:
-    """Build a status dict describing the vector memory index."""
+    """Build a status dict describing the vector memory index.
+
+    Uses get_cached_config() to avoid redundant config reads when this
+    resource is polled multiple times during a server session.
+    """
+    from mcp_tools import get_cached_config
+
     root_path = Path(root).resolve()
+    cached_cfg = get_cached_config(root)
 
     # If vector memory is disabled by config, return immediately
     if not is_enabled(root):
@@ -95,9 +102,9 @@ def _build_status(root: str) -> dict:
         except Exception:
             pass
 
-    # Fallback: basic status
+    # Fallback: basic status using cached config
     return {
-        "enabled": False,
+        "enabled": cached_cfg.get("enabled", False),
         "dependencies_installed": False,
         "index_exists": False,
         "namespaces": _list_namespaces(root_path),

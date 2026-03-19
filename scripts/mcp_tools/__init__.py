@@ -10,6 +10,7 @@ Modules:
     task_context  — get_task_context tool
 """
 
+import json
 import sys
 from pathlib import Path
 
@@ -43,3 +44,40 @@ def is_enabled(root: str | Path = ".") -> bool:
     # Explicit False means disabled; anything else (True,
     # missing key, missing section) means enabled.
     return vm_cfg.get("enabled", True) is not False
+
+
+# ── Cached config reader ────────────────────────────────────────────────────
+# Avoids double config reads when multiple MCP resource/tool handlers need
+# configuration during the same server lifecycle.
+
+_config_cache: dict | None = None
+_config_cache_root: str | None = None
+
+
+def get_cached_config(root: str) -> dict:
+    """Return the vector_memory config, cached across calls for the same root.
+
+    The cache is process-scoped: once the MCP server reads config for a
+    given root, subsequent calls reuse the result without re-reading disk.
+    """
+    global _config_cache, _config_cache_root
+    resolved = str(Path(root).resolve())
+    if _config_cache is not None and _config_cache_root == resolved:
+        return _config_cache
+
+    config_paths = [
+        Path(resolved) / ".claude" / "project-config.json",
+        Path(resolved) / "config" / "project-config.json",
+    ]
+    for cp in config_paths:
+        if cp.exists():
+            try:
+                data = json.loads(cp.read_text(encoding="utf-8"))
+                _config_cache = data.get("vector_memory", {})
+                _config_cache_root = resolved
+                return _config_cache
+            except (json.JSONDecodeError, OSError):
+                pass
+    _config_cache = {}
+    _config_cache_root = resolved
+    return _config_cache

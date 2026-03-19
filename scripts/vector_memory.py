@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Vector memory layer for CodeClaw — semantic search over repository content.
+"""Vector memory layer for CTDF — semantic search over repository content.
 
 Provides an embedded vector database (LanceDB) that indexes source code,
 tasks, git history, and agent-generated documents for semantic retrieval.
@@ -34,12 +34,8 @@ import shutil
 import sys
 import time
 from contextlib import nullcontext
-from fnmatch import fnmatch
 from pathlib import Path
 from typing import Optional
-
-# Maximum allowed length for a single glob pattern (prevents pathological input)
-_MAX_GLOB_LEN = 256
 
 # Add scripts/ to path for sibling package imports
 _SCRIPT_DIR = Path(__file__).resolve().parent
@@ -53,26 +49,60 @@ from analyzers import (
 
 
 # ── Sanitization ─────────────────────────────────────────────────────────────
+# Note: helper functions below are module-level rather than class methods.
+# No @staticmethod is needed because there is no enclosing class.
+
+_SAFE_FILTER_RE = re.compile(r"^[a-zA-Z0-9_./ -]+$")
+
 
 def _sanitize_filter_value(value: str) -> str:
     """Sanitize a string value for use in LanceDB filter expressions.
 
-    Escapes single quotes and strips characters that could alter query
-    semantics, preventing filter-injection attacks (security fix S5).
-    Uses an allowlist approach: only keeps alphanumerics, basic
-    punctuation, path separators, and common filename characters.
+    Uses an allowlist regex to reject unexpected characters, then escapes
+    single quotes and strips SQL-injection markers as a defense-in-depth
+    measure.  Raises ValueError if the value contains disallowed characters.
     """
-    # Replace single quotes with escaped single quotes
+    if not _SAFE_FILTER_RE.match(value):
+        raise ValueError(
+            f"Filter value contains disallowed characters: {value!r}. "
+            f"Only alphanumerics, dots, slashes, hyphens, underscores, "
+            f"and spaces are permitted."
+        )
+    # Defense-in-depth: escape quotes and strip SQL markers even after allowlist
     sanitized = value.replace("'", "''")
-    # Remove semicolons, SQL comment markers, and other injection vectors
     sanitized = re.sub(r"[;]", "", sanitized)
     sanitized = re.sub(r"--", "", sanitized)
-    # Strip backslash sequences that could escape quotes
-    sanitized = sanitized.replace("\\", "")
-    # Only allow safe characters: alphanumeric, dots, slashes, hyphens,
-    # underscores, spaces (common in file paths and type names)
-    sanitized = re.sub(r"[^\w\s./\-]", "", sanitized)
     return sanitized
+
+
+def apply_search_filters(search_query, top_k: int,
+                         file_filter: str = "",
+                         type_filter: str = ""):
+    """Apply glob/type filters to a LanceDB search query and return a DataFrame.
+
+    Shared helper so filtering logic lives in one place.  Used by cmd_search
+    and importable by mcp_tools/search.py for in-process searches.
+
+    Args:
+        search_query: A LanceDB search builder (table.search(...)).
+        top_k: Number of results requested.
+        file_filter: Optional substring filter on file paths.
+        type_filter: Optional chunk type filter.
+
+    Returns:
+        A pandas DataFrame with the filtered results.
+    """
+    # Over-fetch 3x to compensate for post-query glob filtering; tuned empirically
+    results = search_query.limit(top_k * 3)
+
+    if file_filter:
+        safe_filter = _sanitize_filter_value(file_filter)
+        results = results.where(f"file_path LIKE '%{safe_filter}%'")
+    if type_filter:
+        safe_type = _sanitize_filter_value(type_filter)
+        results = results.where(f"chunk_type = '{safe_type}'")
+
+    return results.limit(top_k).to_pandas()
 
 
 # ── Constants ────────────────────────────────────────────────────────────────
@@ -83,7 +113,28 @@ DEFAULT_BATCH_SIZE = 64
 HASH_MANIFEST = "file_hashes.json"
 INDEX_META = "index_meta.json"
 TABLE_NAME = "chunks"
-DEFAULT_BACKEND = "lancedb"  # "lancedb" or "sqlite"
+
+# Module-level embedding provider cache (lazy singleton).
+# Avoids re-creating the provider on every search/hook call, which is
+# expensive for local ONNX models that load weights into memory.
+_cached_provider = None
+_cached_provider_key = None
+
+
+def _get_cached_provider(emb_config: dict):
+    """Return a cached embedding provider instance.
+
+    Re-creates only when the provider/model config changes.
+    """
+    global _cached_provider, _cached_provider_key
+    key = (emb_config.get("provider"), emb_config.get("model"),
+           emb_config.get("api_key_env"))
+    if _cached_provider is not None and _cached_provider_key == key:
+        return _cached_provider
+    from embeddings import create_provider
+    _cached_provider = create_provider(emb_config)
+    _cached_provider_key = key
+    return _cached_provider
 
 
 # ── Configuration ────────────────────────────────────────────────────────────
@@ -109,11 +160,8 @@ def load_config(root: Path) -> dict:
             try:
                 data = json.loads(cp.read_text(encoding="utf-8"))
                 return data.get("vector_memory", {})
-            except (json.JSONDecodeError, OSError) as exc:
-                print(
-                    f"Warning: failed to parse config {cp}: {exc}",
-                    file=sys.stderr,
-                )
+            except (json.JSONDecodeError, OSError):
+                pass
     return {}
 
 
@@ -128,11 +176,8 @@ def load_consistency_config(root: Path) -> dict:
             try:
                 data = json.loads(cp.read_text(encoding="utf-8"))
                 return data.get("memory_consistency", {})
-            except (json.JSONDecodeError, OSError) as exc:
-                print(
-                    f"Warning: failed to parse config {cp}: {exc}",
-                    file=sys.stderr,
-                )
+            except (json.JSONDecodeError, OSError):
+                pass
     return {}
 
 
@@ -143,7 +188,6 @@ def get_effective_config(root: Path) -> dict:
     to match the always-on default behavior introduced in VMEM-0024.
     """
     user_cfg = load_config(root)
-    lock_backend_cfg = user_cfg.get("lock_backend", {})
     return {
         "enabled": user_cfg.get("enabled", True),
         "auto_index": user_cfg.get("auto_index", True),
@@ -155,24 +199,6 @@ def get_effective_config(root: Path) -> dict:
         "batch_size": user_cfg.get("batch_size", DEFAULT_BATCH_SIZE),
         "include_patterns": user_cfg.get("include_patterns", []),
         "exclude_patterns": user_cfg.get("exclude_patterns", []),
-        "lock_backend": {
-            "type": lock_backend_cfg.get("type", "file"),
-            "sqlite_path": lock_backend_cfg.get(
-                "sqlite_path", ".claude/memory/locks/lock.db"
-            ),
-            "redis_url": lock_backend_cfg.get(
-                "redis_url", "redis://localhost:6379"
-            ),
-            "redis_key_prefix": lock_backend_cfg.get(
-                "redis_key_prefix", "ctdf:"
-            ),
-            "timeout": lock_backend_cfg.get("timeout", 30),
-            "auto_renew_interval": lock_backend_cfg.get(
-                "auto_renew_interval", 10
-            ),
-        },
-        "gpu_mode": user_cfg.get("gpu_acceleration", {}).get("mode", "auto"),
-        "log_provider": user_cfg.get("gpu_acceleration", {}).get("log_provider", True),
     }
 
 
@@ -185,42 +211,6 @@ def get_effective_consistency_config(root: Path) -> dict:
         "conflict_strategy": user_cfg.get("conflict_strategy", "auto"),
         "enable_versioned_reads": user_cfg.get("enable_versioned_reads", False),
     }
-
-
-def _create_configured_lock(
-    index_dir,
-    config: dict,
-    agent_id: str = "",
-    session_id: str = "",
-    timeout_override: Optional[float] = None,
-):
-    """Create a MemoryLock using the configured lock backend.
-
-    Reads the ``lock_backend`` section from the effective config and
-    delegates to ``memory_lock.create_lock()`` for backend instantiation.
-
-    Returns None if memory_lock cannot be imported.
-    """
-    try:
-        from memory_lock import create_lock
-    except ImportError:
-        return None
-
-    lock_cfg = config.get("lock_backend", {})
-    backend_type = lock_cfg.get("type", "file")
-    timeout = timeout_override if timeout_override is not None else lock_cfg.get("timeout", 30)
-
-    return create_lock(
-        backend_name=backend_type,
-        store_path=index_dir,
-        agent_id=agent_id,
-        session_id=session_id,
-        timeout=timeout,
-        sqlite_path=lock_cfg.get("sqlite_path"),
-        redis_url=lock_cfg.get("redis_url", "redis://localhost:6379"),
-        redis_key_prefix=lock_cfg.get("redis_key_prefix", "ctdf:"),
-        auto_renew_interval=lock_cfg.get("auto_renew_interval", 10),
-    )
 
 
 # ── Initialization Guard ──────────────────────────────────────────────────────
@@ -303,12 +293,6 @@ def build_hash_manifest(root: Path, gitignore_patterns: list[str],
     """Build a hash manifest of all indexable files.
 
     Returns {relative_path: content_sha256}.
-
-    All text files are included by default, including:
-    - Source code files (.py, .ts, .js, etc.)
-    - Documentation files (.md, .rst, .txt)
-    - Skill definitions (skills/*/SKILL.md)
-    - Project docs (docs/**/*.md)
     """
     manifest: dict[str, str] = {}
     exclude = set(config.get("exclude_patterns", []))
@@ -460,44 +444,14 @@ def _dir_size_mb(path: Path) -> float:
 
 # ── Index Command ────────────────────────────────────────────────────────────
 
-def _check_enabled_or_exit(root: Path, json_output: bool = False) -> dict:
-    """Check if vector memory is enabled; exit with informative message if not.
-
-    Args:
-        root: Project root path.
-        json_output: When True, print a JSON message instead of plain text.
-
-    Returns:
-        The effective configuration dict when vector memory is enabled.
-        Exits the process when disabled, so callers can use the returned
-        config directly without a redundant ``get_effective_config()`` call.
-    """
-    config = get_effective_config(root)
-    if config.get("enabled") is False:
-        msg = (
-            "Vector memory is disabled via vector_memory.enabled=false "
-            "in project-config.json. Set it to true to enable."
-        )
-        if json_output:
-            print(json.dumps({"status": "disabled_by_config", "message": msg}))
-        else:
-            print(f"Vector memory disabled: {msg}", file=sys.stderr)
-        sys.exit(0)
-    return config
-
-
 def cmd_index(args):
     """Full or incremental index of the repository.
 
     When --force-init is passed (used by setup and ensure_initialized),
     the index is always built from scratch regardless of existing state.
-
-    When event_sourcing is enabled in project config, writes go to the
-    append-only event log instead of directly to LanceDB, enabling
-    concurrent agent writes without locking.
     """
     root = Path(args.root).resolve()
-    config = _check_enabled_or_exit(root)
+    config = get_effective_config(root)
     index_dir = root / config["index_path"]
     index_dir.mkdir(parents=True, exist_ok=True)
 
@@ -515,38 +469,19 @@ def cmd_index(args):
     from chunkers import chunk_file, chunk_text_document
     from embeddings import create_provider, EmbeddingCache
 
-    # Resolve agent/session IDs once (used by both event sourcing and lock paths)
-    agent_id = os.environ.get("CTDF_AGENT_ID", f"agent-{os.getpid()}")
-    session_id = os.environ.get("CTDF_SESSION_ID", "")
-
-    # Check if event sourcing is enabled
-    use_event_sourcing = False
-    event_log = None
+    # Acquire write lock if memory_lock is available
+    lock = None
     try:
-        from memory_event_log import is_event_sourcing_enabled, create_event_log
-        from memory_event_log import create_chunk_add_event, create_chunk_remove_event
-        use_event_sourcing = is_event_sourcing_enabled(root)
-        if use_event_sourcing:
-            event_log = create_event_log(root)
+        from memory_lock import MemoryLock
+        agent_id = os.environ.get("CTDF_AGENT_ID", f"agent-{os.getpid()}")
+        session_id = os.environ.get("CTDF_SESSION_ID", "")
+        lock = MemoryLock(index_dir, agent_id=agent_id, session_id=session_id)
     except ImportError:
         pass
-
-    # Acquire write lock using configured backend (skip if event sourcing)
-    lock = None
-    if not use_event_sourcing:
-        lock = _create_configured_lock(index_dir, config, agent_id=agent_id, session_id=session_id)
-    if lock is None and not use_event_sourcing:
-        try:
-            from memory_lock import MemoryLock
-            lock = MemoryLock(index_dir, agent_id=agent_id, session_id=session_id)
-        except ImportError:
-            pass
 
     print("Vector Memory — Indexing", file=sys.stderr)
     print(f"  Root: {root}", file=sys.stderr)
     print(f"  Index: {index_dir}", file=sys.stderr)
-    if use_event_sourcing:
-        print("  Mode: event-sourced (lock-free writes)", file=sys.stderr)
 
     # Build hash manifest
     gitignore_patterns = load_gitignore_patterns(root)
@@ -576,39 +511,63 @@ def cmd_index(args):
         _save_meta(index_dir, config, len(new_manifest))
         return
 
-    # Initialize embedding provider (not needed for event sourcing writes,
-    # but still used for direct mode)
+    # Initialize embedding provider
     emb_config = {
         "provider": config["embedding_provider"],
         "model": config["embedding_model"],
         "api_key_env": config["embedding_api_key_env"],
-        "gpu_mode": config.get("gpu_mode", "auto"),
-        "log_provider": config.get("log_provider", True),
     }
+    provider = create_provider(emb_config)
+    cache = EmbeddingCache(index_dir / "embedding_cache")
 
-    start_time = time.time()
-    total_chunks = 0
+    print(f"  Embedding: {provider.model_name()} "
+          f"(dim={provider.dimension()})", file=sys.stderr)
 
-    if use_event_sourcing and event_log is not None:
-        # ── Event-sourced path: append events to log (no lock needed) ──
+    # Perform writes under lock if available
+    _ctx = lock.write() if lock else nullcontext()
+    with _ctx:
+        # Open vector DB
+        db = _open_db(index_dir)
+        table = _get_or_create_table(db, provider.dimension())
 
-        # Emit chunk_remove events for removed/modified files
-        for fp in files_to_remove:
-            ev = create_chunk_remove_event(agent_id, session_id, fp)
-            event_log.append(ev)
+        # Remove stale entries
+        if files_to_remove:
+            for fp in files_to_remove:
+                try:
+                    table.delete(f"file_path = '{_sanitize_filter_value(fp)}'")
+                except Exception:
+                    pass
 
+        # Remove entries for modified files (will be re-added)
         if not force_full:
             for fp in files_to_index:
-                ev = create_chunk_remove_event(agent_id, session_id, fp)
-                event_log.append(ev)
+                try:
+                    table.delete(f"file_path = '{_sanitize_filter_value(fp)}'")
+                except Exception:
+                    pass
+        else:
+            # Full rebuild: drop and recreate
+            try:
+                db.drop_table(TABLE_NAME)
+            except Exception:
+                pass
+            table = _get_or_create_table(db, provider.dimension())
 
-        # Chunk files and emit chunk_add events
+        # Chunk and embed files
+        total_chunks = 0
+        batch_size = config.get("batch_size", DEFAULT_BATCH_SIZE)
+        start_time = time.time()
+
+        pending_records: list[dict] = []
+        pending_texts: list[str] = []
+
         for i, rel_path in enumerate(files_to_index):
             fpath = root / rel_path
             content = read_file_safe(fpath)
             if not content:
                 continue
 
+            # Chunk the file
             ext = fpath.suffix.lower()
             if ext in {".md", ".txt", ".rst"}:
                 chunks = chunk_text_document(rel_path, content,
@@ -618,7 +577,7 @@ def cmd_index(args):
                                     max_chunk_size=config["chunk_size"])
 
             for chunk in chunks:
-                ev = create_chunk_add_event(agent_id, session_id, {
+                record = {
                     "content": chunk.content,
                     "file_path": chunk.file_path,
                     "chunk_type": chunk.chunk_type,
@@ -628,113 +587,26 @@ def cmd_index(args):
                     "language": chunk.language,
                     "file_role": chunk.file_role,
                     "content_hash": chunk.content_hash,
-                })
-                event_log.append(ev)
+                }
+                pending_records.append(record)
+                pending_texts.append(chunk.content)
                 total_chunks += 1
 
+            # Flush batch
+            if len(pending_texts) >= batch_size:
+                _flush_batch(table, provider, cache, pending_records,
+                             pending_texts)
+                pending_records = []
+                pending_texts = []
+
+            # Progress
             if (i + 1) % 50 == 0:
-                print(f"    Logged {i + 1}/{len(files_to_index)} files...",
+                print(f"    Indexed {i + 1}/{len(files_to_index)} files...",
                       file=sys.stderr, flush=True)
 
-        # Update session events_appended counter if available
-        try:
-            from memory_protocol import SessionRegistry
-            if session_id:
-                registry = SessionRegistry(root)
-                session_obj = registry.get_session(session_id)
-                if session_obj:
-                    session_obj.events_appended += total_chunks
-                    registry.register(session_obj)
-        except ImportError:
-            pass
-
-    else:
-        # ── Direct path: write to LanceDB under lock ──
-
-        provider = create_provider(emb_config)
-        cache = EmbeddingCache(index_dir / "embedding_cache")
-
-        print(f"  Embedding: {provider.model_name()} "
-              f"(dim={provider.dimension()})", file=sys.stderr)
-
-        _ctx = lock.write() if lock else nullcontext()
-        with _ctx:
-            db = _open_db(index_dir)
-            table = _get_or_create_table(db, provider.dimension())
-
-            # Remove stale entries
-            if files_to_remove:
-                for fp in files_to_remove:
-                    try:
-                        table.delete(f"file_path = '{_sanitize_filter_value(fp)}'")
-                    except Exception:
-                        pass
-
-            # Remove entries for modified files (will be re-added)
-            if not force_full:
-                for fp in files_to_index:
-                    try:
-                        table.delete(f"file_path = '{_sanitize_filter_value(fp)}'")
-                    except Exception:
-                        pass
-            else:
-                # Full rebuild: drop and recreate
-                try:
-                    db.drop_table(TABLE_NAME)
-                except Exception:
-                    pass
-                table = _get_or_create_table(db, provider.dimension())
-
-            # Chunk and embed files
-            batch_size = config.get("batch_size", DEFAULT_BATCH_SIZE)
-            pending_records: list[dict] = []
-            pending_texts: list[str] = []
-
-            for i, rel_path in enumerate(files_to_index):
-                fpath = root / rel_path
-                content = read_file_safe(fpath)
-                if not content:
-                    continue
-
-                ext = fpath.suffix.lower()
-                if ext in {".md", ".txt", ".rst"}:
-                    chunks = chunk_text_document(rel_path, content,
-                                                 max_chunk_size=config["chunk_size"])
-                else:
-                    chunks = chunk_file(rel_path, content,
-                                        max_chunk_size=config["chunk_size"])
-
-                for chunk in chunks:
-                    record = {
-                        "content": chunk.content,
-                        "file_path": chunk.file_path,
-                        "chunk_type": chunk.chunk_type,
-                        "name": chunk.name,
-                        "start_line": chunk.start_line,
-                        "end_line": chunk.end_line,
-                        "language": chunk.language,
-                        "file_role": chunk.file_role,
-                        "content_hash": chunk.content_hash,
-                    }
-                    pending_records.append(record)
-                    pending_texts.append(chunk.content)
-                    total_chunks += 1
-
-                # Flush batch
-                if len(pending_texts) >= batch_size:
-                    _flush_batch(table, provider, cache, pending_records,
-                                 pending_texts)
-                    pending_records = []
-                    pending_texts = []
-
-                # Progress
-                if (i + 1) % 50 == 0:
-                    print(f"    Indexed {i + 1}/{len(files_to_index)} files...",
-                          file=sys.stderr, flush=True)
-
-            # Final flush
-            if pending_texts:
-                _flush_batch(table, provider, cache, pending_records, pending_texts)
+        # Final flush
+        if pending_texts:
+            _flush_batch(table, provider, cache, pending_records, pending_texts)
 
     elapsed = time.time() - start_time
     save_manifest(index_dir, new_manifest)
@@ -772,106 +644,14 @@ def _save_meta(index_dir: Path, config: dict, file_count: int):
     path.write_text(json.dumps(meta, indent=2), encoding="utf-8")
 
 
-# ── Compact Command ──────────────────────────────────────────────────────────
-
-def cmd_compact(args):
-    """Merge pending events from the event log into the vector store.
-
-    Requires an exclusive lock during compaction.  Events are read from
-    all segment files, applied to LanceDB, and segments are marked as
-    compacted.
-    """
-    root = Path(args.root).resolve()
-    config = get_effective_config(root)
-    index_dir = root / config["index_path"]
-
-    # Check if event sourcing is available
-    try:
-        from memory_event_log import (
-            create_event_log, load_event_sourcing_config,
-            LanceDBEventBackend,
-        )
-    except ImportError:
-        print("Error: memory_event_log module not found.", file=sys.stderr)
-        sys.exit(1)
-
-    es_config = load_event_sourcing_config(root)
-    if not es_config.get("enabled"):
-        print("Event sourcing is not enabled. Enable it in project-config.json "
-              "under vector_memory.event_sourcing.enabled", file=sys.stderr)
-        sys.exit(1)
-
-    ok, msg = _check_deps()
-    if not ok:
-        print(f"Error: {msg}", file=sys.stderr)
-        sys.exit(2)
-
-    from embeddings import create_provider, EmbeddingCache
-
-    event_log = create_event_log(root)
-    status = event_log.status()
-
-    if status["total_events"] == 0:
-        print("No pending events to compact.", file=sys.stderr)
-        return
-
-    print(f"Compacting {status['total_events']} events from "
-          f"{status['active_segments']} segments...", file=sys.stderr)
-
-    # Acquire exclusive lock for compaction
-    lock = None
-    try:
-        from memory_lock import EventLock
-        agent_id = os.environ.get("CLAW_AGENT_ID", f"agent-{os.getpid()}")
-        session_id = os.environ.get("CLAW_SESSION_ID", "")
-        lock = EventLock(index_dir, agent_id=agent_id, session_id=session_id)
-    except ImportError:
-        pass
-
-    emb_config = {
-        "provider": config["embedding_provider"],
-        "model": config["embedding_model"],
-        "api_key_env": config["embedding_api_key_env"],
-    }
-    provider = create_provider(emb_config)
-    cache = EmbeddingCache(index_dir / "embedding_cache")
-
-    _ctx = lock.compact() if lock else nullcontext()
-    with _ctx:
-        db = _open_db(index_dir)
-        table = _get_or_create_table(db, provider.dimension())
-        backend = LanceDBEventBackend(db, table, provider, cache)
-        result = event_log.compact(target_backend=backend)
-
-    # Optionally GC old segments
-    if getattr(args, "gc", False):
-        gc_result = event_log.gc_segments(older_than=0)
-        result["gc"] = gc_result
-
-    if getattr(args, "json_output", False):
-        print(json.dumps(result, indent=2))
-    else:
-        print(f"  Events processed: {result.get('events_processed', 0)}",
-              file=sys.stderr)
-        print(f"  Segments processed: {result.get('segments_processed', 0)}",
-              file=sys.stderr)
-        by_type = result.get("by_type", {})
-        if by_type:
-            print(f"  By type: {by_type}", file=sys.stderr)
-        print(f"  Status: {result.get('status', 'unknown')}", file=sys.stderr)
-
-
 # ── Search Command ───────────────────────────────────────────────────────────
+# Sequential: bounded by fixed pattern list (~5 queries), parallelizing adds
+# thread complexity for marginal gain
 
 def cmd_search(args):
-    """Semantic search over the vector index.
-
-    When event sourcing is enabled and ``auto_compact_on_search`` is true,
-    pending events are merged into the index before searching so that
-    results include recent writes from all agents.
-    """
+    """Semantic search over the vector index."""
     root = Path(args.root).resolve()
-    config = _check_enabled_or_exit(root, json_output=getattr(args, "json_output", False))
+    config = get_effective_config(root)
     index_dir = root / config["index_path"]
 
     ok, msg = _check_deps()
@@ -884,93 +664,19 @@ def cmd_search(args):
               file=sys.stderr)
         sys.exit(1)
 
-    from embeddings import create_provider, EmbeddingCache
-
     query = args.query
     top_k = args.top_k
     file_filter = args.file_filter
-    file_globs = getattr(args, "file_glob", None) or []
-    # Validate glob patterns: reject traversal, null bytes, excessive length
-    if file_globs:
-        file_globs = [
-            p for p in file_globs
-            if isinstance(p, str)
-            and ".." not in p
-            and "\x00" not in p
-            and len(p) <= _MAX_GLOB_LEN
-        ]
     type_filter = args.type_filter
 
-    # Initialize provider and embed query
+    # Initialize provider (cached) and embed query
     emb_config = {
         "provider": config["embedding_provider"],
         "model": config["embedding_model"],
         "api_key_env": config["embedding_api_key_env"],
-        "gpu_mode": config.get("gpu_mode", "auto"),
-        "log_provider": config.get("log_provider", True),
     }
-    provider = create_provider(emb_config)
+    provider = _get_cached_provider(emb_config)
     query_embedding = provider.embed([query])[0]
-
-    # Auto-compact pending events before search if event sourcing is enabled.
-    # Respects compact_interval_seconds to avoid compacting on every search.
-    try:
-        from memory_event_log import (
-            is_event_sourcing_enabled, create_event_log,
-            load_event_sourcing_config, LanceDBEventBackend,
-        )
-        if is_event_sourcing_enabled(root):
-            es_config = load_event_sourcing_config(root)
-            if es_config.get("auto_compact_on_search", True):
-                event_log = create_event_log(root)
-                status = event_log.status()
-                if status["total_events"] > 0:
-                    # Throttle: only compact if enough time has passed
-                    compact_interval = es_config.get(
-                        "compact_interval_seconds", 300
-                    )
-                    last_compact_file = index_dir / ".last_compact_ts"
-                    should_compact = True
-                    try:
-                        if last_compact_file.exists():
-                            last_ts = float(
-                                last_compact_file.read_text(encoding="utf-8").strip()
-                            )
-                            if time.time() - last_ts < compact_interval:
-                                should_compact = False
-                    except (OSError, ValueError):
-                        pass  # If we can't read, compact anyway
-
-                    if should_compact:
-                        compact_lock = None
-                        try:
-                            from memory_lock import EventLock
-                            agent_id = os.environ.get("CLAW_AGENT_ID",
-                                                      f"agent-{os.getpid()}")
-                            compact_lock = EventLock(index_dir, agent_id=agent_id)
-                        except ImportError:
-                            pass
-
-                        cache = EmbeddingCache(index_dir / "embedding_cache")
-                        _compact_ctx = (compact_lock.compact()
-                                        if compact_lock else nullcontext())
-                        with _compact_ctx:
-                            db = _open_db(index_dir)
-                            table = _get_or_create_table(db, provider.dimension())
-                            backend = LanceDBEventBackend(
-                                db, table, provider, cache
-                            )
-                            event_log.compact(target_backend=backend)
-
-                        # Record last compact time
-                        try:
-                            last_compact_file.write_text(
-                                str(time.time()), encoding="utf-8"
-                            )
-                        except OSError:
-                            pass
-    except ImportError:
-        pass
 
     # Optional: use versioned read
     consistency_cfg = get_effective_consistency_config(root)
@@ -978,9 +684,14 @@ def cmd_search(args):
     if consistency_cfg.get("enable_versioned_reads") and hasattr(args, "version") and args.version:
         version = args.version
 
-    # Acquire read lock using configured backend
-    agent_id = os.environ.get("CTDF_AGENT_ID", f"agent-{os.getpid()}")
-    lock = _create_configured_lock(index_dir, config, agent_id=agent_id)
+    # Acquire read lock if available
+    lock = None
+    try:
+        from memory_lock import MemoryLock
+        agent_id = os.environ.get("CTDF_AGENT_ID", f"agent-{os.getpid()}")
+        lock = MemoryLock(index_dir, agent_id=agent_id)
+    except ImportError:
+        pass
 
     _ctx = lock.read() if lock else nullcontext()
     with _ctx:
@@ -1001,29 +712,10 @@ def cmd_search(args):
                       file=sys.stderr)
                 sys.exit(1)
 
-        # When glob patterns are requested, fetch extra results for
-        # client-side filtering to ensure we return up to top_k matches.
-        fetch_limit = top_k * 5 if file_globs else top_k * 3
-        results = table.search(query_embedding).limit(fetch_limit)
-
-        # Apply filters (sanitized to prevent filter injection)
-        if file_filter:
-            safe_filter = _sanitize_filter_value(file_filter)
-            results = results.where(f"file_path LIKE '%{safe_filter}%'")
-        if type_filter:
-            safe_type = _sanitize_filter_value(type_filter)
-            results = results.where(f"chunk_type = '{safe_type}'")
-
-        df = results.to_pandas()
-
-    # Apply glob-based file path filtering client-side
-    if file_globs and not df.empty:
-        mask = df["file_path"].apply(
-            lambda fp: any(fnmatch(fp, pat) for pat in file_globs)
+        df = apply_search_filters(
+            table.search(query_embedding),
+            top_k, file_filter, type_filter,
         )
-        df = df[mask].head(top_k)
-    elif not file_globs:
-        df = df.head(top_k)
 
     # Format output
     if args.json_output:
@@ -1068,44 +760,17 @@ def cmd_status(args):
     """Show index health, chunk counts, and staleness."""
     root = Path(args.root).resolve()
     config = get_effective_config(root)
-
-    # When disabled, report status without accessing the index
-    if config.get("enabled") is False:
-        status = {
-            "status": "disabled_by_config",
-            "enabled": False,
-            "message": (
-                "Vector memory is disabled via vector_memory.enabled=false "
-                "in project-config.json. Set it to true to enable."
-            ),
-        }
-        if getattr(args, "json_output", False):
-            print(json.dumps(status, indent=2))
-        else:
-            print("Vector Memory Status")
-            print("=" * 40)
-            print(f"  Status:  disabled_by_config")
-            print(f"  Enabled: False")
-            print(f"  {status['message']}")
-        return
-
     index_dir = root / config["index_path"]
 
     # Check dependencies
-    from deps_check import check_vector_memory_deps, detect_gpu_providers
+    from deps_check import check_vector_memory_deps
     deps_ok, missing = check_vector_memory_deps()
-
-    gpu_providers = detect_gpu_providers()
-    gpu_mode = config.get("gpu_mode", "auto")
 
     status = {
         "enabled": config.get("enabled", False),
         "dependencies_installed": deps_ok,
         "missing_dependencies": missing,
         "index_path": str(index_dir),
-        "gpu_mode": gpu_mode,
-        "gpu_providers_available": gpu_providers,
-        "gpu_active": bool(gpu_providers) and gpu_mode != "cpu",
     }
 
     meta_path = index_dir / INDEX_META
@@ -1126,6 +791,8 @@ def cmd_status(args):
         status["index_exists"] = False
 
     # Check staleness
+    # Per-file hashing: uses in-process hashlib (not subprocess); current
+    # scale (~100-1000 files) is acceptable without batching.
     stored = load_stored_manifest(index_dir)
     if stored:
         gitignore_patterns = load_gitignore_patterns(root)
@@ -1201,7 +868,7 @@ def cmd_status(args):
 def cmd_clear(args):
     """Reset the vector index."""
     root = Path(args.root).resolve()
-    config = _check_enabled_or_exit(root)
+    config = get_effective_config(root)
     index_dir = root / config["index_path"]
 
     if not index_dir.exists():
@@ -1247,7 +914,7 @@ def cmd_configure(args):
 def cmd_gc(args):
     """Garbage collection: prune old entries, compact tables, clean sessions."""
     root = Path(args.root).resolve()
-    config = _check_enabled_or_exit(root, json_output=getattr(args, "json_output", False))
+    config = get_effective_config(root)
     consistency = get_effective_consistency_config(root)
     index_dir = root / config["index_path"]
 
@@ -1294,7 +961,7 @@ def cmd_gc(args):
                 except Exception:
                     pass  # Column may not exist in older indices
 
-                # LanceDB compaction
+                # Trade-off: auto-compaction adds ~10ms overhead but keeps index performant over time
                 try:
                     table.compact_files()
                 except Exception:
@@ -1381,7 +1048,6 @@ def cmd_gc(args):
 def cmd_agents(args):
     """List active and historical agent sessions."""
     root = Path(args.root).resolve()
-    _check_enabled_or_exit(root, json_output=getattr(args, "json_output", False))
 
     try:
         from memory_protocol import MemoryProtocol
@@ -1432,7 +1098,6 @@ def cmd_agents(args):
 def cmd_conflicts(args):
     """Show flagged contradictions between agents."""
     root = Path(args.root).resolve()
-    _check_enabled_or_exit(root, json_output=getattr(args, "json_output", False))
 
     try:
         from memory_protocol import MemoryProtocol
@@ -1469,7 +1134,6 @@ def cmd_conflicts(args):
         print("=" * 70)
         for c in conflicts:
             status = "RESOLVED" if c.get("resolved") else "PENDING"
-            method = c.get("resolve_strategy", "manual")
             print(
                 f"  [{status}] {c.get('conflict_id', '?')}"
                 f"  field={c.get('field', '?')}"
@@ -1478,92 +1142,12 @@ def cmd_conflicts(args):
             print(
                 f"           agent_a={c.get('entry_a_agent', '?')}"
                 f"  agent_b={c.get('entry_b_agent', '?')}"
-                f"  method={method}"
             )
             print(
                 f"           detected={c.get('detected_iso', '?')}"
             )
         print()
-        print("  To resolve manually: vector_memory.py conflicts --resolve <conflict_id>")
-        print("  To auto-resolve:     vector_memory.py resolve-conflicts [--dry-run]")
-        print()
-
-
-# ── Resolve Conflicts (LLM Judge) ────────────────────────────────────────────
-
-def cmd_resolve_conflicts(args):
-    """Auto-resolve pending opinion conflicts via LLM-as-judge."""
-    root = Path(args.root).resolve()
-
-    try:
-        from conflict_judge import (
-            batch_resolve, load_auto_resolve_config,
-            DEFAULT_STRATEGY, DEFAULT_PROVIDER,
-            DEFAULT_CONFIDENCE_THRESHOLD, DEFAULT_MAX_PER_RUN,
-        )
-    except ImportError:
-        print(json.dumps({"error": "conflict_judge module not available"}))
-        sys.exit(1)
-
-    # Load config defaults, then override with CLI args
-    config = load_auto_resolve_config(root)
-    strategy = args.strategy or config.get("strategy", DEFAULT_STRATEGY)
-    provider = args.provider or config.get("provider", DEFAULT_PROVIDER)
-    model = args.model or config.get("model", "")
-    threshold = (
-        args.threshold if args.threshold > 0
-        else config.get("confidence_threshold", DEFAULT_CONFIDENCE_THRESHOLD)
-    )
-    max_per_run = (
-        args.max_per_run if args.max_per_run > 0
-        else config.get("max_auto_resolve_per_run", DEFAULT_MAX_PER_RUN)
-    )
-
-    result = batch_resolve(
-        root=root,
-        strategy=strategy,
-        provider=provider,
-        model=model,
-        confidence_threshold=threshold,
-        max_per_run=max_per_run,
-        dry_run=args.dry_run,
-    )
-
-    if args.json_output:
-        print(json.dumps(result, indent=2))
-    else:
-        if not result.get("success"):
-            print(f"Error: {result.get('error', 'unknown')}")
-            sys.exit(1)
-
-        mode = "DRY RUN" if args.dry_run else "LIVE"
-        print(f"\nConflict Auto-Resolution [{mode}]")
-        print("=" * 60)
-        print(f"  Strategy:         {strategy}")
-        print(f"  Provider:         {provider}")
-        print(f"  Total pending:    {result.get('total_pending', 0)}")
-        print(f"  Opinion pending:  {result.get('opinion_pending', 0)}")
-        print(f"  Processed:        {result.get('processed', 0)}")
-        print(f"  Resolved:         {result.get('resolved', 0)}")
-        print(f"  Skipped/Failed:   {result.get('skipped', 0)}")
-
-        results_list = result.get("results", [])
-        if results_list:
-            print()
-            for r in results_list:
-                cid = r.get("conflict_id", "?")
-                resolved = "YES" if r.get("resolved") else "NO"
-                verdict = r.get("verdict", {})
-                winner = verdict.get("winner", "?") if verdict else "?"
-                conf = verdict.get("confidence", 0) if verdict else 0
-                err = r.get("error", "")
-                print(f"  {cid}: resolved={resolved} winner={winner} "
-                      f"confidence={conf:.2f}")
-                if err:
-                    print(f"         error: {err}")
-
-        if not results_list:
-            print("\n  No opinion conflicts to process.")
+        print(f"  To resolve: vector_memory.py conflicts --resolve <conflict_id>")
         print()
 
 
@@ -1619,7 +1203,7 @@ def hook_file_changed(file_path: str):
         return  # File is outside project root
 
     from chunkers import chunk_file, chunk_text_document
-    from embeddings import create_provider, EmbeddingCache
+    from embeddings import EmbeddingCache
 
     content = read_file_safe(abs_path)
     if not content:
@@ -1632,16 +1216,18 @@ def hook_file_changed(file_path: str):
     }
 
     try:
-        provider = create_provider(emb_config)
+        provider = _get_cached_provider(emb_config)
         cache = EmbeddingCache(index_dir / "embedding_cache")
 
-        # Acquire write lock using configured backend
-        agent_id = os.environ.get("CTDF_AGENT_ID", f"agent-{os.getpid()}")
-        session_id = os.environ.get("CTDF_SESSION_ID", "")
-        lock = _create_configured_lock(
-            index_dir, config, agent_id=agent_id, session_id=session_id,
-            timeout_override=5.0,
-        )
+        # Acquire write lock
+        lock = None
+        try:
+            from memory_lock import MemoryLock
+            agent_id = os.environ.get("CTDF_AGENT_ID", f"agent-{os.getpid()}")
+            session_id = os.environ.get("CTDF_SESSION_ID", "")
+            lock = MemoryLock(index_dir, agent_id=agent_id, session_id=session_id, timeout=5.0)
+        except ImportError:
+            pass
 
         _ctx = lock.write() if lock else nullcontext()
         with _ctx:
@@ -1668,10 +1254,10 @@ def hook_file_changed(file_path: str):
                 embeddings = cache.embed_with_cache(provider, texts)
 
                 # Tag entries with agent metadata if available
-                agent_id = os.environ.get("CLAW_AGENT_ID", "")
-                agent_type = os.environ.get("CLAW_AGENT_TYPE", "task")
-                session_id = os.environ.get("CLAW_SESSION_ID", "")
-                task_code = os.environ.get("CLAW_TASK_CODE", "")
+                agent_id = os.environ.get("CTDF_AGENT_ID", "")
+                agent_type = os.environ.get("CTDF_AGENT_TYPE", "task")
+                session_id = os.environ.get("CTDF_SESSION_ID", "")
+                task_code = os.environ.get("CTDF_TASK_CODE", "")
 
                 records = []
                 for chunk, emb in zip(chunks, embeddings):
@@ -1707,307 +1293,6 @@ def hook_file_changed(file_path: str):
         pass  # Hook failures must be silent and non-blocking
 
 
-# ── RLM Context Export ───────────────────────────────────────────────────────
-
-def export_context(
-    file_paths: list[str],
-    fmt: str = "dict",
-    root: Optional[Path] = None,
-) -> dict:
-    """Export indexed content as structured context for RLM processing.
-
-    Reads file contents and returns them in a format suitable for the RLM
-    backend to process. Supports dict format (file path -> content mapping)
-    and flat format (concatenated text with file markers).
-
-    Args:
-        file_paths: List of file paths (relative to root or absolute) to export.
-        fmt: Output format — 'dict' (default) or 'flat'.
-        root: Project root for resolving relative paths. Auto-detected if None.
-
-    Returns:
-        Dict with 'success', 'context', 'files_loaded', and 'total_size_bytes'.
-    """
-    if root is None:
-        root = _find_project_root()
-
-    context_dict = {}
-    files_loaded = 0
-    total_size = 0
-
-    for fpath in file_paths:
-        abs_path = Path(fpath)
-        if not abs_path.is_absolute():
-            abs_path = root / fpath
-
-        if not abs_path.exists() or not abs_path.is_file():
-            continue
-
-        try:
-            content = abs_path.read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            continue
-
-        # Use relative path as key
-        try:
-            rel_key = str(abs_path.relative_to(root))
-        except ValueError:
-            rel_key = str(abs_path)
-
-        context_dict[rel_key] = content
-        files_loaded += 1
-        total_size += len(content.encode("utf-8"))
-
-    if fmt == "flat":
-        # Concatenate with file markers
-        parts = []
-        for path, content in context_dict.items():
-            parts.append(f"=== FILE: {path} ===\n{content}\n")
-        context_output = "\n".join(parts)
-    else:
-        context_output = context_dict
-
-    return {
-        "success": files_loaded > 0,
-        "context": context_output,
-        "files_loaded": files_loaded,
-        "files_requested": len(file_paths),
-        "total_size_bytes": total_size,
-    }
-
-
-def hook_batch(file_paths: list[str]):
-    """Batch incremental re-indexing for multiple files at once.
-
-    More efficient than calling hook_file_changed per file because it
-    shares a single DB connection, embedding provider, and write lock
-    across all files. Designed for post-generation re-indexing (e.g.
-    after /docs generate writes multiple documentation files).
-
-    Failures are silent and non-blocking.
-    """
-    root = _find_project_root()
-    config = get_effective_config(root)
-
-    # Only skip if explicitly disabled
-    if config.get("enabled") is False:
-        return
-    if config.get("auto_index") is False:
-        return
-
-    ok, _ = _check_deps()
-    if not ok:
-        return
-
-    index_dir = root / config["index_path"]
-    if not (index_dir / "lancedb").exists():
-        sentinel = index_dir / ".init_attempted"
-        if sentinel.exists():
-            return
-        try:
-            index_dir.mkdir(parents=True, exist_ok=True)
-            sentinel.touch()
-            initialized = ensure_initialized(root)
-        except Exception:
-            return
-        if not initialized or not (index_dir / "lancedb").exists():
-            return
-
-    # Resolve and validate all file paths up front
-    valid_files: list[tuple[Path, str]] = []
-    for fp in file_paths:
-        try:
-            abs_path = Path(fp).resolve()
-            if not abs_path.exists():
-                continue
-            rel_path = str(abs_path.relative_to(root))
-            valid_files.append((abs_path, rel_path))
-        except ValueError:
-            continue  # File outside project root
-
-    if not valid_files:
-        return
-
-    try:
-        from chunkers import chunk_file, chunk_text_document
-        from embeddings import create_provider, EmbeddingCache
-
-        emb_config = {
-            "provider": config["embedding_provider"],
-            "model": config["embedding_model"],
-            "api_key_env": config["embedding_api_key_env"],
-        }
-        provider = create_provider(emb_config)
-        cache = EmbeddingCache(index_dir / "embedding_cache")
-
-        # Acquire write lock once for the entire batch
-        lock = None
-        try:
-            from memory_lock import MemoryLock
-            agent_id = os.environ.get("CTDF_AGENT_ID", f"agent-{os.getpid()}")
-            session_id = os.environ.get("CTDF_SESSION_ID", "")
-            lock = MemoryLock(index_dir, agent_id=agent_id,
-                              session_id=session_id, timeout=30.0)
-        except ImportError:
-            pass
-
-        # Pre-read agent metadata once (constant for process lifetime)
-        meta_agent_id = os.environ.get("CTDF_AGENT_ID", "")
-        meta_agent_type = os.environ.get("CTDF_AGENT_TYPE", "task")
-        meta_session_id = os.environ.get("CTDF_SESSION_ID", "")
-        meta_task_code = os.environ.get("CTDF_TASK_CODE", "")
-
-        # Pre-import tag_entry once (avoid repeated try/except per chunk)
-        _tag_entry_fn = None
-        if meta_agent_id:
-            try:
-                from memory_protocol import tag_entry
-                _tag_entry_fn = tag_entry
-            except ImportError:
-                pass
-
-        _ctx = lock.write() if lock else nullcontext()
-        with _ctx:
-            db = _open_db(index_dir)
-            table = _get_or_create_table(db, provider.dimension())
-            manifest = load_stored_manifest(index_dir)
-
-            indexed_count = 0
-            for abs_path, rel_path in valid_files:
-                content = read_file_safe(abs_path)
-                if not content:
-                    continue
-
-                # Remove old entries for this file
-                try:
-                    table.delete(
-                        f"file_path = '{_sanitize_filter_value(rel_path)}'")
-                except Exception:
-                    pass
-
-                # Chunk based on file type
-                ext = abs_path.suffix.lower()
-                if ext in {".md", ".txt", ".rst"}:
-                    chunks = chunk_text_document(
-                        rel_path, content,
-                        max_chunk_size=config["chunk_size"])
-                else:
-                    chunks = chunk_file(
-                        rel_path, content,
-                        max_chunk_size=config["chunk_size"])
-
-                if not chunks:
-                    continue
-
-                texts = [c.content for c in chunks]
-                embeddings = cache.embed_with_cache(provider, texts)
-
-                records = []
-                for chunk, emb in zip(chunks, embeddings):
-                    record = {
-                        "vector": emb,
-                        "content": chunk.content,
-                        "file_path": chunk.file_path,
-                        "chunk_type": chunk.chunk_type,
-                        "name": chunk.name,
-                        "start_line": chunk.start_line,
-                        "end_line": chunk.end_line,
-                        "language": chunk.language,
-                        "file_role": chunk.file_role,
-                        "content_hash": chunk.content_hash,
-                    }
-                    if _tag_entry_fn:
-                        _tag_entry_fn(record, meta_agent_id,
-                                      meta_agent_type, meta_task_code,
-                                      meta_session_id)
-                    records.append(record)
-
-                table.add(records)
-                manifest[rel_path] = compute_file_hash(abs_path)
-                indexed_count += 1
-
-            save_manifest(index_dir, manifest)
-
-        print(json.dumps({
-            "success": True,
-            "indexed_count": indexed_count,
-            "total_files": len(file_paths),
-            "skipped": len(file_paths) - indexed_count,
-        }))
-
-    except Exception:
-        pass  # Batch hook failures must be silent and non-blocking
-
-
-# ── RLM Context Export ───────────────────────────────────────────────────────
-
-def export_context(
-    file_paths: list[str],
-    fmt: str = "dict",
-    root: Optional[Path] = None,
-) -> dict:
-    """Export indexed content as structured context for RLM processing.
-
-    Reads file contents and returns them in a format suitable for the RLM
-    backend to process. Supports dict format (file path -> content mapping)
-    and flat format (concatenated text with file markers).
-
-    Args:
-        file_paths: List of file paths (relative to root or absolute) to export.
-        fmt: Output format — 'dict' (default) or 'flat'.
-        root: Project root for resolving relative paths. Auto-detected if None.
-
-    Returns:
-        Dict with 'success', 'context', 'files_loaded', and 'total_size_bytes'.
-    """
-    if root is None:
-        root = _find_project_root()
-
-    context_dict = {}
-    files_loaded = 0
-    total_size = 0
-
-    for fpath in file_paths:
-        abs_path = Path(fpath)
-        if not abs_path.is_absolute():
-            abs_path = root / fpath
-
-        if not abs_path.exists() or not abs_path.is_file():
-            continue
-
-        try:
-            content = abs_path.read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            continue
-
-        # Use relative path as key
-        try:
-            rel_key = str(abs_path.relative_to(root))
-        except ValueError:
-            rel_key = str(abs_path)
-
-        context_dict[rel_key] = content
-        files_loaded += 1
-        total_size += len(content.encode("utf-8"))
-
-    if fmt == "flat":
-        # Concatenate with file markers
-        parts = []
-        for path, content in context_dict.items():
-            parts.append(f"=== FILE: {path} ===\n{content}\n")
-        context_output = "\n".join(parts)
-    else:
-        context_output = context_dict
-
-    return {
-        "success": files_loaded > 0,
-        "context": context_output,
-        "files_loaded": files_loaded,
-        "files_requested": len(file_paths),
-        "total_size_bytes": total_size,
-    }
-
-
 # ── Shared Helper: Index a Document ──────────────────────────────────────────
 
 def try_vector_index(root: Path, content: str, doc_name: str,
@@ -2026,7 +1311,7 @@ def try_vector_index(root: Path, content: str, doc_name: str,
     """
     try:
         from chunkers import chunk_text_document
-        from embeddings import create_provider, EmbeddingCache
+        from embeddings import EmbeddingCache
 
         config = get_effective_config(root)
         # Only skip if explicitly disabled; missing config defaults to enabled
@@ -2057,7 +1342,7 @@ def try_vector_index(root: Path, content: str, doc_name: str,
             "model": config["embedding_model"],
             "api_key_env": config["embedding_api_key_env"],
         }
-        provider = create_provider(emb_config)
+        provider = _get_cached_provider(emb_config)
         cache = EmbeddingCache(index_dir / "embedding_cache")
         db = _open_db(index_dir)
         table = _get_or_create_table(db, provider.dimension())
@@ -2091,426 +1376,11 @@ def try_vector_index(root: Path, content: str, doc_name: str,
         pass  # Failures are non-fatal to avoid blocking callers
 
 
-# ── Backend-Agnostic Chunk Export ─────────────────────────────────────────────
-
-def export_chunks(file_paths: list[str], root: Path,
-                  config: dict) -> list[dict]:
-    """Generate chunks from files in a backend-agnostic format.
-
-    Both the LanceDB and SQLite backends can consume the output of this
-    function, enabling shared chunking logic.
-
-    Args:
-        file_paths: List of relative file paths to chunk.
-        root: Project root directory.
-        config: Effective vector memory configuration.
-
-    Returns:
-        List of chunk dicts with keys: content, file_path, chunk_type,
-        name, start_line, end_line, language, file_role, content_hash.
-    """
-    from chunkers import chunk_file, chunk_text_document
-
-    chunk_size = config.get("chunk_size", DEFAULT_CHUNK_SIZE)
-    all_chunks: list[dict] = []
-
-    for rel_path in file_paths:
-        fpath = root / rel_path
-        content = read_file_safe(fpath)
-        if not content:
-            continue
-
-        ext = fpath.suffix.lower()
-        if ext in {".md", ".txt", ".rst"}:
-            chunks = chunk_text_document(rel_path, content,
-                                         max_chunk_size=chunk_size)
-        else:
-            chunks = chunk_file(rel_path, content,
-                                max_chunk_size=chunk_size)
-
-        for chunk in chunks:
-            all_chunks.append({
-                "content": chunk.content,
-                "file_path": chunk.file_path,
-                "chunk_type": chunk.chunk_type,
-                "name": chunk.name,
-                "start_line": chunk.start_line,
-                "end_line": chunk.end_line,
-                "language": chunk.language,
-                "file_role": chunk.file_role,
-                "content_hash": chunk.content_hash,
-            })
-
-    return all_chunks
-
-
-def get_configured_backend(root: Path, config: dict) -> Optional[str]:
-    """Return the configured backend name ('lancedb' or 'sqlite').
-
-    Checks config for a 'backend' key, falling back to DEFAULT_BACKEND.
-    """
-    return config.get("backend", DEFAULT_BACKEND)
-
-
-def _create_sqlite_backend(root: Path, config: dict):
-    """Create and return a SQLiteMemoryBackend instance."""
-    from sqlite_backend import create_sqlite_backend
-    return create_sqlite_backend(root, config)
-
-
-def _resolve_backend(args, root: Path, config: dict) -> Optional[str]:
-    """Resolve the backend to use from CLI args or config.
-
-    CLI --backend flag overrides config. Returns 'lancedb' or 'sqlite'.
-    """
-    backend = getattr(args, "backend", None)
-    if backend:
-        return backend
-    return get_configured_backend(root, config)
-
-
-# ── SQLite Backend CLI Wrappers ──────────────────────────────────────────────
-
-def _cmd_index_sqlite(args):
-    """Index command routed to SQLite backend."""
-    root = Path(args.root).resolve()
-    config = get_effective_config(root)
-    backend = _create_sqlite_backend(root, config)
-
-    print("Vector Memory — Indexing (SQLite backend)", file=sys.stderr)
-    print(f"  Root: {root}", file=sys.stderr)
-    print(f"  Database: {backend.db_path}", file=sys.stderr)
-
-    # Build file list
-    gitignore_patterns = load_gitignore_patterns(root)
-    new_manifest = build_hash_manifest(root, gitignore_patterns, config)
-
-    force_full = args.full or getattr(args, "force_init", False)
-    if force_full:
-        files_to_index = list(new_manifest.keys())
-        mode_label = "force-init" if getattr(args, "force_init", False) else "full rebuild"
-        print(f"  Mode: {mode_label} ({len(files_to_index)} files)",
-              file=sys.stderr)
-    else:
-        index_dir = root / config["index_path"]
-        old_manifest = load_stored_manifest(index_dir)
-        added, modified, removed = diff_manifests(old_manifest, new_manifest)
-        files_to_index = added + modified
-        print(f"  Mode: incremental", file=sys.stderr)
-        print(f"    Added: {len(added)}, Modified: {len(modified)}, "
-              f"Removed: {len(removed)}", file=sys.stderr)
-        # Remove deleted files
-        for fp in removed:
-            backend.remove_file(fp)
-
-    if not files_to_index:
-        print("  Nothing to index — everything is up to date.", file=sys.stderr)
-        index_dir = root / config["index_path"]
-        save_manifest(index_dir, new_manifest)
-        return
-
-    result = backend.index(files_to_index, root, config, full=force_full)
-    index_dir = root / config["index_path"]
-    index_dir.mkdir(parents=True, exist_ok=True)
-    save_manifest(index_dir, new_manifest)
-
-    print(f"  Done: {result['chunks_indexed']} chunks from "
-          f"{result['files_indexed']} files in {result['elapsed_seconds']}s",
-          file=sys.stderr)
-
-
-def _cmd_search_sqlite(args):
-    """Search command routed to SQLite backend."""
-    root = Path(args.root).resolve()
-    config = get_effective_config(root)
-    backend = _create_sqlite_backend(root, config)
-
-    sqlite_cfg = config.get("sqlite", {})
-    hybrid_weight = sqlite_cfg.get("hybrid_weight_vector", 0.7)
-
-    results = backend.search(
-        query=args.query,
-        top_k=args.top_k,
-        file_filter=args.file_filter,
-        type_filter=args.type_filter,
-        hybrid_weight=hybrid_weight,
-    )
-
-    if args.json_output:
-        output = []
-        for r in results:
-            entry = dict(r)
-            if not args.full_content:
-                entry["content"] = entry.get("content", "")[:500]
-            output.append(entry)
-        print(json.dumps(output, indent=2))
-    else:
-        if not results:
-            print("No results found.")
-            return
-
-        print(f"\nSearch results for: {args.query!r}")
-        print(f"{'=' * 60}")
-        for i, r in enumerate(results, 1):
-            print(f"\n[{i}] {r['file_path']}:"
-                  f"{r['start_line']}-{r['end_line']}"
-                  f"  ({r['chunk_type']}: {r['name']})"
-                  f"  score={r['score']:.4f}")
-            content = r.get("content", "")
-            if not args.full_content:
-                content = content[:300]
-                if len(r.get("content", "")) > 300:
-                    content += "..."
-            print(f"    {content[:200].replace(chr(10), chr(10) + '    ')}")
-        print()
-
-
-def _cmd_status_sqlite(args):
-    """Status command routed to SQLite backend."""
-    root = Path(args.root).resolve()
-    config = get_effective_config(root)
-    backend = _create_sqlite_backend(root, config)
-
-    status = backend.status()
-    status["enabled"] = config.get("enabled", True)
-
-    # Check staleness
-    index_dir = root / config["index_path"]
-    stored = load_stored_manifest(index_dir)
-    if stored:
-        gitignore_patterns = load_gitignore_patterns(root)
-        current = build_hash_manifest(root, gitignore_patterns, config)
-        added, modified, removed = diff_manifests(stored, current)
-        status["stale_files"] = len(added) + len(modified) + len(removed)
-    else:
-        status["stale_files"] = -1
-
-    if args.json_output:
-        print(json.dumps(status, indent=2))
-    else:
-        print("Vector Memory Status (SQLite backend)")
-        print("=" * 40)
-        print(f"  Backend:      sqlite")
-        print(f"  Database:     {status.get('db_path', '?')}")
-        print(f"  Vec support:  {'yes' if status.get('vec_available') else 'no (install sqlite-vec for vector search)'}")
-        print(f"  Enabled:      {status.get('enabled', False)}")
-        li = status.get("last_indexed")
-        print(f"  Last indexed: {li if li else 'never'}")
-        print(f"  Indexed files: {status.get('indexed_files', 0)}")
-        print(f"  Total chunks: {status.get('total_chunks', 0)}")
-        print(f"  Index size:   {status.get('index_size_mb', 0):.2f} MB")
-        sf = status.get("stale_files", -1)
-        if sf == 0:
-            print(f"  Staleness:    up to date")
-        elif sf > 0:
-            print(f"  Staleness:    {sf} file(s) changed since last index")
-        else:
-            print(f"  Staleness:    unknown (no manifest)")
-
-
-def _cmd_clear_sqlite(args):
-    """Clear command routed to SQLite backend."""
-    root = Path(args.root).resolve()
-    config = get_effective_config(root)
-
-    if not args.force:
-        print("Use --force to confirm deletion of the SQLite index.",
-              file=sys.stderr)
-        sys.exit(1)
-
-    sqlite_cfg = config.get("sqlite", {})
-    db_path = root / sqlite_cfg.get("db_path", ".claude/memory/sqlite/memory.db")
-
-    removed = False
-    for suffix in ("", "-wal", "-shm"):
-        p = Path(str(db_path) + suffix)
-        if p.exists():
-            p.unlink()
-            removed = True
-
-    if removed:
-        print(f"SQLite index cleared: {db_path}", file=sys.stderr)
-    else:
-        print(f"No SQLite index found at: {db_path}", file=sys.stderr)
-
-
-def _cmd_gc_sqlite(args):
-    """GC command routed to SQLite backend."""
-    root = Path(args.root).resolve()
-    config = get_effective_config(root)
-    consistency = get_effective_consistency_config(root)
-    backend = _create_sqlite_backend(root, config)
-
-    ttl_days = args.ttl_days if args.ttl_days is not None else consistency.get("gc_ttl_days", 30)
-
-    if not args.json_output:
-        print("Vector Memory — Garbage Collection (SQLite backend)", file=sys.stderr)
-        print(f"  Database: {backend.db_path}", file=sys.stderr)
-        print(f"  TTL: {ttl_days} days", file=sys.stderr)
-
-    report = backend.gc(ttl_days=ttl_days, deep=args.deep)
-
-    if args.json_output:
-        print(json.dumps(report, indent=2))
-    else:
-        print(f"  Entries pruned:  {report['entries_pruned']}", file=sys.stderr)
-        print(f"  Size before:     {report['size_before_mb']:.2f} MB", file=sys.stderr)
-        print(f"  Size after:      {report['size_after_mb']:.2f} MB", file=sys.stderr)
-        print(f"  Space freed:     {report['size_freed_mb']:.2f} MB", file=sys.stderr)
-        print("  Done.", file=sys.stderr)
-
-
-# ── MemoryBackend Interface ─────────────────────────────────────────────────
-
-class LanceDBMemoryBackend:
-    """MemoryBackend interface implementation for LanceDB vector store.
-
-    Wraps the existing vector_memory.py functions into a polymorphic
-    interface compatible with the memory orchestrator. Implements the
-    same ``search()``, ``index()``, ``status()``, ``gc()``, and
-    ``health()`` methods as ``SQLiteMemoryBackend``.
-    """
-
-    def __init__(self, root: Path):
-        self.root = root
-
-    def search(self, query: str, top_k: int = 10,
-               file_filter: str = "", type_filter: str = "",
-               hybrid_weight: Optional[float] = None) -> list[dict]:
-        """Search the LanceDB vector index."""
-        config = get_effective_config(self.root)
-        index_dir = self.root / config["index_path"]
-
-        if not (index_dir / "lancedb").exists():
-            return []
-
-        try:
-            from embeddings import create_provider
-
-            emb_config = {
-                "provider": config["embedding_provider"],
-                "model": config["embedding_model"],
-                "api_key_env": config["embedding_api_key_env"],
-            }
-            provider = create_provider(emb_config)
-            query_embedding = provider.embed([query])[0]
-
-            db = _open_db(index_dir)
-            try:
-                table = db.open_table(TABLE_NAME)
-            except Exception:
-                return []
-
-            results = table.search(query_embedding).limit(top_k * 3)
-
-            if file_filter:
-                safe_filter = _sanitize_filter_value(file_filter)
-                results = results.where(f"file_path LIKE '%{safe_filter}%'")
-            if type_filter:
-                safe_type = _sanitize_filter_value(type_filter)
-                results = results.where(f"chunk_type = '{safe_type}'")
-
-            df = results.limit(top_k).to_pandas()
-
-            records = []
-            for _, row in df.iterrows():
-                records.append({
-                    "file_path": row.get("file_path", ""),
-                    "name": row.get("name", ""),
-                    "chunk_type": row.get("chunk_type", ""),
-                    "language": row.get("language", ""),
-                    "start_line": int(row.get("start_line", 0)),
-                    "end_line": int(row.get("end_line", 0)),
-                    "score": float(row.get("_distance", 0.0)),
-                    "content": row.get("content", ""),
-                    "content_hash": row.get("content_hash", ""),
-                    "backend": "lancedb",
-                })
-            return records
-        except Exception:
-            return []
-
-    def index(self, file_paths: list[str], root: Path, config: dict,
-              full: bool = False) -> dict:
-        """Index files into LanceDB via cmd_index."""
-        import subprocess
-        cmd = [
-            sys.executable, str(Path(__file__).resolve()),
-            "index", "--root", str(root),
-        ]
-        if full:
-            cmd.append("--full")
-        try:
-            result = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=600)
-            return {
-                "success": result.returncode == 0,
-                "output": result.stderr.strip(),
-            }
-        except Exception as e:
-            return {"success": False, "error": str(e)}
-
-    def status(self) -> dict:
-        """Return LanceDB index health and statistics."""
-        config = get_effective_config(self.root)
-        index_dir = self.root / config["index_path"]
-
-        result = {
-            "backend": "lancedb",
-            "index_exists": (index_dir / "lancedb").exists(),
-        }
-
-        meta_path = index_dir / INDEX_META
-        if meta_path.exists():
-            try:
-                meta = json.loads(meta_path.read_text(encoding="utf-8"))
-                result["last_indexed"] = meta.get("last_indexed")
-                result["indexed_files"] = meta.get("file_count", 0)
-                result["embedding_model"] = meta.get("embedding_model")
-            except (json.JSONDecodeError, OSError):
-                pass
-
-        result["index_size_mb"] = round(_dir_size_mb(index_dir), 2)
-        return result
-
-    def health(self) -> dict:
-        """Return backend health check result."""
-        status = self.status()
-        return {
-            "backend": "lancedb",
-            "available": True,
-            "index_exists": status.get("index_exists", False),
-            "status": status,
-        }
-
-    def gc(self, ttl_days: int = 30, deep: bool = False) -> dict:
-        """Garbage collection via cmd_gc."""
-        import subprocess
-        cmd = [
-            sys.executable, str(Path(__file__).resolve()),
-            "gc", "--root", str(self.root),
-            "--ttl-days", str(ttl_days),
-        ]
-        if deep:
-            cmd.append("--deep")
-        try:
-            result = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=300)
-            return {"success": result.returncode == 0}
-        except Exception as e:
-            return {"success": False, "error": str(e)}
-
-
-def create_lancedb_backend(root: Path) -> LanceDBMemoryBackend:
-    """Factory: create a LanceDBMemoryBackend for the given project root."""
-    return LanceDBMemoryBackend(root)
-
-
 # ── CLI ──────────────────────────────────────────────────────────────────────
 
 def main():
     parser = argparse.ArgumentParser(
-        description="CodeClaw Vector Memory — semantic search over repository content",
+        description="CTDF Vector Memory — semantic search over repository content",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -2518,8 +1388,6 @@ Examples:
   %(prog)s index --full             # Full rebuild
   %(prog)s search "authentication"  # Semantic search
   %(prog)s status                   # Index health check
-  %(prog)s compact                  # Merge pending events into index
-  %(prog)s compact --gc             # Compact and GC old segments
   %(prog)s gc                       # Garbage collection
   %(prog)s gc --deep                # Deep GC (clears embedding cache)
   %(prog)s agents                   # List agent sessions
@@ -2539,8 +1407,6 @@ Examples:
                      help="Full rebuild (ignore incremental hashes)")
     idx.add_argument("--force-init", action="store_true", dest="force_init",
                      help="Force initialization even if index already exists (used by setup)")
-    idx.add_argument("--backend", choices=["lancedb", "sqlite"], default=None,
-                     help="Storage backend (default: from config or lancedb)")
 
     # ── search ──
     srch = sub.add_parser("search", help="Semantic search over indexed content")
@@ -2550,9 +1416,6 @@ Examples:
                       help="Number of results (default: 10)")
     srch.add_argument("--file-filter", "-f", default="",
                       help="Filter results by file path substring")
-    srch.add_argument("--file-glob", "-g", nargs="*", default=None,
-                      help="Filter results by glob patterns on file paths "
-                           "(e.g. 'skills/*/SKILL.md' 'docs/**/*.md')")
     srch.add_argument("--type-filter", "-t", default="",
                       help="Filter by chunk type (function, class, etc.)")
     srch.add_argument("--json", dest="json_output", action="store_true",
@@ -2561,33 +1424,18 @@ Examples:
                       help="Show full chunk content instead of truncated")
     srch.add_argument("--version", type=int, default=None,
                       help="Query at a specific dataset version (point-in-time)")
-    srch.add_argument("--backend", choices=["lancedb", "sqlite"], default=None,
-                      help="Storage backend (default: from config or lancedb)")
-
-    # ── compact ──
-    cpt = sub.add_parser("compact",
-                         help="Merge pending events into the vector store")
-    cpt.add_argument("--root", default=".", help="Project root directory")
-    cpt.add_argument("--gc", action="store_true",
-                     help="Also GC compacted segments after merging")
-    cpt.add_argument("--json", dest="json_output", action="store_true",
-                     help="Output as JSON")
 
     # ── status ──
     stat = sub.add_parser("status", help="Show index health and statistics")
     stat.add_argument("--root", default=".", help="Project root directory")
     stat.add_argument("--json", dest="json_output", action="store_true",
                       help="Output as JSON")
-    stat.add_argument("--backend", choices=["lancedb", "sqlite"], default=None,
-                      help="Storage backend (default: from config or lancedb)")
 
     # ── clear ──
     clr = sub.add_parser("clear", help="Reset the vector index")
     clr.add_argument("--root", default=".", help="Project root directory")
     clr.add_argument("--force", action="store_true",
                      help="Confirm deletion")
-    clr.add_argument("--backend", choices=["lancedb", "sqlite"], default=None,
-                     help="Storage backend (default: from config or lancedb)")
 
     # ── configure ──
     cfg = sub.add_parser("configure", help="Show vector memory configuration")
@@ -2604,8 +1452,6 @@ Examples:
                       help="Deep GC: also clear embedding cache")
     gc_p.add_argument("--json", dest="json_output", action="store_true",
                       help="Output as JSON")
-    gc_p.add_argument("--backend", choices=["lancedb", "sqlite"], default=None,
-                      help="Storage backend (default: from config or lancedb)")
 
     # ── agents ──
     ag = sub.add_parser("agents", help="List active/historical agent sessions")
@@ -2628,56 +1474,9 @@ Examples:
     cfl.add_argument("--json", dest="json_output", action="store_true",
                      help="Output as JSON")
 
-    # ── export-context ──
-    ec = sub.add_parser("export-context",
-                        help="Export file contents as structured context for RLM")
-    ec.add_argument("files", nargs="+", help="File paths to export")
-    ec.add_argument("--root", default=".", help="Project root directory")
-    ec.add_argument("--format", dest="export_format", default="dict",
-                    choices=["dict", "flat"],
-                    help="Output format: dict (JSON mapping) or flat (concatenated text)")
-    ec.add_argument("--json", dest="json_output", action="store_true",
-                    help="Output as JSON (default for dict format)")
-
-    # ── resolve-conflicts ──
-    rc = sub.add_parser("resolve-conflicts",
-                        help="Auto-resolve opinion conflicts via LLM judge")
-    rc.add_argument("--root", default=".", help="Project root directory")
-    rc.add_argument("--strategy", choices=["single-judge", "majority-vote",
-                                           "confidence-merge"],
-                    default=None, help="Resolution strategy (default: from config)")
-    rc.add_argument("--provider", choices=["ollama", "claude"],
-                    default=None, help="LLM provider (default: from config)")
-    rc.add_argument("--model", default="", help="Override LLM model name")
-    rc.add_argument("--threshold", type=float, default=0,
-                    help="Confidence threshold for confidence-merge strategy")
-    rc.add_argument("--max", dest="max_per_run", type=int, default=0,
-                    help="Max conflicts to process (default: from config)")
-    rc.add_argument("--dry-run", dest="dry_run", action="store_true",
-                    help="Evaluate but do not mark conflicts as resolved")
-    rc.add_argument("--json", dest="json_output", action="store_true",
-                    help="Output as JSON")
-
-    # ── export-context ──
-    ec = sub.add_parser("export-context",
-                        help="Export file contents as structured context for RLM")
-    ec.add_argument("files", nargs="+", help="File paths to export")
-    ec.add_argument("--root", default=".", help="Project root directory")
-    ec.add_argument("--format", dest="export_format", default="dict",
-                    choices=["dict", "flat"],
-                    help="Output format: dict (JSON mapping) or flat (concatenated text)")
-    ec.add_argument("--json", dest="json_output", action="store_true",
-                    help="Output as JSON (default for dict format)")
-
     # ── hook (internal) ──
     hk = sub.add_parser("hook", help="Internal: incremental update hook")
     hk.add_argument("file_path", help="Path to the changed file")
-
-    # ── hook-batch (internal) ──
-    hkb = sub.add_parser("hook-batch",
-                         help="Internal: batch incremental update hook")
-    hkb.add_argument("file_paths", nargs="+",
-                     help="Paths to changed files")
 
     args = parser.parse_args()
 
@@ -2685,78 +1484,24 @@ Examples:
         parser.print_help()
         sys.exit(1)
 
-    # Resolve backend for commands that support it
-    backend = None
-    if hasattr(args, "backend") and args.command in ("index", "search", "status", "gc", "clear"):
-        root = Path(getattr(args, "root", ".")).resolve()
-        config = get_effective_config(root)
-        backend = _resolve_backend(args, root, config)
-
     if args.command == "index":
-        if backend == "sqlite":
-            _cmd_index_sqlite(args)
-        else:
-            cmd_index(args)
+        cmd_index(args)
     elif args.command == "search":
-        if backend == "sqlite":
-            _cmd_search_sqlite(args)
-        else:
-            cmd_search(args)
-    elif args.command == "compact":
-        cmd_compact(args)
+        cmd_search(args)
     elif args.command == "status":
-        if backend == "sqlite":
-            _cmd_status_sqlite(args)
-        else:
-            cmd_status(args)
+        cmd_status(args)
     elif args.command == "clear":
-        if backend == "sqlite":
-            _cmd_clear_sqlite(args)
-        else:
-            cmd_clear(args)
+        cmd_clear(args)
     elif args.command == "configure":
         cmd_configure(args)
     elif args.command == "gc":
-        if backend == "sqlite":
-            _cmd_gc_sqlite(args)
-        else:
-            cmd_gc(args)
+        cmd_gc(args)
     elif args.command == "agents":
         cmd_agents(args)
     elif args.command == "conflicts":
         cmd_conflicts(args)
-    elif args.command == "export-context":
-        root = Path(args.root).resolve()
-        result = export_context(args.files, fmt=args.export_format, root=root)
-        if args.export_format == "flat" and not getattr(args, "json_output", False):
-            if result["success"]:
-                print(result["context"])
-            else:
-                print("No files could be loaded.", file=sys.stderr)
-                sys.exit(1)
-        else:
-            print(json.dumps(result, indent=2))
-            if not result["success"]:
-                sys.exit(1)
-    elif args.command == "resolve-conflicts":
-        cmd_resolve_conflicts(args)
-    elif args.command == "export-context":
-        root = Path(args.root).resolve()
-        result = export_context(args.files, fmt=args.export_format, root=root)
-        if args.export_format == "flat" and not getattr(args, "json_output", False):
-            if result["success"]:
-                print(result["context"])
-            else:
-                print("No files could be loaded.", file=sys.stderr)
-                sys.exit(1)
-        else:
-            print(json.dumps(result, indent=2))
-            if not result["success"]:
-                sys.exit(1)
     elif args.command == "hook":
         hook_file_changed(args.file_path)
-    elif args.command == "hook-batch":
-        hook_batch(args.file_paths)
 
 
 if __name__ == "__main__":
