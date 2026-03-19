@@ -1231,18 +1231,21 @@ def _is_worktree_enabled(root: Path) -> bool:
     return False
 
 
+_SEMVER_RE = re.compile(r"^\d+\.\d+\.\d+$")
+
+
 def _get_active_release_version(root: Path) -> str | None:
     """Query the active release version from release-state.json.
 
     Returns the version string (e.g. '4.0.2') if an active release exists,
-    or None if no release state is found.
+    or None if no release state is found or the version is malformed.
     """
     state_file = root / ".claude" / "release-state.json"
     if state_file.exists():
         try:
             data = json.loads(state_file.read_text(encoding="utf-8"))
             version = data.get("version", "")
-            if version:
+            if version and _SEMVER_RE.match(version):
                 return version
         except (json.JSONDecodeError, OSError):
             pass
@@ -1257,7 +1260,7 @@ def _get_active_release_version(root: Path) -> str | None:
         if result.returncode == 0:
             data = json.loads(result.stdout.strip())
             version = data.get("version", "")
-            if version and "error" not in data:
+            if version and "error" not in data and _SEMVER_RE.match(version):
                 return version
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired,
             json.JSONDecodeError, FileNotFoundError, OSError):

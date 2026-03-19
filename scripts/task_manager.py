@@ -2325,7 +2325,7 @@ def _is_worktree_enabled_tm(root: Path) -> bool:
 
 def _is_shared_release_branch(branch_name: str) -> bool:
     """Return True if the branch follows the shared release/<version> pattern."""
-    return bool(re.match(r"^release/\d+\.\d+\.\d+", branch_name))
+    return bool(re.match(r"^release/\d+\.\d+\.\d+$", branch_name))
 
 
 def cmd_remove_worktree(args):
@@ -2360,19 +2360,20 @@ def cmd_remove_worktree(args):
         except (subprocess.CalledProcessError, FileNotFoundError):
             pass
 
-        # Skip merge and branch deletion — the shared release branch
-        # must persist until the release pipeline merges it.
-        result = {
-            "success": True,
-            "worktree_removed": False,
-            "branch_removed": False,
-            "merged_to_develop": False,
-            "shared_release_branch": shared_release_branch,
-            "branch_preserved": branch_name if shared_release_branch else "",
-            "path": wt_path,
-        }
-        print(json.dumps(result))
-        return
+        if shared_release_branch:
+            # Skip merge and branch deletion — the shared release branch
+            # must persist until the release pipeline merges it.
+            result = {
+                "success": True,
+                "worktree_removed": False,
+                "branch_removed": False,
+                "merged_to_develop": False,
+                "shared_release_branch": True,
+                "branch_preserved": branch_name,
+                "path": wt_path,
+            }
+            print(json.dumps(result))
+            return
 
     # Merge task branch into development branch before removing worktree
     no_merge = getattr(args, "no_merge_to_develop", False)
