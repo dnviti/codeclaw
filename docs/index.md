@@ -1,7 +1,7 @@
 ---
-title: CTDF Documentation
-description: Complete technical documentation for the Claude Task Development Framework
-generated-by: ctdf-docs
+title: CodeClaw Documentation
+description: Complete technical documentation for the CodeClaw
+generated-by: claw-docs
 generated-at: 2026-03-18T18:00:00Z
 source-files:
   - README.md
@@ -9,7 +9,7 @@ source-files:
   - .claude-plugin/marketplace.json
 ---
 
-# CTDF — Claude Task Development Framework
+# CodeClaw
 
 A project-agnostic task and release management framework with 8 streamlined skills: `/task`, `/idea`, `/release`, `/docs`, `/setup`, `/update`, `/tests`, `/help`. Features a gated release pipeline with automatic subagent orchestration — all through plain-text files and slash commands.
 
@@ -31,8 +31,8 @@ A project-agnostic task and release management framework with 8 streamlined skil
 
 ```bash
 # Install the plugin
-/plugin marketplace add https://github.com/dnviti/claude-task-development-framework
-/plugin install ctdf@dnviti-claude-task-development-framework
+/plugin marketplace add https://github.com/dnviti/codeclaw
+/plugin install claw@dnviti-plugins
 
 # Set up your project
 /setup "My Project"
@@ -78,7 +78,7 @@ A project-agnostic task and release management framework with 8 streamlined skil
 | `/release` | Release pipeline: create, generate, continue, close |
 | `/docs` | Documentation: generate, sync, reset, publish |
 | `/setup` | Project initialization and configuration |
-| `/update` | Update CTDF-managed files |
+| `/update` | Update CodeClaw-managed files |
 | `/tests` | Test discovery, gaps, coverage, execution |
 | `/help` | Usage guide |
 
@@ -103,6 +103,6 @@ A project-agnostic task and release management framework with 8 streamlined skil
 
 Current plugin version: **3.5.2**
 
-Repository: [github.com/dnviti/claude-task-development-framework](https://github.com/dnviti/claude-task-development-framework)
+Repository: [github.com/dnviti/codeclaw](https://github.com/dnviti/codeclaw)
 
 License: MIT

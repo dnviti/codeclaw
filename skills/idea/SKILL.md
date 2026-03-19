@@ -2,7 +2,7 @@
 name: idea
 description: "Unified idea management: create, approve, disapprove, refactor, or scout ideas for the project backlog."
 disable-model-invocation: true
-argument-hint: "[create [description]] [approve IDEA-CODE] [disapprove IDEA-CODE] [refactor] [scout] [yolo]"
+argument-hint: "[create [description]] [approve IDEA-CODE] [disapprove IDEA-CODE] [edit IDEA-CODE] [refactor] [scout] [yolo]"
 ---
 
 # Idea Manager
@@ -40,7 +40,7 @@ Always respond and work in English. All idea and task content MUST be written in
 
 `SH dispatch --skill idea --args "$ARGUMENTS"`
 
-Routes to: `create`, `approve`, `disapprove`, `refactor`, `scout`, or `list` flow.
+Routes to: `create`, `approve`, `disapprove`, `edit`, `refactor`, `scout`, or `list` flow.
 
 Also returns `yolo: true/false`. When `yolo` is `true`, **auto-select the recommended (first) option at every GATE** without waiting for user input. Log each auto-selected choice. Yolo never auto-selects destructive or cancel options.
 
@@ -220,6 +220,63 @@ Present idea fields for review.
 - **(dual extra)** Also close platform issue (same as platform-only). If platform fails, warn but do NOT fail.
 
 **Step 6 — Report:** Confirm with code, title, reason, date. "The idea is no longer in the active backlog."
+
+---
+
+## Edit Flow
+
+Modify fields of an existing idea in-place without changing its status.
+
+### Edit Flow — Locate Idea
+
+- **Idea code from dispatch:** `task_code` field. If empty, list all ideas and ask: "Which idea do you want to edit? Enter the idea code." STOP.
+- **Platform-only:** `PM view-issue` using the idea code to search. Parse current fields (title, category, description, motivation).
+- **Local/dual:** `TM parse IDEA-PREFIX-XXXX`. Parse current fields from the idea block.
+
+### Edit Steps
+
+**Step 1 — Present Current Fields:**
+
+| # | Field | Current Value |
+|---|-------|---------------|
+| 1 | Title | [current title] |
+| 2 | Category | [current category] |
+| 3 | Description | [first line or summary] |
+| 4 | Motivation | [first line or summary] |
+
+**Step 2 — Select Fields to Edit:**
+
+`AskUserQuestion` multiSelect: "Which fields do you want to edit?" with options:
+- **"Title"**
+- **"Category"**
+- **"Description"**
+- **"Motivation"**
+- **"Cancel"**
+
+STOP.
+
+**Step 3 — Accept New Values:**
+
+For each selected field, present the current value and ask for the new value. Validate inputs before proceeding:
+- **Category:** Must be a recognized category from the project's idea taxonomy. Reject freeform values and re-prompt.
+- **Multi-line fields** (Description, Motivation): Accept the full replacement text. Warn if content exceeds 4000 characters (platform API limits).
+
+**Step 4 — Confirm Changes:**
+
+Present a diff-style summary of old vs new values for each modified field.
+
+`AskUserQuestion`: **"Apply these changes"** | **"Needs adjustments"** | **"Cancel"**
+
+STOP.
+
+**Step 5 — Apply Changes:**
+
+Based on mode:
+- **Platform-only:** `PM edit-issue` to update the issue title and body as needed. Reconstruct the body with updated fields while preserving unchanged sections.
+- **Local/dual:** Use `Edit` tool to modify the idea block in `ideas.txt`. Preserve exact formatting: 78-dash separators, 2-space indent, field order. Add/update `Last updated: YYYY-MM-DD` after `Date:`.
+- **Dual sync:** Apply both local edit and platform update. If platform fails, warn but keep local changes.
+
+**Step 6 — Report:** "Idea [IDEA-PREFIX-XXXX] updated. Fields changed: [list]." Include platform issue URL if applicable.
 
 ---
 

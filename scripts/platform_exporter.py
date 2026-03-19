@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Cross-platform config generator for CTDF skills.
+"""Cross-platform config generator for CodeClaw skills.
 
-Reads CTDF's canonical skill definitions from skills/*/SKILL.md,
+Reads CodeClaw's canonical skill definitions from skills/*/SKILL.md,
 extracts frontmatter and instructions, and templates them into
 platform-specific configuration files.
 
@@ -44,10 +44,10 @@ SKILLS_DIR = PROJECT_ROOT / "skills"
 TEMPLATES_DIR = PROJECT_ROOT / "templates" / "platforms"
 
 # Idempotency markers embedded in generated files
-MARKER_START = "<!-- CTDF-EXPORT:START -->"
-MARKER_END = "<!-- CTDF-EXPORT:END -->"
-MARKER_HASH_PREFIX = "<!-- CTDF-EXPORT-HASH:"
-JSON_MARKER_KEY = "__ctdf_export_hash"
+MARKER_START = "<!-- CodeClaw-EXPORT:START -->"
+MARKER_END = "<!-- CodeClaw-EXPORT:END -->"
+MARKER_HASH_PREFIX = "<!-- CodeClaw-EXPORT-HASH:"
+JSON_MARKER_KEY = "__claw_export_hash"
 
 # Frontmatter regex: YAML between --- delimiters
 FRONTMATTER_RE = re.compile(
@@ -274,7 +274,7 @@ def _to_opencode(skills: list[dict[str, Any]], output_dir: Path) -> list[str]:
     plugins = []
     for skill in skills:
         plugin_entry = {
-            "name": f"ctdf-{skill['name']}",
+            "name": f"claw-{skill['name']}",
             "description": skill["description"],
             "entry": f".opencode/plugins/{skill['name']}.js",
             "skill": skill["name"],
@@ -282,7 +282,7 @@ def _to_opencode(skills: list[dict[str, Any]], output_dir: Path) -> list[str]:
         plugins.append(plugin_entry)
 
     registry = {
-        "ctdf_version": "3.4.6",
+        "claw_version": "3.4.6",
         "generated_by": "platform_exporter.py",
         "plugins": plugins,
     }
@@ -339,7 +339,7 @@ def _to_cursor_mdc(skills: list[dict[str, Any]], output_dir: Path) -> list[str]:
     """Generate Cursor MDC rule files.
 
     Creates:
-        <output>/.cursor/rules/ctdf-<name>.mdc
+        <output>/.cursor/rules/claw-<name>.mdc
     """
     created: list[str] = []
     tmpl = _load_template("cursor-rule.mdc.tmpl")
@@ -352,7 +352,7 @@ def _to_cursor_mdc(skills: list[dict[str, Any]], output_dir: Path) -> list[str]:
             "SKILL_ARGUMENT_HINT": skill["frontmatter"].get("argument-hint", ""),
         }
         rendered = _render_template(tmpl, variables)
-        mdc_path = output_dir / ".cursor" / "rules" / f"ctdf-{skill['name']}.mdc"
+        mdc_path = output_dir / ".cursor" / "rules" / f"claw-{skill['name']}.mdc"
 
         if _write_idempotent(mdc_path, rendered, pure=True):
             created.append(str(mdc_path))
@@ -364,14 +364,14 @@ def _to_windsurf(skills: list[dict[str, Any]], output_dir: Path) -> list[str]:
     """Generate Windsurf rule files.
 
     Creates:
-        <output>/.windsurf/rules/ctdf-<name>.md
+        <output>/.windsurf/rules/claw-<name>.md
     """
     created: list[str] = []
 
     for skill in skills:
         # Windsurf uses plain markdown rules, similar to Cursor but .md
         header = (
-            f"# CTDF Skill: {skill['name']}\n\n"
+            f"# CodeClaw Skill: {skill['name']}\n\n"
             f"> {skill['description']}\n\n"
         )
         if skill["frontmatter"].get("argument-hint"):
@@ -379,7 +379,7 @@ def _to_windsurf(skills: list[dict[str, Any]], output_dir: Path) -> list[str]:
         header += "---\n\n"
         rendered = header + skill["body"]
 
-        md_path = output_dir / ".windsurf" / "rules" / f"ctdf-{skill['name']}.md"
+        md_path = output_dir / ".windsurf" / "rules" / f"claw-{skill['name']}.md"
 
         if _write_idempotent(md_path, rendered, pure=True):
             created.append(str(md_path))
@@ -391,7 +391,7 @@ def _to_continue(skills: list[dict[str, Any]], output_dir: Path) -> list[str]:
     """Generate Continue.dev assistant configuration.
 
     Creates:
-        <output>/.continue/assistants/ctdf-<name>.json
+        <output>/.continue/assistants/claw-<name>.json
     """
     created: list[str] = []
 
@@ -404,7 +404,7 @@ def _to_continue(skills: list[dict[str, Any]], output_dir: Path) -> list[str]:
             )
             body = body[:2000]
         assistant = {
-            "name": f"CTDF {skill['name'].title()}",
+            "name": f"CodeClaw {skill['name'].title()}",
             "description": skill["description"],
             "instructions": body,
             "slash_command": f"/{skill['name']}",
@@ -413,7 +413,7 @@ def _to_continue(skills: list[dict[str, Any]], output_dir: Path) -> list[str]:
             assistant["argument_hint"] = skill["frontmatter"]["argument-hint"]
 
         json_path = (
-            output_dir / ".continue" / "assistants" / f"ctdf-{skill['name']}.json"
+            output_dir / ".continue" / "assistants" / f"claw-{skill['name']}.json"
         )
 
         if _write_json_idempotent(json_path, assistant):
@@ -434,9 +434,9 @@ def _to_copilot(skills: list[dict[str, Any]], output_dir: Path) -> list[str]:
     created: list[str] = []
 
     sections: list[str] = []
-    sections.append("# CTDF Project Skills\n")
+    sections.append("# CodeClaw Project Skills\n")
     sections.append(
-        "This project uses the Claude Task Development Framework (CTDF). "
+        "This project uses CodeClaw. "
         "The following skills are available:\n"
     )
 
@@ -692,7 +692,7 @@ def build_parser() -> argparse.ArgumentParser:
     """Build the CLI argument parser."""
     parser = argparse.ArgumentParser(
         prog="platform_exporter",
-        description="Cross-platform config generator for CTDF skills.",
+        description="Cross-platform config generator for CodeClaw skills.",
     )
     sub = parser.add_subparsers(dest="command", help="Available commands")
 

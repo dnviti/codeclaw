@@ -1,13 +1,13 @@
 ---
 name: update
-description: Update CTDF-managed files (pipelines, scripts, prompts, skills, CLAUDE.md) to the latest plugin version. Detects outdated files and preserves user customizations.
+description: Update CodeClaw-managed files (pipelines, scripts, prompts, skills, CLAUDE.md) to the latest plugin version. Detects outdated files and preserves user customizations.
 disable-model-invocation: true
 argument-hint: "[all | pipelines | agentic | scripts | prompts | skills | claude-md]"
 ---
 
-# Update CTDF-Managed Files
+# Update CodeClaw-Managed Files
 
-You are an update assistant for the CTDF plugin. Detect which CTDF-managed files are outdated, show a summary, and selectively update them while preserving user customizations.
+You are an update assistant for the CodeClaw plugin. Detect which CodeClaw-managed files are outdated, show a summary, and selectively update them while preserving user customizations.
 
 **Interaction rule (applies throughout):** At each `AskUserQuestion` call, STOP completely. Wait for the user's actual response before proceeding. Never assume answers, never batch questions, only use the exact options specified.
 
@@ -39,7 +39,7 @@ python3 -c "import json; print(json.load(open('${CLAUDE_PLUGIN_ROOT}/.claude-plu
 
 Display this as the source version in the summary.
 
-## CTDF-Managed File Manifest
+## CodeClaw-Managed File Manifest
 
 All source paths are relative to `${CLAUDE_PLUGIN_ROOT}/`.
 
@@ -50,7 +50,7 @@ All source paths are relative to `${CLAUDE_PLUGIN_ROOT}/`.
 **Scripts:** `scripts/` memory_builder.py, codebase_analyzer.py, agent_runner.py → `.claude/scripts/`
 **Prompts:** `templates/prompts/` agentic-task-prompt.md, agentic-docs-prompt.md → `.claude/prompts/`
 **Skills:** `skills/` idea-scout/SKILL.md, docs/SKILL.md → `.claude/skills/`
-**CLAUDE.md:** The `<!-- CTDF:START -->` to `<!-- CTDF:END -->` section. Canonical content is in `${CLAUDE_PLUGIN_ROOT}/skills/setup/SKILL.md`.
+**CLAUDE.md:** The `<!-- CodeClaw:START -->` to `<!-- CodeClaw:END -->` section. Canonical content is in `${CLAUDE_PLUGIN_ROOT}/skills/setup/SKILL.md`.
 
 ### Customizable Files
 
@@ -59,7 +59,7 @@ All source paths are relative to `${CLAUDE_PLUGIN_ROOT}/`.
 | `agentic-task.yml` (GitHub) | `cron:` schedule | Extract before update, re-inject after |
 | `ci.yml` (GitHub) / `.gitlab-ci.yml` (GitLab) | CI runtime steps | Warn — mark as "customized" |
 | `CODEOWNERS` | Team names/paths | Warn — mark as "customized" |
-| `CLAUDE.md` | Everything outside markers | Only replace between CTDF markers |
+| `CLAUDE.md` | Everything outside markers | Only replace between CodeClaw markers |
 
 ## Step 3: Scan and Compare Files
 
@@ -92,14 +92,14 @@ python3 -c "
 import re, hashlib; from pathlib import Path
 p = Path('CLAUDE.md')
 if not p.exists(): print('CLAUDE.md|not_installed|'); exit(0)
-lm = re.search(r'<!-- CTDF:START -->(.+?)<!-- CTDF:END -->', p.read_text(), re.DOTALL)
-if not lm: print('CLAUDE.md (CTDF section)|not_installed|'); exit(0)
+lm = re.search(r'<!-- CodeClaw:START -->(.+?)<!-- CodeClaw:END -->', p.read_text(), re.DOTALL)
+if not lm: print('CLAUDE.md (CodeClaw section)|not_installed|'); exit(0)
 setup = Path('${CLAUDE_PLUGIN_ROOT}/skills/setup/SKILL.md').read_text()
-tm = re.search(r'<!-- CTDF:START -->(.+?)<!-- CTDF:END -->', setup, re.DOTALL)
-if not tm: print('CLAUDE.md (CTDF section)|source_missing|'); exit(0)
+tm = re.search(r'<!-- CodeClaw:START -->(.+?)<!-- CodeClaw:END -->', setup, re.DOTALL)
+if not tm: print('CLAUDE.md (CodeClaw section)|source_missing|'); exit(0)
 lh = hashlib.sha256(lm.group(0).encode()).hexdigest()
 th = hashlib.sha256(tm.group(0).encode()).hexdigest()
-print(f'CLAUDE.md (CTDF section)|{\"current\" if lh == th else \"outdated\"}|')
+print(f'CLAUDE.md (CodeClaw section)|{\"current\" if lh == th else \"outdated\"}|')
 "
 ```
 
@@ -129,7 +129,7 @@ Three update strategies. Apply per file type:
 |----------|-------|--------|
 | **Direct copy** | Scripts, prompts, skills, most workflows | `cp source target` |
 | **Cron-preserve** | `agentic-task.yml` (GitHub) | Extract cron → copy template → re-inject cron |
-| **CTDF-section** | `CLAUDE.md` | Regex replace between `<!-- CTDF:START -->` / `<!-- CTDF:END -->` markers |
+| **CodeClaw-section** | `CLAUDE.md` | Regex replace between `<!-- CodeClaw:START -->` / `<!-- CodeClaw:END -->` markers |
 
 **Cron-preserve implementation:**
 ```bash
@@ -144,16 +144,16 @@ print(f'Updated with cron: {cron}')
 "
 ```
 
-**CTDF-section implementation:**
+**CodeClaw-section implementation:**
 ```bash
 python3 -c "
 import re; from pathlib import Path
 setup = Path('${CLAUDE_PLUGIN_ROOT}/skills/setup/SKILL.md').read_text()
-tm = re.search(r'(<!-- CTDF:START -->.*?<!-- CTDF:END -->)', setup, re.DOTALL)
-if not tm: print('ERROR: No CTDF section in setup template'); exit(1)
+tm = re.search(r'(<!-- CodeClaw:START -->.*?<!-- CodeClaw:END -->)', setup, re.DOTALL)
+if not tm: print('ERROR: No CodeClaw section in setup template'); exit(1)
 p = Path('CLAUDE.md')
-p.write_text(re.sub(r'<!-- CTDF:START -->.*?<!-- CTDF:END -->', tm.group(1), p.read_text(), flags=re.DOTALL))
-print('CLAUDE.md CTDF section updated')
+p.write_text(re.sub(r'<!-- CodeClaw:START -->.*?<!-- CodeClaw:END -->', tm.group(1), p.read_text(), flags=re.DOTALL))
+print('CLAUDE.md CodeClaw section updated')
 "
 ```
 
@@ -161,10 +161,10 @@ print('CLAUDE.md CTDF section updated')
 
 ## Step 7: Verify and Report
 
-Verify each updated file exists and is non-empty. For `agentic-task.yml`, verify cron expression is present. For `CLAUDE.md`, verify both CTDF markers are intact.
+Verify each updated file exists and is non-empty. For `agentic-task.yml`, verify cron expression is present. For `CLAUDE.md`, verify both CodeClaw markers are intact.
 
 ```
-## CTDF Update Complete
+## CodeClaw Update Complete
 
 **Plugin version:** [version]
 
@@ -173,7 +173,7 @@ Verify each updated file exists and is non-empty. For `agentic-task.yml`, verify
 |------|--------|
 | [file path] | Updated to latest template |
 | .github/workflows/agentic-task.yml | Updated (cron preserved: [cron]) |
-| CLAUDE.md | CTDF section updated |
+| CLAUDE.md | CodeClaw section updated |
 
 ### Files Skipped
 | File | Reason |
@@ -198,5 +198,5 @@ These files are available but were never deployed:
 
 1. **Never create uninstalled files** — only update existing files. For new installations, suggest `/setup` or `/setup agentic-fleet`.
 2. **Preserve cron expressions** in `agentic-task.yml` (GitHub) during updates.
-3. **Only touch the CTDF:START/END section** in CLAUDE.md — never modify content outside those markers.
+3. **Only touch the CodeClaw:START/END section** in CLAUDE.md — never modify content outside those markers.
 4. **Warn before overwriting customized files** (`ci.yml`, `CODEOWNERS`, `.gitlab-ci.yml`) — user must re-apply project-specific changes after update.

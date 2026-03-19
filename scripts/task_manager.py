@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Task and idea manager CLI for claude-task-development-framework.
+"""Task and idea manager CLI for codeclaw.
 
 Provides deterministic file operations for Claude Code skills:
 - Task/idea listing, parsing, ID computation
@@ -115,6 +115,66 @@ def is_in_worktree() -> bool:
         return Path(common).resolve() != Path(git_dir).resolve()
     except (subprocess.CalledProcessError, FileNotFoundError):
         return False
+
+
+# Frontend file extensions and directory patterns that indicate a frontend task
+_FRONTEND_EXTENSIONS = {
+    ".tsx", ".jsx", ".vue", ".svelte", ".astro",
+    ".css", ".scss", ".sass", ".less", ".styl",
+    ".html", ".ejs", ".hbs", ".pug",
+}
+_FRONTEND_DIRECTORIES = {
+    "components", "pages", "views", "layouts", "templates",
+    "styles", "css", "public", "static", "assets", "app",
+}
+_FRONTEND_KEYWORDS = {
+    "frontend", "front-end", "ui", "component", "page", "layout",
+    "style", "css", "theme", "design", "widget", "dashboard",
+    "form", "modal", "dialog", "sidebar", "navbar", "header",
+    "footer", "responsive", "animation", "transition",
+}
+
+
+def is_frontend_task(task: dict) -> bool:
+    """Check if a task involves frontend work based on its metadata.
+
+    Inspects the task description, category, and 'Files involved' for
+    frontend indicators such as .tsx/.vue/.svelte extensions,
+    components/pages directories, and UI-related keywords.
+
+    Args:
+        task: A parsed task dict (from parse_blocks or platform issue body)
+              with keys like 'description', 'technical_details',
+              'files_create', 'files_modify', 'title'.
+
+    Returns:
+        True if the task appears to involve frontend code.
+    """
+    # Check file extensions in files_create and files_modify
+    for file_list_key in ("files_create", "files_modify"):
+        for filepath in task.get(file_list_key, []):
+            # O(1) extension check via set membership
+            if Path(filepath).suffix.lower() in _FRONTEND_EXTENSIONS:
+                return True
+            # Check directory patterns
+            path_parts = filepath.lower().replace("\\", "/").split("/")
+            for part in path_parts:
+                if part in _FRONTEND_DIRECTORIES:
+                    return True
+
+    # Check description and technical details for frontend keywords
+    text_fields = [
+        task.get("title", ""),
+        task.get("description", ""),
+        task.get("technical_details", ""),
+    ]
+    combined_text = " ".join(text_fields).lower()
+    for keyword in _FRONTEND_KEYWORDS:
+        if keyword in combined_text:
+            return True
+
+    return False
+
 
 # ── File Reading Helpers ────────────────────────────────────────────────────
 
@@ -779,6 +839,35 @@ def cmd_verify_files(args):
 
     print(json.dumps(report, indent=2))
 
+# ── Subcommand: is-frontend-task ───────────────────────────────────────────
+
+def cmd_is_frontend_task(args):
+    """Check if a task involves frontend work."""
+    main_root = get_main_repo_root()
+    code = args.code.upper()
+
+    block, fname = find_block_in_all(main_root, code, TASK_FILES)
+
+    if not block:
+        # For platform-only mode, accept JSON task data via --json-body
+        _MAX_JSON_BODY_LEN = 100_000  # 100 KB limit to prevent DoS
+        if args.json_body:
+            if len(args.json_body) > _MAX_JSON_BODY_LEN:
+                print(json.dumps({"error": "json-body exceeds 100KB limit", "is_frontend": False}))
+                sys.exit(1)
+            try:
+                task_data = json.loads(args.json_body)
+                result = is_frontend_task(task_data)
+                print(json.dumps({"code": code, "is_frontend": result}))
+                return
+            except json.JSONDecodeError:
+                pass
+        print(json.dumps({"error": f"Task {code} not found", "is_frontend": False}))
+        sys.exit(1)
+
+    result = is_frontend_task(block)
+    print(json.dumps({"code": code, "is_frontend": result, "source_file": fname}))
+
 # ── Subcommand: move ────────────────────────────────────────────────────────
 
 def cmd_add_test_procedure(args):
@@ -1285,6 +1374,49 @@ def _load_project_config() -> dict:
             pass
     return {}
 
+def _get_cached_merge_strategy(target_branch: str) -> str:
+    """Read the cached merge strategy for a target branch from issues-tracker.json.
+
+    Returns one of 'squash', 'merge', 'rebase', or '' if not cached.
+    Falls back to checking the production branch config if the target
+    branch is not explicitly configured.
+    """
+    root = get_main_repo_root()
+    for name in ("issues-tracker.json", "github-issues.json"):
+        fp = root / ".claude" / name
+        if fp.exists():
+            try:
+                with open(fp, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                branches = data.get("branches", {})
+                # Direct match
+                if target_branch and target_branch in branches:
+                    info = branches[target_branch]
+                    if isinstance(info, dict):
+                        return info.get("merge_strategy", "")
+                # Fall back to the production branch's merge strategy
+                for bname, binfo in branches.items():
+                    if isinstance(binfo, dict) and binfo.get("role") == "production" and binfo.get("merge_strategy"):
+                        return binfo["merge_strategy"]
+            except (json.JSONDecodeError, OSError):
+                pass
+            break
+    return ""
+
+
+def _get_cached_merge_flag(target_branch: str) -> str:
+    """Return the gh CLI merge flag based on cached merge strategy.
+
+    Returns '--squash', '--rebase', or '--merge' (default).
+    """
+    strategy = _get_cached_merge_strategy(target_branch)
+    if strategy == "squash":
+        return "--squash"
+    elif strategy == "rebase":
+        return "--rebase"
+    return "--merge"
+
+
 def _shlex_quote(s: str) -> str:
     """Quote a string for shell use (cross-platform safe)."""
     if not s:
@@ -1371,7 +1503,9 @@ def cmd_platform_cmd(args):
             if params.get("jq"):
                 cmd += f" --jq '{params['jq']}'"
         elif op == "merge-pr":
-            cmd = f'gh pr merge {params.get("url", "")} --auto --merge'
+            merge_flag = _get_cached_merge_flag(params.get("base", ""))
+            pr_url = _shlex_quote(params.get("url", ""))
+            cmd = f'gh pr merge {pr_url} --auto {merge_flag}'
         elif op == "create-release":
             cmd = f'gh release create "{params.get("tag", "")}" --repo "{repo}"'
             cmd += f' --title "{params.get("title", "")}"'
@@ -1468,7 +1602,12 @@ def cmd_platform_cmd(args):
             if params.get("jq"):
                 cmd += f" | jq '{params['jq']}'"
         elif op == "merge-pr":
-            cmd = f'glab mr merge {params.get("number", "")} --auto-merge --when-pipeline-succeeds'
+            squash_flag = ""
+            strategy = _get_cached_merge_strategy(params.get("base", ""))
+            if strategy == "squash":
+                squash_flag = " --squash"
+            mr_number = _shlex_quote(params.get("number", ""))
+            cmd = f'glab mr merge {mr_number} --auto-merge --when-pipeline-succeeds{squash_flag}'
         elif op == "create-release":
             cmd = f'glab release create "{params.get("tag", "")}" --name "{params.get("title", "")}"'
             cmd += f' --notes "{params.get("notes", "")}"'
@@ -2124,10 +2263,10 @@ def cmd_register_agent(args):
             "agent_type": agent_type,
             "task_code": task_code,
             "env_vars": {
-                "CTDF_AGENT_ID": agent_id,
-                "CTDF_SESSION_ID": session.session_id,
-                "CTDF_AGENT_TYPE": agent_type,
-                "CTDF_TASK_CODE": task_code,
+                "CLAW_AGENT_ID": agent_id,
+                "CLAW_SESSION_ID": session.session_id,
+                "CLAW_AGENT_TYPE": agent_type,
+                "CLAW_TASK_CODE": task_code,
             },
         }))
     except ImportError:
@@ -2141,10 +2280,10 @@ def cmd_register_agent(args):
             "agent_type": agent_type,
             "task_code": task_code,
             "env_vars": {
-                "CTDF_AGENT_ID": fallback_id,
-                "CTDF_SESSION_ID": "",
-                "CTDF_AGENT_TYPE": agent_type,
-                "CTDF_TASK_CODE": task_code,
+                "CLAW_AGENT_ID": fallback_id,
+                "CLAW_SESSION_ID": "",
+                "CLAW_AGENT_TYPE": agent_type,
+                "CLAW_TASK_CODE": task_code,
             },
             "note": "memory_protocol not available — running without coordination",
         }))
@@ -2181,7 +2320,7 @@ def cmd_deregister_agent(args):
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Task and idea manager CLI for claude-task-development-framework",
+        description="Task and idea manager CLI for codeclaw",
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -2241,6 +2380,13 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("verify-files", help="Check file existence for a task")
     p.add_argument("code", help="Task code (e.g., AUTH-0001)")
     p.set_defaults(func=cmd_verify_files)
+
+    # is-frontend-task
+    p = sub.add_parser("is-frontend-task", help="Check if a task involves frontend work")
+    p.add_argument("code", help="Task code (e.g., AUTH-0001)")
+    p.add_argument("--json-body", default=None,
+                    help="JSON task data for platform-only mode (description, files, etc.)")
+    p.set_defaults(func=cmd_is_frontend_task)
 
     # add-test-procedure
     p = sub.add_parser("add-test-procedure", help="Append TEST PROCEDURE section to a progressing task block")

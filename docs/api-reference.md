@@ -1,7 +1,7 @@
 ---
 title: API Reference
 description: CLI commands, skill interfaces, script subcommands, and hook specifications
-generated-by: ctdf-docs
+generated-by: claw-docs
 generated-at: 2026-03-18T00:00:00Z
 source-files:
   - scripts/task_manager.py
@@ -91,7 +91,7 @@ source-files:
 
 | Command | Arguments | Description |
 |---------|-----------|-------------|
-| `/update` | `[category]` | Update CTDF-managed files to latest plugin version |
+| `/update` | `[category]` | Update CodeClaw-managed files to latest plugin version |
 
 ### /help
 
@@ -174,7 +174,7 @@ python3 scripts/release_manager.py <subcommand> [options]
 | `release-close` | `--version VERSION` | Check release readiness for closing |
 | `list-release-tasks` | `--version VERSION` | List tasks for a release with platform status |
 
-> **Release state in platform-only mode:** `release-state-get/set/clear` transparently read/write a GitHub/GitLab issue labeled `ctdf-release-state`, so all collaborators share the same pipeline state.
+> **Release state in platform-only mode:** `release-state-get/set/clear` transparently read/write a GitHub/GitLab issue labeled `claw-release-state`, so all collaborators share the same pipeline state.
 
 ### skill_helper.py
 

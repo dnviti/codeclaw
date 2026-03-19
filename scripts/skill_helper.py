@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Consolidated skill helper for claude-task-development-framework.
+"""Consolidated skill helper for codeclaw.
 
-Eliminates repeated logic across CTDF skills by providing single-call
+Eliminates repeated logic across CodeClaw skills by providing single-call
 subcommands that gather context, dispatch arguments, check state, and
 manage worktrees.
 
@@ -16,6 +16,7 @@ import platform as platform_mod
 import re
 import subprocess
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 # ── Platform Adapter Support ───────────────────────────────────────────────
@@ -294,13 +295,13 @@ def claude_md_info(root: Path) -> dict:
     """Return metadata about CLAUDE.md."""
     claude_md = root / "CLAUDE.md"
     if not claude_md.exists():
-        return {"exists": False, "lines": 0, "has_ctdf_section": False}
+        return {"exists": False, "lines": 0, "has_claw_section": False}
     content = claude_md.read_text(encoding="utf-8")
     lines = content.splitlines()
     return {
         "exists": True,
         "lines": len(lines),
-        "has_ctdf_section": "<!-- CTDF:START -->" in content,
+        "has_claw_section": "<!-- CodeClaw:START -->" in content,
     }
 
 
@@ -317,6 +318,152 @@ def read_platform_config(root: Path) -> dict:
             except (json.JSONDecodeError, OSError):
                 pass
     return {}
+
+
+def _write_platform_config(root: Path, data: dict) -> str:
+    """Write data back to the issues-tracker config file. Returns the path used."""
+    for name in ("issues-tracker.json", "github-issues.json"):
+        p = root / ".claude" / name
+        if p.exists():
+            p.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+            return str(p)
+    # Fallback: create issues-tracker.json
+    p = root / ".claude" / "issues-tracker.json"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    return str(p)
+
+
+def get_cached_branch_config(root: Path) -> dict:
+    """Read cached branch topology/protection from issues-tracker.json.
+
+    Returns the ``branches`` dict from the config, or an empty dict if
+    no cache exists.
+    """
+    cfg = read_platform_config(root)
+    return cfg.get("branches", {})
+
+
+def refresh_branch_config(root: Path) -> dict:
+    """Query platform API for branch protection and cache results.
+
+    Fetches protection settings for production, staging, and development
+    branches via ``gh api`` (GitHub) or ``glab api`` (GitLab) and writes
+    them into the ``branches`` section of issues-tracker.json.
+
+    Returns the updated ``branches`` dict.
+    """
+    cfg = read_platform_config(root)
+    repo = cfg.get("repo", "")
+    platform = cfg.get("platform", "github")
+    if not repo:
+        return {}
+
+    # Determine branch names from CLAUDE.md or defaults
+    md_vars = parse_claude_md(root)
+    prod = md_vars.get("PRODUCTION_BRANCH", "") or "main"
+    staging = md_vars.get("STAGING_BRANCH", "") or "staging"
+    dev = md_vars.get("DEVELOPMENT_BRANCH", "") or "develop"
+
+    role_map = {
+        prod: "production",
+        staging: "staging",
+        dev: "development",
+    }
+
+    branches: dict = cfg.get("branches", {})
+    old_ttl = branches.get("cache_ttl_hours", 24)
+
+    for branch_name, role in role_map.items():
+        entry: dict = {"role": role, "protected": False}
+        if platform == "github":
+            result = subprocess.run(
+                ["gh", "api", f"repos/{repo}/branches/{branch_name}/protection",
+                 "-H", "Accept: application/vnd.github+json"],
+                capture_output=True, text=True, timeout=30,
+            )
+            if result.returncode == 0:
+                try:
+                    prot = json.loads(result.stdout)
+                    entry["protected"] = True
+                    reviews = prot.get("required_pull_request_reviews", {})
+                    entry["require_reviews"] = reviews.get(
+                        "required_approving_review_count", 0
+                    ) if reviews else 0
+                    entry["allow_force_pushes"] = prot.get(
+                        "allow_force_pushes", {}
+                    ).get("enabled", False)
+                    entry["allow_deletions"] = prot.get(
+                        "allow_deletions", {}
+                    ).get("enabled", False)
+                except (json.JSONDecodeError, AttributeError):
+                    pass
+            # else: branch unprotected or not found — keep defaults
+
+        elif platform == "gitlab":
+            encoded = repo.replace("/", "%2F")
+            result = subprocess.run(
+                ["glab", "api", f"projects/{encoded}/protected_branches/{branch_name}"],
+                capture_output=True, text=True, timeout=30,
+            )
+            if result.returncode == 0:
+                try:
+                    prot = json.loads(result.stdout)
+                    entry["protected"] = True
+                    entry["allow_force_pushes"] = prot.get("allow_force_push", False)
+                except (json.JSONDecodeError, AttributeError):
+                    pass
+
+        branches[branch_name] = entry
+
+    # Detect merge strategy from repo-level settings (GitHub only, once for all branches)
+    if platform == "github":
+        repo_result = subprocess.run(
+            ["gh", "api", f"repos/{repo}",
+             "-H", "Accept: application/vnd.github+json",
+             "--jq", ".allow_squash_merge,.allow_merge_commit,.allow_rebase_merge"],
+            capture_output=True, text=True, timeout=30,
+        )
+        if repo_result.returncode == 0:
+            lines = repo_result.stdout.strip().splitlines()
+            if len(lines) >= 3:
+                allow_squash = lines[0].strip().lower() == "true"
+                allow_merge = lines[1].strip().lower() == "true"
+                allow_rebase = lines[2].strip().lower() == "true"
+                if allow_squash and not allow_merge and not allow_rebase:
+                    detected_strategy = "squash"
+                elif allow_rebase and not allow_squash and not allow_merge:
+                    detected_strategy = "rebase"
+                elif allow_merge:
+                    detected_strategy = "merge"
+                else:
+                    detected_strategy = "squash"  # default if multiple
+                # Apply to all branches (repo-level setting)
+                for bname, bentry in branches.items():
+                    if isinstance(bentry, dict) and "merge_strategy" not in bentry:
+                        bentry["merge_strategy"] = detected_strategy
+
+    branches["cache_ttl_hours"] = old_ttl
+    branches["last_refreshed"] = datetime.now(timezone.utc).isoformat()
+
+    cfg["branches"] = branches
+    _write_platform_config(root, cfg)
+    return branches
+
+
+def is_branch_cache_stale(root: Path) -> bool:
+    """Return True if the cached branch config is missing or older than TTL."""
+    branches = get_cached_branch_config(root)
+    if not branches or "last_refreshed" not in branches:
+        return True
+
+    ttl_hours = branches.get("cache_ttl_hours", 24)
+    try:
+        last = datetime.fromisoformat(branches["last_refreshed"])
+        age_hours = (datetime.now(timezone.utc) - last).total_seconds() / 3600
+        return age_hours > ttl_hours
+    except (ValueError, TypeError):
+        return True
 
 
 def get_platform_info(root: Path) -> dict:
@@ -517,12 +664,27 @@ def cmd_context(_args) -> dict:
     staging_branch = md_vars.get("STAGING_BRANCH", "") or "staging"
     prod_branch = md_vars.get("PRODUCTION_BRANCH", "") or "main"
 
+    # Read cached branch protection settings
+    cached_branches = get_cached_branch_config(root)
+    protection = {}
+    for bname in (prod_branch, staging_branch, dev_branch):
+        binfo = cached_branches.get(bname, {})
+        if binfo:
+            protection[bname] = {
+                "role": binfo.get("role", ""),
+                "protected": binfo.get("protected", False),
+                "merge_strategy": binfo.get("merge_strategy", ""),
+                "require_reviews": binfo.get("require_reviews", 0),
+            }
+
     branches = {
         "current": git_current_branch(),
         "development": dev_branch,
         "staging": staging_branch,
         "production": prod_branch,
         "release_branch": dev_branch,
+        "protection": protection,
+        "cache_stale": is_branch_cache_stale(root),
     }
 
     # ── release_config ──
@@ -680,6 +842,9 @@ def dispatch_task(parts: list[str]) -> dict:
         code = rest[0].upper() if rest else ""
         remaining = " ".join(rest[1:]) if len(rest) > 1 else ""
         return {**base, "flow": "continue", "task_code": code, "remaining_args": remaining}
+    elif first == "edit":
+        code = rest[0].upper() if rest else ""
+        return {**base, "flow": "edit", "task_code": code, "remaining_args": " ".join(rest[1:])}
     elif first == "schedule":
         # Parse: schedule CODE [CODE2 ...] to VERSION
         to_idx = None
@@ -726,6 +891,9 @@ def dispatch_idea(parts: list[str]) -> dict:
     elif first == "disapprove":
         code = rest[0].upper() if rest else ""
         return {**base, "flow": "disapprove", "task_code": code, "remaining_args": " ".join(rest[1:])}
+    elif first == "edit":
+        code = rest[0].upper() if rest else ""
+        return {**base, "flow": "edit", "task_code": code, "remaining_args": " ".join(rest[1:])}
     elif first == "refactor":
         return {**base, "flow": "refactor", "task_code": "", "remaining_args": " ".join(rest)}
     elif first == "scout":
@@ -792,6 +960,10 @@ def dispatch_release(parts: list[str]) -> dict:
     elif first == "close":
         version = rest[0] if rest and _is_version(rest[0]) else ""
         return {**base, "flow": "close", "version": version,
+                "remaining_args": " ".join(rest[1:]) if len(rest) > 1 else ""}
+    elif first == "edit":
+        version = rest[0] if rest and _is_version(rest[0]) else ""
+        return {**base, "flow": "edit", "version": version,
                 "remaining_args": " ".join(rest[1:]) if len(rest) > 1 else ""}
     elif first == "resume":
         return {**base, "flow": "resume", "remaining_args": " ".join(rest)}
@@ -1342,6 +1514,20 @@ def cmd_adapter_invoke(args) -> dict:
 
 
 # ════════════════════════════════════════════════════════════════════════════
+# Subcommand: refresh-branch-config
+# ════════════════════════════════════════════════════════════════════════════
+
+def cmd_refresh_branch_config(_args) -> dict:
+    """Query platform API for branch protection rules and cache them."""
+    root = get_main_repo_root()
+    branches = refresh_branch_config(root)
+    return {
+        "success": True,
+        "branches": branches,
+    }
+
+
+# ════════════════════════════════════════════════════════════════════════════
 # CLI Entrypoint
 # ════════════════════════════════════════════════════════════════════════════
 
@@ -1353,7 +1539,7 @@ def output_json(data: dict) -> None:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Consolidated skill helper for CTDF",
+        description="Consolidated skill helper for CodeClaw",
     )
     sub = parser.add_subparsers(dest="command")
 
@@ -1392,6 +1578,10 @@ def main():
     # detect-platform
     sub.add_parser("detect-platform", help="Detect AI coding platform and return adapter info")
 
+    # refresh-branch-config
+    sub.add_parser("refresh-branch-config",
+                    help="Query platform API and cache branch protection settings")
+
     # adapter-invoke
     p_adapter = sub.add_parser("adapter-invoke", help="Invoke a tool through the platform adapter")
     p_adapter.add_argument("--platform", default="", help="Platform override (auto-detected if empty)")
@@ -1415,6 +1605,7 @@ def main():
         "detect-release-config": cmd_detect_release_config,
         "detect-platform": cmd_detect_platform,
         "adapter-invoke": cmd_adapter_invoke,
+        "refresh-branch-config": cmd_refresh_branch_config,
     }
 
     handler = handlers.get(args.command)

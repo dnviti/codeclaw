@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Release manager CLI for claude-task-development-framework.
+"""Release manager CLI for codeclaw.
 
 Provides deterministic release operations for the /release skill:
 - Version detection from manifest files
@@ -743,10 +743,10 @@ def _validate_repo(repo: str) -> bool:
 
 
 def _platform_state_issue_number(cli: str, repo: str) -> "int | None":
-    """Find the open ctdf-release-state issue number, or None if not found."""
+    """Find the open claw-release-state issue number, or None if not found."""
     try:
         result = subprocess.run(
-            [cli, "issue", "list", "--label", "ctdf-release-state",
+            [cli, "issue", "list", "--label", "claw-release-state",
              "--state", "open", "--json", "number", "--limit", "1",
              "--repo", repo],
             capture_output=True, text=True, check=True, timeout=30,
@@ -761,7 +761,7 @@ def _platform_state_issue_number(cli: str, repo: str) -> "int | None":
 
 
 def _platform_state_get() -> dict:
-    """Fetch release state from the platform ctdf-release-state issue body.
+    """Fetch release state from the platform claw-release-state issue body.
 
     Returns an empty dict if no state issue exists or the body cannot be parsed.
     """
@@ -799,22 +799,22 @@ def _platform_state_set(state: dict) -> None:
             # Ensure the label exists before creating the issue; ignore errors
             # (label may already exist or caller may lack label-create permission).
             label_result = subprocess.run(
-                [cli, "label", "create", "ctdf-release-state",
-                 "--description", "CTDF platform release state", "--repo", repo],
+                [cli, "label", "create", "claw-release-state",
+                 "--description", "CodeClaw platform release state", "--repo", repo],
                 capture_output=True, text=True, timeout=30,
             )
             if label_result.returncode not in (0, 1):
                 # returncode 1 typically means the label already exists — OK.
                 # Any other non-zero value is unexpected; log to stderr.
                 print(
-                    f"[ctdf] warning: label create exited {label_result.returncode}: "
+                    f"[claw] warning: label create exited {label_result.returncode}: "
                     f"{label_result.stderr.strip()}",
                     file=sys.stderr,
                 )
             subprocess.run(
                 [cli, "issue", "create", "--repo", repo,
-                 "--label", "ctdf-release-state",
-                 "--title", "CTDF Release State",
+                 "--label", "claw-release-state",
+                 "--title", "CodeClaw Release State",
                  "--body", body],
                 capture_output=True, text=True, check=True, timeout=30,
             )
@@ -828,7 +828,7 @@ def _platform_state_set(state: dict) -> None:
 
 
 def _platform_state_clear() -> None:
-    """Close the ctdf-release-state issue on the platform."""
+    """Close the claw-release-state issue on the platform."""
     cfg = _get_platform_config()
     cli = _platform_cli(cfg)
     repo = cfg.get("repo", "")
@@ -1661,6 +1661,7 @@ def cmd_full_context(args):
         "platform": None,
         "repo": None,
     }
+    branch_protection = {}
     for candidate in ["issues-tracker.json", "github-issues.json"]:
         fp = main_root / ".claude" / candidate
         if fp.exists():
@@ -1672,6 +1673,16 @@ def cmd_full_context(args):
                     "platform": pt_data.get("platform", "github"),
                     "repo": pt_data.get("repo", None),
                 }
+                # Read cached branch protection settings
+                cached_branches = pt_data.get("branches", {})
+                for bname, binfo in cached_branches.items():
+                    if isinstance(binfo, dict):
+                        branch_protection[bname] = {
+                            "role": binfo.get("role", ""),
+                            "protected": binfo.get("protected", False),
+                            "merge_strategy": binfo.get("merge_strategy", ""),
+                            "require_reviews": binfo.get("require_reviews", 0),
+                        }
             except (json.JSONDecodeError, OSError):
                 pass
             break
@@ -1705,6 +1716,7 @@ def cmd_full_context(args):
             "package_paths": package_paths,
         },
         "platform": platform_info,
+        "branch_protection": branch_protection,
         "release_plan": release_plan,
         "release_state": release_state,
     }
@@ -1752,7 +1764,7 @@ def cmd_coverage_gate(args):
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Release manager CLI for claude-task-development-framework",
+        description="Release manager CLI for codeclaw",
     )
     sub = parser.add_subparsers(dest="command", required=True)
 

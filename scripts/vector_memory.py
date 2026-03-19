@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Vector memory layer for CTDF — semantic search over repository content.
+"""Vector memory layer for CodeClaw — semantic search over repository content.
 
 Provides an embedded vector database (LanceDB) that indexes source code,
 tasks, git history, and agent-generated documents for semantic retrieval.
@@ -97,8 +97,11 @@ def load_config(root: Path) -> dict:
             try:
                 data = json.loads(cp.read_text(encoding="utf-8"))
                 return data.get("vector_memory", {})
-            except (json.JSONDecodeError, OSError):
-                pass
+            except (json.JSONDecodeError, OSError) as exc:
+                print(
+                    f"Warning: failed to parse config {cp}: {exc}",
+                    file=sys.stderr,
+                )
     return {}
 
 
@@ -113,8 +116,11 @@ def load_consistency_config(root: Path) -> dict:
             try:
                 data = json.loads(cp.read_text(encoding="utf-8"))
                 return data.get("memory_consistency", {})
-            except (json.JSONDecodeError, OSError):
-                pass
+            except (json.JSONDecodeError, OSError) as exc:
+                print(
+                    f"Warning: failed to parse config {cp}: {exc}",
+                    file=sys.stderr,
+                )
     return {}
 
 
@@ -136,6 +142,8 @@ def get_effective_config(root: Path) -> dict:
         "batch_size": user_cfg.get("batch_size", DEFAULT_BATCH_SIZE),
         "include_patterns": user_cfg.get("include_patterns", []),
         "exclude_patterns": user_cfg.get("exclude_patterns", []),
+        "gpu_mode": user_cfg.get("gpu_acceleration", {}).get("mode", "auto"),
+        "log_provider": user_cfg.get("gpu_acceleration", {}).get("log_provider", True),
     }
 
 
@@ -381,6 +389,32 @@ def _dir_size_mb(path: Path) -> float:
 
 # ── Index Command ────────────────────────────────────────────────────────────
 
+def _check_enabled_or_exit(root: Path, json_output: bool = False) -> dict:
+    """Check if vector memory is enabled; exit with informative message if not.
+
+    Args:
+        root: Project root path.
+        json_output: When True, print a JSON message instead of plain text.
+
+    Returns:
+        The effective configuration dict when vector memory is enabled.
+        Exits the process when disabled, so callers can use the returned
+        config directly without a redundant ``get_effective_config()`` call.
+    """
+    config = get_effective_config(root)
+    if config.get("enabled") is False:
+        msg = (
+            "Vector memory is disabled via vector_memory.enabled=false "
+            "in project-config.json. Set it to true to enable."
+        )
+        if json_output:
+            print(json.dumps({"status": "disabled_by_config", "message": msg}))
+        else:
+            print(f"Vector memory disabled: {msg}", file=sys.stderr)
+        sys.exit(0)
+    return config
+
+
 def cmd_index(args):
     """Full or incremental index of the repository.
 
@@ -392,7 +426,7 @@ def cmd_index(args):
     concurrent agent writes without locking.
     """
     root = Path(args.root).resolve()
-    config = get_effective_config(root)
+    config = _check_enabled_or_exit(root)
     index_dir = root / config["index_path"]
     index_dir.mkdir(parents=True, exist_ok=True)
 
@@ -411,8 +445,8 @@ def cmd_index(args):
     from embeddings import create_provider, EmbeddingCache
 
     # Resolve agent/session IDs once (used by both event sourcing and lock paths)
-    agent_id = os.environ.get("CTDF_AGENT_ID", f"agent-{os.getpid()}")
-    session_id = os.environ.get("CTDF_SESSION_ID", "")
+    agent_id = os.environ.get("CLAW_AGENT_ID", f"agent-{os.getpid()}")
+    session_id = os.environ.get("CLAW_SESSION_ID", "")
 
     # Check if event sourcing is enabled
     use_event_sourcing = False
@@ -475,6 +509,8 @@ def cmd_index(args):
         "provider": config["embedding_provider"],
         "model": config["embedding_model"],
         "api_key_env": config["embedding_api_key_env"],
+        "gpu_mode": config.get("gpu_mode", "auto"),
+        "log_provider": config.get("log_provider", True),
     }
 
     start_time = time.time()
@@ -713,8 +749,8 @@ def cmd_compact(args):
     lock = None
     try:
         from memory_lock import EventLock
-        agent_id = os.environ.get("CTDF_AGENT_ID", f"agent-{os.getpid()}")
-        session_id = os.environ.get("CTDF_SESSION_ID", "")
+        agent_id = os.environ.get("CLAW_AGENT_ID", f"agent-{os.getpid()}")
+        session_id = os.environ.get("CLAW_SESSION_ID", "")
         lock = EventLock(index_dir, agent_id=agent_id, session_id=session_id)
     except ImportError:
         pass
@@ -762,7 +798,7 @@ def cmd_search(args):
     results include recent writes from all agents.
     """
     root = Path(args.root).resolve()
-    config = get_effective_config(root)
+    config = _check_enabled_or_exit(root, json_output=getattr(args, "json_output", False))
     index_dir = root / config["index_path"]
 
     ok, msg = _check_deps()
@@ -787,6 +823,8 @@ def cmd_search(args):
         "provider": config["embedding_provider"],
         "model": config["embedding_model"],
         "api_key_env": config["embedding_api_key_env"],
+        "gpu_mode": config.get("gpu_mode", "auto"),
+        "log_provider": config.get("log_provider", True),
     }
     provider = create_provider(emb_config)
     query_embedding = provider.embed([query])[0]
@@ -824,7 +862,7 @@ def cmd_search(args):
                         compact_lock = None
                         try:
                             from memory_lock import EventLock
-                            agent_id = os.environ.get("CTDF_AGENT_ID",
+                            agent_id = os.environ.get("CLAW_AGENT_ID",
                                                       f"agent-{os.getpid()}")
                             compact_lock = EventLock(index_dir, agent_id=agent_id)
                         except ImportError:
@@ -861,7 +899,7 @@ def cmd_search(args):
     lock = None
     try:
         from memory_lock import MemoryLock
-        agent_id = os.environ.get("CTDF_AGENT_ID", f"agent-{os.getpid()}")
+        agent_id = os.environ.get("CLAW_AGENT_ID", f"agent-{os.getpid()}")
         lock = MemoryLock(index_dir, agent_id=agent_id)
     except ImportError:
         pass
@@ -940,17 +978,44 @@ def cmd_status(args):
     """Show index health, chunk counts, and staleness."""
     root = Path(args.root).resolve()
     config = get_effective_config(root)
+
+    # When disabled, report status without accessing the index
+    if config.get("enabled") is False:
+        status = {
+            "status": "disabled_by_config",
+            "enabled": False,
+            "message": (
+                "Vector memory is disabled via vector_memory.enabled=false "
+                "in project-config.json. Set it to true to enable."
+            ),
+        }
+        if getattr(args, "json_output", False):
+            print(json.dumps(status, indent=2))
+        else:
+            print("Vector Memory Status")
+            print("=" * 40)
+            print(f"  Status:  disabled_by_config")
+            print(f"  Enabled: False")
+            print(f"  {status['message']}")
+        return
+
     index_dir = root / config["index_path"]
 
     # Check dependencies
-    from deps_check import check_vector_memory_deps
+    from deps_check import check_vector_memory_deps, detect_gpu_providers
     deps_ok, missing = check_vector_memory_deps()
+
+    gpu_providers = detect_gpu_providers()
+    gpu_mode = config.get("gpu_mode", "auto")
 
     status = {
         "enabled": config.get("enabled", False),
         "dependencies_installed": deps_ok,
         "missing_dependencies": missing,
         "index_path": str(index_dir),
+        "gpu_mode": gpu_mode,
+        "gpu_providers_available": gpu_providers,
+        "gpu_active": bool(gpu_providers) and gpu_mode != "cpu",
     }
 
     meta_path = index_dir / INDEX_META
@@ -1046,7 +1111,7 @@ def cmd_status(args):
 def cmd_clear(args):
     """Reset the vector index."""
     root = Path(args.root).resolve()
-    config = get_effective_config(root)
+    config = _check_enabled_or_exit(root)
     index_dir = root / config["index_path"]
 
     if not index_dir.exists():
@@ -1092,7 +1157,7 @@ def cmd_configure(args):
 def cmd_gc(args):
     """Garbage collection: prune old entries, compact tables, clean sessions."""
     root = Path(args.root).resolve()
-    config = get_effective_config(root)
+    config = _check_enabled_or_exit(root, json_output=getattr(args, "json_output", False))
     consistency = get_effective_consistency_config(root)
     index_dir = root / config["index_path"]
 
@@ -1226,6 +1291,7 @@ def cmd_gc(args):
 def cmd_agents(args):
     """List active and historical agent sessions."""
     root = Path(args.root).resolve()
+    _check_enabled_or_exit(root, json_output=getattr(args, "json_output", False))
 
     try:
         from memory_protocol import MemoryProtocol
@@ -1276,6 +1342,7 @@ def cmd_agents(args):
 def cmd_conflicts(args):
     """Show flagged contradictions between agents."""
     root = Path(args.root).resolve()
+    _check_enabled_or_exit(root, json_output=getattr(args, "json_output", False))
 
     try:
         from memory_protocol import MemoryProtocol
@@ -1312,6 +1379,7 @@ def cmd_conflicts(args):
         print("=" * 70)
         for c in conflicts:
             status = "RESOLVED" if c.get("resolved") else "PENDING"
+            method = c.get("resolve_strategy", "manual")
             print(
                 f"  [{status}] {c.get('conflict_id', '?')}"
                 f"  field={c.get('field', '?')}"
@@ -1320,12 +1388,92 @@ def cmd_conflicts(args):
             print(
                 f"           agent_a={c.get('entry_a_agent', '?')}"
                 f"  agent_b={c.get('entry_b_agent', '?')}"
+                f"  method={method}"
             )
             print(
                 f"           detected={c.get('detected_iso', '?')}"
             )
         print()
-        print(f"  To resolve: vector_memory.py conflicts --resolve <conflict_id>")
+        print("  To resolve manually: vector_memory.py conflicts --resolve <conflict_id>")
+        print("  To auto-resolve:     vector_memory.py resolve-conflicts [--dry-run]")
+        print()
+
+
+# ── Resolve Conflicts (LLM Judge) ────────────────────────────────────────────
+
+def cmd_resolve_conflicts(args):
+    """Auto-resolve pending opinion conflicts via LLM-as-judge."""
+    root = Path(args.root).resolve()
+
+    try:
+        from conflict_judge import (
+            batch_resolve, load_auto_resolve_config,
+            DEFAULT_STRATEGY, DEFAULT_PROVIDER,
+            DEFAULT_CONFIDENCE_THRESHOLD, DEFAULT_MAX_PER_RUN,
+        )
+    except ImportError:
+        print(json.dumps({"error": "conflict_judge module not available"}))
+        sys.exit(1)
+
+    # Load config defaults, then override with CLI args
+    config = load_auto_resolve_config(root)
+    strategy = args.strategy or config.get("strategy", DEFAULT_STRATEGY)
+    provider = args.provider or config.get("provider", DEFAULT_PROVIDER)
+    model = args.model or config.get("model", "")
+    threshold = (
+        args.threshold if args.threshold > 0
+        else config.get("confidence_threshold", DEFAULT_CONFIDENCE_THRESHOLD)
+    )
+    max_per_run = (
+        args.max_per_run if args.max_per_run > 0
+        else config.get("max_auto_resolve_per_run", DEFAULT_MAX_PER_RUN)
+    )
+
+    result = batch_resolve(
+        root=root,
+        strategy=strategy,
+        provider=provider,
+        model=model,
+        confidence_threshold=threshold,
+        max_per_run=max_per_run,
+        dry_run=args.dry_run,
+    )
+
+    if args.json_output:
+        print(json.dumps(result, indent=2))
+    else:
+        if not result.get("success"):
+            print(f"Error: {result.get('error', 'unknown')}")
+            sys.exit(1)
+
+        mode = "DRY RUN" if args.dry_run else "LIVE"
+        print(f"\nConflict Auto-Resolution [{mode}]")
+        print("=" * 60)
+        print(f"  Strategy:         {strategy}")
+        print(f"  Provider:         {provider}")
+        print(f"  Total pending:    {result.get('total_pending', 0)}")
+        print(f"  Opinion pending:  {result.get('opinion_pending', 0)}")
+        print(f"  Processed:        {result.get('processed', 0)}")
+        print(f"  Resolved:         {result.get('resolved', 0)}")
+        print(f"  Skipped/Failed:   {result.get('skipped', 0)}")
+
+        results_list = result.get("results", [])
+        if results_list:
+            print()
+            for r in results_list:
+                cid = r.get("conflict_id", "?")
+                resolved = "YES" if r.get("resolved") else "NO"
+                verdict = r.get("verdict", {})
+                winner = verdict.get("winner", "?") if verdict else "?"
+                conf = verdict.get("confidence", 0) if verdict else 0
+                err = r.get("error", "")
+                print(f"  {cid}: resolved={resolved} winner={winner} "
+                      f"confidence={conf:.2f}")
+                if err:
+                    print(f"         error: {err}")
+
+        if not results_list:
+            print("\n  No opinion conflicts to process.")
         print()
 
 
@@ -1401,8 +1549,8 @@ def hook_file_changed(file_path: str):
         lock = None
         try:
             from memory_lock import MemoryLock
-            agent_id = os.environ.get("CTDF_AGENT_ID", f"agent-{os.getpid()}")
-            session_id = os.environ.get("CTDF_SESSION_ID", "")
+            agent_id = os.environ.get("CLAW_AGENT_ID", f"agent-{os.getpid()}")
+            session_id = os.environ.get("CLAW_SESSION_ID", "")
             lock = MemoryLock(index_dir, agent_id=agent_id, session_id=session_id, timeout=5.0)
         except ImportError:
             pass
@@ -1432,10 +1580,10 @@ def hook_file_changed(file_path: str):
                 embeddings = cache.embed_with_cache(provider, texts)
 
                 # Tag entries with agent metadata if available
-                agent_id = os.environ.get("CTDF_AGENT_ID", "")
-                agent_type = os.environ.get("CTDF_AGENT_TYPE", "task")
-                session_id = os.environ.get("CTDF_SESSION_ID", "")
-                task_code = os.environ.get("CTDF_TASK_CODE", "")
+                agent_id = os.environ.get("CLAW_AGENT_ID", "")
+                agent_type = os.environ.get("CLAW_AGENT_TYPE", "task")
+                session_id = os.environ.get("CLAW_SESSION_ID", "")
+                task_code = os.environ.get("CLAW_TASK_CODE", "")
 
                 records = []
                 for chunk, emb in zip(chunks, embeddings):
@@ -1558,7 +1706,7 @@ def try_vector_index(root: Path, content: str, doc_name: str,
 
 def main():
     parser = argparse.ArgumentParser(
-        description="CTDF Vector Memory — semantic search over repository content",
+        description="CodeClaw Vector Memory — semantic search over repository content",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -1663,6 +1811,25 @@ Examples:
     cfl.add_argument("--json", dest="json_output", action="store_true",
                      help="Output as JSON")
 
+    # ── resolve-conflicts ──
+    rc = sub.add_parser("resolve-conflicts",
+                        help="Auto-resolve opinion conflicts via LLM judge")
+    rc.add_argument("--root", default=".", help="Project root directory")
+    rc.add_argument("--strategy", choices=["single-judge", "majority-vote",
+                                           "confidence-merge"],
+                    default=None, help="Resolution strategy (default: from config)")
+    rc.add_argument("--provider", choices=["ollama", "claude"],
+                    default=None, help="LLM provider (default: from config)")
+    rc.add_argument("--model", default="", help="Override LLM model name")
+    rc.add_argument("--threshold", type=float, default=0,
+                    help="Confidence threshold for confidence-merge strategy")
+    rc.add_argument("--max", dest="max_per_run", type=int, default=0,
+                    help="Max conflicts to process (default: from config)")
+    rc.add_argument("--dry-run", dest="dry_run", action="store_true",
+                    help="Evaluate but do not mark conflicts as resolved")
+    rc.add_argument("--json", dest="json_output", action="store_true",
+                    help="Output as JSON")
+
     # ── hook (internal) ──
     hk = sub.add_parser("hook", help="Internal: incremental update hook")
     hk.add_argument("file_path", help="Path to the changed file")
@@ -1691,6 +1858,8 @@ Examples:
         cmd_agents(args)
     elif args.command == "conflicts":
         cmd_conflicts(args)
+    elif args.command == "resolve-conflicts":
+        cmd_resolve_conflicts(args)
     elif args.command == "hook":
         hook_file_changed(args.file_path)
 

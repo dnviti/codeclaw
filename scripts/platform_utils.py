@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Cross-platform utilities for CTDF scripts.
+"""Cross-platform utilities for CodeClaw scripts.
 
 Provides shared helpers that abstract away OS-specific differences
-(Windows vs macOS vs Linux) so that all CTDF scripts work identically
+(Windows vs macOS vs Linux) so that all CodeClaw scripts work identically
 on every supported platform.
 
 Zero external dependencies -- stdlib only.
@@ -173,7 +173,7 @@ def run_command(
 ) -> dict:
     """Run a command using list-format invocation (no shell).
 
-    This is the recommended way to call subprocesses across all CTDF
+    This is the recommended way to call subprocesses across all CodeClaw
     scripts.  Using list-format avoids shell injection risks and works
     identically on Windows, macOS, and Linux.
 
@@ -231,6 +231,52 @@ def run_command(
             "stdout": "",
             "stderr": f"Command not found: {cmd[0]}",
         }
+
+
+# -- File Opener --------------------------------------------------------------
+
+def open_file(path: str | Path) -> bool:
+    """Open a file with the system's default application.
+
+    Cross-platform: uses ``xdg-open`` on Linux, ``open`` on macOS, and
+    ``os.startfile`` on Windows.
+
+    Parameters
+    ----------
+    path : str | Path
+        Path to the file to open.
+
+    Returns
+    -------
+    bool
+        True if the file open command was launched successfully.
+    """
+    path = Path(path)
+    if not path.exists():
+        return False
+
+    try:
+        if IS_WINDOWS:
+            os.startfile(str(path))
+            return True
+        elif IS_MACOS:
+            subprocess.Popen(
+                ["open", str(path)],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            return True
+        elif IS_LINUX:
+            subprocess.Popen(
+                ["xdg-open", str(path)],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            return True
+    except (OSError, FileNotFoundError):
+        pass
+
+    return False
 
 
 # -- CLI Entry Point ----------------------------------------------------------

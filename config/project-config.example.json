@@ -23,7 +23,16 @@
     "gc_ttl_days": 30,
     "max_index_size_mb": 500,
     "conflict_strategy": "auto",
-    "enable_versioned_reads": false
+    "enable_versioned_reads": false,
+    "auto_resolve": {
+      "enabled": false,
+      "strategy": "single-judge",
+      "provider": "ollama",
+      "confidence_threshold": 0.8,
+      "num_votes": 3,
+      "max_auto_resolve_per_run": 10,
+      "model": ""
+    }
   },
   "vector_memory": {
     "enabled": false,
@@ -36,6 +45,10 @@
     "batch_size": 64,
     "include_patterns": [],
     "exclude_patterns": [],
+    "gpu_acceleration": {
+      "mode": "auto",
+      "log_provider": true
+    },
     "event_sourcing": {
       "enabled": false,
       "compact_interval_seconds": 300,
@@ -90,6 +103,14 @@
         "post_url": "https://news.ycombinator.com/submit"
       }
     ]
+  },
+  "image_generation": {
+    "enabled": false,
+    "provider": "local",
+    "api_key_env": "",
+    "default_size": "1024x1024",
+    "default_style": "natural",
+    "output_dir": "assets/generated"
   },
   "ollama": {
     "enabled": false,

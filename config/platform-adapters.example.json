@@ -1,5 +1,5 @@
 {
-  "_comment": "Platform adapter configuration for CTDF multi-agent compatibility. Copy to .claude/platform-adapters.json and customize.",
+  "_comment": "Platform adapter configuration for CodeClaw multi-agent compatibility. Copy to .claude/platform-adapters.json and customize.",
   "default_platform": "",
   "adapters": {
     "claude-code": {

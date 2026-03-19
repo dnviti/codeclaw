@@ -10,6 +10,8 @@ in the issues tracker config.
 Usage:
     python3 scripts/setup_protection.py [--branch main] [--required-reviews 1]
                                                  [--status-checks ci] [--merge-queue]
+    python3 scripts/setup_protection.py cache-protection [--branch main]
+                                                 [--role production] [--merge-strategy squash]
 
 Prerequisites:
     - gh CLI (GitHub) or glab CLI (GitLab) installed and authenticated
@@ -22,6 +24,7 @@ import argparse
 import json
 import subprocess
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 
@@ -49,9 +52,47 @@ def load_config(root: Path) -> tuple[dict, str]:
     return {}, ""
 
 
+def save_config(data: dict, config_path: str) -> None:
+    """Write issues tracker config back to disk."""
+    with open(config_path, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
+        f.write("\n")
+
+
 def run_cmd(cmd: list[str], check: bool = False) -> subprocess.CompletedProcess:
     """Run a CLI command and return the result."""
     return subprocess.run(cmd, capture_output=True, text=True, check=check)
+
+
+# ── Cache Protection ─────────────────────────────────────────────────────
+
+def cache_branch_protection(data: dict, config_path: str,
+                            branch: str, role: str,
+                            protected: bool = True,
+                            require_reviews: int = 0,
+                            merge_strategy: str = "",
+                            allow_force_pushes: bool = False,
+                            allow_deletions: bool = False) -> None:
+    """Cache a single branch's protection settings in issues-tracker.json."""
+    branches = data.setdefault("branches", {})
+
+    entry = branches.get(branch, {})
+    entry["role"] = role
+    entry["protected"] = protected
+    if require_reviews > 0:
+        entry["require_reviews"] = require_reviews
+    if merge_strategy:
+        entry["merge_strategy"] = merge_strategy
+    entry["allow_force_pushes"] = allow_force_pushes
+    entry["allow_deletions"] = allow_deletions
+
+    branches[branch] = entry
+    branches.setdefault("cache_ttl_hours", 24)
+    branches["last_refreshed"] = datetime.now(timezone.utc).isoformat()
+    data["branches"] = branches
+
+    save_config(data, config_path)
+    print(f"  Cached protection settings for '{branch}' (role={role}) in {config_path}")
 
 
 # ── GitHub Protection ─────────────────────────────────────────────────────
@@ -193,6 +234,9 @@ def setup_gitlab_protection(repo: str, branch: str, required_reviews: int,
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Setup branch protection rules")
+    sub = parser.add_subparsers(dest="subcommand")
+
+    # Default (no subcommand) — original behavior
     parser.add_argument("--branch", default="main",
                         help="Branch to protect (default: main)")
     parser.add_argument("--required-reviews", type=int, default=1,
@@ -201,13 +245,30 @@ def main() -> None:
                         help="Required status check names (e.g., 'Lint, Test & Build')")
     parser.add_argument("--merge-queue", action="store_true",
                         help="Print instructions for enabling merge queue")
+
+    # cache-protection subcommand
+    p_cache = sub.add_parser("cache-protection",
+                             help="Cache branch protection settings in issues-tracker.json")
+    p_cache.add_argument("--branch", default="main",
+                         help="Branch name to cache (default: main)")
+    p_cache.add_argument("--role", default="production",
+                         choices=["production", "staging", "development"],
+                         help="Branch role (default: production)")
+    p_cache.add_argument("--merge-strategy", default="",
+                         choices=["", "squash", "merge", "rebase"],
+                         help="Preferred merge strategy for this branch")
+    p_cache.add_argument("--require-reviews", type=int, default=0,
+                         help="Number of required reviews (default: 0)")
+    p_cache.add_argument("--protected", action="store_true", default=True,
+                         help="Mark branch as protected (default: true)")
+
     args = parser.parse_args()
 
     root = find_project_root()
     data, config_path = load_config(root)
 
     if not config_path:
-        print("ERROR: No config file found. Copy the issues-tracker.example.json from the CTDF plugin config directory "
+        print("ERROR: No config file found. Copy the issues-tracker.example.json from the CodeClaw plugin config directory "
               "to .claude/issues-tracker.json and configure it.")
         sys.exit(1)
 
@@ -219,12 +280,42 @@ def main() -> None:
 
     platform = data.get("platform", "github")
 
+    if args.subcommand == "cache-protection":
+        cache_branch_protection(
+            data, config_path,
+            branch=args.branch,
+            role=args.role,
+            protected=args.protected,
+            require_reviews=args.require_reviews,
+            merge_strategy=args.merge_strategy,
+        )
+        print(f"\nDone! Cached protection settings for {args.branch}.")
+        return
+
+    # Default: set up protection rules
     if platform == "gitlab":
         setup_gitlab_protection(repo, args.branch, args.required_reviews,
                                 args.status_checks, args.merge_queue)
     else:
         setup_github_protection(repo, args.branch, args.required_reviews,
                                 args.status_checks, args.merge_queue)
+
+    # Automatically cache the protection settings after applying them
+    # Infer role from branch name when possible
+    branch_lower = args.branch.lower()
+    if branch_lower in ("staging", "stage", "pre-prod"):
+        role = "staging"
+    elif branch_lower in ("develop", "dev", "development"):
+        role = "development"
+    else:
+        role = "production"
+    cache_branch_protection(
+        data, config_path,
+        branch=args.branch,
+        role=role,
+        protected=True,
+        require_reviews=args.required_reviews,
+    )
 
     print(f"\nDone! Branch protection configured for {repo}.")
 

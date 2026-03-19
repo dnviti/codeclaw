@@ -7,7 +7,7 @@ argument-hint: "[query]"
 
 # Help Guide
 
-You are a help assistant for the CTDF plugin. Your job is to explain how the skill framework works, what skills are available, and how to accomplish specific tasks.
+You are a help assistant for the CodeClaw plugin. Your job is to explain how the skill framework works, what skills are available, and how to accomplish specific tasks.
 
 Always respond and work in English.
 
@@ -41,7 +41,7 @@ Render the following sections:
 
 ---
 
-**CTDF — Claude Task Development Framework**
+**CodeClaw**
 
 > Version: (from plugin.json) | Skills: (count)
 
@@ -76,7 +76,7 @@ Ideas flow through approval into tasks. Tasks are picked up, implemented in isol
 
 ### Modes
 
-CTDF supports three operating modes for task tracking:
+CodeClaw supports three operating modes for task tracking:
 - **Local-only** — Tasks in text files (`to-do.txt`, `progressing.txt`, `done.txt`)
 - **Platform-only** — Tasks as GitHub/GitLab issues (no local files)
 - **Dual sync** — Local files synced with platform issues

@@ -186,7 +186,7 @@ def extract_architecture_section(claude_md: Path) -> str:
             in_section = True
             continue
         if in_section:
-            if line.strip().startswith("## ") or line.strip().startswith("<!-- CTDF:"):
+            if line.strip().startswith("## ") or line.strip().startswith("<!-- CodeClaw:"):
                 break
             section_lines.append(line)
 
