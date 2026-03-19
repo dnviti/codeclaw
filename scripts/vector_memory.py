@@ -1310,6 +1310,21 @@ def hook_batch(file_paths: list[str]):
         except ImportError:
             pass
 
+        # Pre-read agent metadata once (constant for process lifetime)
+        meta_agent_id = os.environ.get("CTDF_AGENT_ID", "")
+        meta_agent_type = os.environ.get("CTDF_AGENT_TYPE", "task")
+        meta_session_id = os.environ.get("CTDF_SESSION_ID", "")
+        meta_task_code = os.environ.get("CTDF_TASK_CODE", "")
+
+        # Pre-import tag_entry once (avoid repeated try/except per chunk)
+        _tag_entry_fn = None
+        if meta_agent_id:
+            try:
+                from memory_protocol import tag_entry
+                _tag_entry_fn = tag_entry
+            except ImportError:
+                pass
+
         _ctx = lock.write() if lock else nullcontext()
         with _ctx:
             db = _open_db(index_dir)
@@ -1346,12 +1361,6 @@ def hook_batch(file_paths: list[str]):
                 texts = [c.content for c in chunks]
                 embeddings = cache.embed_with_cache(provider, texts)
 
-                # Agent metadata
-                agent_id = os.environ.get("CTDF_AGENT_ID", "")
-                agent_type = os.environ.get("CTDF_AGENT_TYPE", "task")
-                session_id_env = os.environ.get("CTDF_SESSION_ID", "")
-                task_code = os.environ.get("CTDF_TASK_CODE", "")
-
                 records = []
                 for chunk, emb in zip(chunks, embeddings):
                     record = {
@@ -1366,13 +1375,10 @@ def hook_batch(file_paths: list[str]):
                         "file_role": chunk.file_role,
                         "content_hash": chunk.content_hash,
                     }
-                    if agent_id:
-                        try:
-                            from memory_protocol import tag_entry
-                            tag_entry(record, agent_id, agent_type,
-                                      task_code, session_id_env)
-                        except ImportError:
-                            pass
+                    if _tag_entry_fn:
+                        _tag_entry_fn(record, meta_agent_id,
+                                      meta_agent_type, meta_task_code,
+                                      meta_session_id)
                     records.append(record)
 
                 table.add(records)

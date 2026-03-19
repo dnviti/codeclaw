@@ -492,7 +492,7 @@ def cmd_semantic_discover(args):
     """
     root = get_main_repo_root()
     section = args.section
-    top_k = args.top_k
+    top_k = min(args.top_k, 100)  # Cap to prevent excessive vector queries
 
     # Get existing tracked source files from the manifest
     manifest = _read_manifest(root)
@@ -505,11 +505,14 @@ def cmd_semantic_discover(args):
                 }
                 break
 
-    # Also accept explicit exclude list
+    # Also accept explicit exclude list (must be a JSON array of strings)
     if args.exclude:
         try:
             exclude_list = json.loads(args.exclude)
-            existing_sources.update(exclude_list)
+            if isinstance(exclude_list, list):
+                existing_sources.update(
+                    str(p) for p in exclude_list if isinstance(p, str)
+                )
         except (json.JSONDecodeError, TypeError):
             pass
 
@@ -679,12 +682,19 @@ def cmd_semantic_staleness(args):
         }))
         return
 
-    # Parse changed files list
+    # Parse changed files list (must be a JSON array of strings)
     try:
         changed_files = json.loads(args.changed_files)
     except json.JSONDecodeError:
         print(json.dumps({
             "error": "Invalid changed_files JSON",
+            "affected_sections": [],
+        }))
+        return
+
+    if not isinstance(changed_files, list):
+        print(json.dumps({
+            "error": "changed_files must be a JSON array",
             "affected_sections": [],
         }))
         return
@@ -702,18 +712,25 @@ def cmd_semantic_staleness(args):
     affected_sections: dict[str, list[str]] = {}
 
     for changed_file in changed_files:
-        fp = root / changed_file
+        if not isinstance(changed_file, str):
+            continue
+        # Validate path stays within project root (prevent traversal)
+        fp = (root / changed_file).resolve()
+        try:
+            fp.relative_to(root)
+        except ValueError:
+            continue  # Path escapes project root
         if not fp.exists():
             continue
 
-        # Read first part of the file to build a semantic query
+        # Read first 500 chars of the file to build a semantic query
         try:
-            content = fp.read_text(encoding="utf-8", errors="replace")[:1000]
+            content = fp.read_text(encoding="utf-8", errors="replace")[:500]
         except OSError:
             continue
 
         # Use file name and content snippet as query
-        query = f"{changed_file} {content[:500]}"
+        query = f"{changed_file} {content}"
 
         try:
             result = subprocess.run(
