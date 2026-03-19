@@ -159,12 +159,17 @@ def detect_gpu_providers() -> list[str]:
         return []
 
 
-def discover_gpu_lib_paths() -> dict:
+def discover_gpu_lib_paths(create_if_missing: bool = False) -> dict:
     """Auto-discover pip-installed GPU library paths for the current platform.
 
     Scans site-packages for NVIDIA/ROCm shared libraries that ONNX Runtime
     needs at session creation time. These paths are often not on the default
     library search path, causing silent fallback to CPU.
+
+    Args:
+        create_if_missing: If True and the platform env var (e.g.
+            LD_LIBRARY_PATH) is unset or empty, inject the discovered
+            paths into os.environ so the current process can use them.
 
     Returns:
         Dict with:
@@ -173,6 +178,7 @@ def discover_gpu_lib_paths() -> dict:
                      ("LD_LIBRARY_PATH" on Linux, "PATH" on Windows)
             platform: "linux", "windows", or "darwin"
             fix_command: shell command the user can run to fix the issue
+            env_created: bool, True if env var was created/updated
     """
     system = platform.system()
     plat = {"Linux": "linux", "Windows": "windows",
@@ -234,6 +240,7 @@ def discover_gpu_lib_paths() -> dict:
                     discovered.append(str(rp))
 
     result["paths"] = discovered
+    result["env_created"] = False
 
     # Build a user-friendly fix command
     if discovered:
@@ -248,6 +255,23 @@ def discover_gpu_lib_paths() -> dict:
             result["fix_command"] = (
                 f'set PATH={joined};%PATH%'
             )
+
+        # Optionally create/update the env var in the current process
+        if create_if_missing:
+            env_var = result["env_var"]
+            separator = ":" if plat == "linux" else ";"
+            current = os.environ.get(env_var, "")
+            new_paths = [
+                p for p in discovered
+                if p not in current and Path(p).is_dir()
+            ]
+            if new_paths:
+                prefix = separator.join(new_paths)
+                if current:
+                    os.environ[env_var] = prefix + separator + current
+                else:
+                    os.environ[env_var] = prefix
+                result["env_created"] = True
 
     return result
 
@@ -432,6 +456,9 @@ def verify_gpu_provider(auto_fix: bool = False) -> dict:
         _inject_lib_paths(lib_info)
         session_ok_retry, active_retry = _test_gpu_session(gpu_providers)
         if session_ok_retry:
+            # Persist lib_paths to project-config.json so subsequent
+            # runs skip re-discovery
+            _persist_gpu_lib_paths(lib_info["paths"])
             return {
                 "available": True,
                 "providers": gpu_providers,
@@ -468,6 +495,36 @@ def verify_gpu_provider(auto_fix: bool = False) -> dict:
         "message": msg,
         "lib_paths": lib_info,
     }
+
+
+def _persist_gpu_lib_paths(paths: list[str]) -> bool:
+    """Persist discovered GPU library paths to project-config.json.
+
+    Writes to vector_memory.gpu_acceleration.lib_paths so subsequent
+    runs use the stored paths instead of re-discovering.
+
+    Returns:
+        True if persisted successfully, False otherwise.
+    """
+    config_path = Path(".claude/project-config.json")
+    if not config_path.exists():
+        return False
+
+    try:
+        with open(config_path, "r", encoding="utf-8") as f:
+            config = json.load(f)
+
+        vm = config.setdefault("vector_memory", {})
+        gpu_cfg = vm.setdefault("gpu_acceleration", {})
+        gpu_cfg["lib_paths"] = paths
+
+        with open(config_path, "w", encoding="utf-8") as f:
+            json.dump(config, f, indent=2)
+            f.write("\n")
+
+        return True
+    except (json.JSONDecodeError, OSError):
+        return False
 
 
 def _test_gpu_session(gpu_providers: list[str]) -> tuple:

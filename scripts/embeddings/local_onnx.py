@@ -342,15 +342,22 @@ class LocalOnnxProvider(EmbeddingProvider):
         self._active_provider = self._session.get_providers()[0] \
             if self._session.get_providers() else providers[0]
 
-        # ── Post-init GPU verification ───────────────────────────────
-        # Catch silent fallback: GPU was requested but CPU is active
-        if (self._gpu_mode == "gpu"
-                and self._active_provider == "CPUExecutionProvider"):
-            raise RuntimeError(
-                _build_platform_gpu_error_message(
-                    self._gpu_mode, self._active_provider
+        # ── Post-init GPU verification with retry ─────────────────────
+        # Detect silent GPU-to-CPU fallback and attempt recovery
+        _fell_back_to_cpu = (
+            self._active_provider == "CPUExecutionProvider"
+            and len(providers) > 1
+        )
+
+        if _fell_back_to_cpu and self._gpu_mode in ("auto", "gpu"):
+            # Attempt env var creation + retry before giving up on GPU
+            retried = self._retry_gpu_session(ort, model_path, sess_options)
+            if not retried and self._gpu_mode == "gpu":
+                raise RuntimeError(
+                    _build_platform_gpu_error_message(
+                        self._gpu_mode, self._active_provider
+                    )
                 )
-            )
 
         if self._log_provider:
             fallback_note = ""
@@ -402,33 +409,94 @@ class LocalOnnxProvider(EmbeddingProvider):
                     f"{self._model_dir}"
                 )
 
-    def _inject_gpu_paths_if_needed(self) -> None:
+    def _inject_gpu_paths_if_needed(self) -> bool:
         """Inject GPU library paths into the environment if needed.
 
-        Checks two sources in order:
+        Checks three sources in order:
         1. project-config.json gpu_acceleration.lib_paths (persisted by
            /setup)
         2. Runtime discovery via deps_check.discover_gpu_lib_paths()
-           (fallback)
+           with create_if_missing=True (creates env var if absent)
+        3. deps_check.verify_gpu_provider(auto_fix=True) as last resort
+
+        Returns:
+            True if new paths were injected, False otherwise.
         """
         # Source 1: stored config paths
         config_paths = _load_gpu_lib_paths_from_config()
         if config_paths:
             _inject_gpu_lib_paths(config_paths)
-            return
+            return True
 
-        # Source 2: runtime discovery (fallback)
+        # Source 2: runtime discovery with env var creation
         try:
-            # Import from sibling module -- deps_check is in scripts/
             script_dir = Path(__file__).resolve().parent.parent
             if str(script_dir) not in sys.path:
                 sys.path.insert(0, str(script_dir))
             from deps_check import discover_gpu_lib_paths
-            lib_info = discover_gpu_lib_paths()
+            lib_info = discover_gpu_lib_paths(create_if_missing=True)
+            if lib_info.get("env_created"):
+                return True
             if lib_info.get("paths"):
                 _inject_gpu_lib_paths(lib_info["paths"])
+                return True
         except ImportError:
-            pass  # deps_check not available; skip discovery
+            pass
+
+        # Source 3: full verify-gpu auto-fix (discovers, injects, persists)
+        try:
+            from deps_check import verify_gpu_provider
+            result = verify_gpu_provider(auto_fix=True)
+            if result.get("auto_fixed"):
+                return True
+        except ImportError:
+            pass
+
+        return False
+
+    def _retry_gpu_session(self, ort, model_path, sess_options) -> bool:
+        """Attempt to recover GPU after silent fallback to CPU.
+
+        Discovers missing GPU library paths, injects them into the
+        environment, and re-creates the ONNX InferenceSession. If the
+        retry succeeds with a GPU provider, updates self._session and
+        self._active_provider.
+
+        Returns:
+            True if GPU was recovered, False if still on CPU.
+        """
+        # Try to discover and inject missing env vars
+        injected = self._inject_gpu_paths_if_needed()
+        if not injected:
+            return False
+
+        # Re-detect providers (env may have changed)
+        providers = _detect_execution_providers(self._gpu_mode)
+
+        try:
+            session = ort.InferenceSession(
+                str(model_path),
+                sess_options,
+                providers=providers,
+            )
+            active = session.get_providers()[0] \
+                if session.get_providers() else providers[0]
+
+            if active != "CPUExecutionProvider":
+                # GPU recovered
+                self._session = session
+                self._active_provider = active
+                if self._log_provider:
+                    print(
+                        f"  ONNX GPU recovered after env var fix: "
+                        f"{active} (mode={self._gpu_mode})",
+                        file=sys.stderr, flush=True,
+                    )
+                return True
+        except Exception:
+            pass
+
+        return False
 
     def embed(self, texts: list[str]) -> list[list[float]]:
         """Embed texts using local ONNX model."""
