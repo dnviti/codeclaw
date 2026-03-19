@@ -137,6 +137,12 @@ For each file in "Files involved":
 - If marked CREATE, check target directory and similar files for patterns
 - Identify relevant interfaces, types, and patterns
 
+**Semantic exploration (vector store):** After the above file exploration, run:
+```bash
+TM semantic-explore TASK-CODE
+```
+This searches the vector index using the task description, surfacing conceptually related code not listed in "Files involved." If `related_files` are returned, read the top 3-5 most relevant files to discover hidden dependencies, shared patterns, or code that should be updated alongside the task. Include these as "Additional related files" in the implementation briefing (Step 5).
+
 #### Step 4.5: Frontend Design Wizard (conditional)
 
 After codebase exploration, check if the task involves frontend code:
@@ -169,9 +175,10 @@ python3 ${CLAUDE_PLUGIN_ROOT}/scripts/frontend_wizard.py list-palettes
 3. **Scope Summary**: What needs to be done
 4. **Technical Approach**: Implementation steps based on task details and codebase exploration
 5. **Files to Create/Modify**: Every file with what needs to happen
-6. **Dependencies**: Status of all dependencies
-7. **Risks**: Any concerns found during exploration
-8. **Quality Gate**: Remind that verify command must pass before closing
+6. **Additional Related Files** (from semantic exploration): Files surfaced by vector search that may need attention — hidden dependencies, shared patterns, or related implementations. Omit if none found.
+7. **Dependencies**: Status of all dependencies
+8. **Risks**: Any concerns found during exploration
+9. **Quality Gate**: Remind that verify command must pass before closing
 
 Ask: "Ready to start implementation, or would you like to adjust the approach?"
 
@@ -206,6 +213,16 @@ During implementation, if the task requires visual assets (detected from descrip
 #### Step 6: Post-Implementation — Confirm, Close & Commit
 
 After full implementation and quality gate passes:
+
+**6-pre. Update vector index:**
+
+Trigger incremental re-index of changed files so subsequent searches (by other agents or Continue Flow) see fresh results:
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/vector_memory.py hook <changed_file>
+```
+
+Run this for each file that was created or modified during implementation. This is non-blocking and silent on failure.
 
 **6a. Generate the Testing Guide (do NOT present yet):**
 
@@ -345,6 +362,14 @@ Report: {{ code, success, summary, files_changed[], pr_url, error_if_any }}"
 
 Wait for **all agents in the current batch** to complete before proceeding to the next batch.
 
+**Post-batch vector re-index:** After each batch completes, run a consolidated incremental re-index to ensure the next batch sees updated search results:
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/vector_memory.py index --root .
+```
+
+This is non-blocking — if the index is unavailable or dependencies are missing, it will be silently skipped. Parallel agents tolerate slightly stale results (eventual consistency) since each works in an isolated worktree.
+
 #### Step 3b: Sequential execution (`/task pick all sequential`)
 
 For each task in dependency order, execute the standard **Pick Flow** (from Step 1 through Step 6) one at a time. Wait for user confirmation at each task's closing gate before moving to the next.
@@ -408,6 +433,11 @@ Use `next_number` from next-id JSON. Numbering is globally sequential across all
 1. Read relevant existing files based on task description.
 2. Look at similar completed tasks for pattern reference.
 3. Identify files to create/modify — verify paths with `Glob`.
+4. If vector memory is available, run a semantic search with the task description to discover related code patterns:
+   ```bash
+   python3 ${CLAUDE_PLUGIN_ROOT}/scripts/vector_memory.py search "<task description keywords>" --root . --top-k 10 --json
+   ```
+   Use results to inform the "Files involved" section and identify dependencies.
 
 #### Step 5: Draft the Task Block
 
@@ -573,9 +603,11 @@ If `reused_existing`: "Entering existing worktree." If `created`: "Created fresh
 **MODIFY files:** Read and `Grep` for key changes. Note: applied vs still needed.
 Cross-check each technical requirement against code artifacts.
 
+**Semantic assessment:** Run `TM semantic-explore TASK-CODE` to discover any new or modified files across the project that are conceptually related to this task. This catches changes made by other agents or parallel tasks since the task was last active, revealing integration points that may need attention.
+
 #### Step 4: Explore Related Code
 
-Read all related files: those to be modified, similar files for patterns, related types/interfaces/imports.
+Read all related files: those to be modified, similar files for patterns, related types/interfaces/imports. Include any high-relevance files surfaced by the semantic exploration in Step 3.
 
 #### Step 5: Present the Continuation Briefing
 
