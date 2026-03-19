@@ -121,6 +121,9 @@ class StabilityProvider(ImageProvider):
         """Check if API key is configured."""
         return bool(self._api_key)
 
+    def __repr__(self) -> str:
+        return f"StabilityProvider(engine={self._engine!r}, api_key=<REDACTED>)"
+
     def _normalize_size(self, size: str) -> tuple[int, int]:
         """Normalize size to Stability AI supported dimensions.
 

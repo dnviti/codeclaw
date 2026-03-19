@@ -73,6 +73,10 @@ class ReplicateProvider(ImageProvider):
         """Check if API token is configured."""
         return bool(self._api_key)
 
+    def __repr__(self) -> str:
+        model_short = self._model.split(":")[0] if ":" in self._model else self._model
+        return f"ReplicateProvider(model={model_short!r}, api_key=<REDACTED>)"
+
     def _create_prediction(self, prompt: str, width: int,
                            height: int) -> dict:
         """Create a new prediction on Replicate."""

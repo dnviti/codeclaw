@@ -52,6 +52,16 @@
       "hybrid_weight_text": 0.3,
       "db_path": ".claude/memory/sqlite/memory.db"
     },
+    "gpu_acceleration": {
+      "mode": "auto",
+      "log_provider": true
+    },
+    "event_sourcing": {
+      "enabled": false,
+      "compact_interval_seconds": 300,
+      "max_segment_size_mb": 10,
+      "auto_compact_on_search": true
+    },
     "rlm": {
       "enabled": false,
       "provider": "ollama",
@@ -74,16 +84,6 @@
         "deep": "rlm"
       },
       "rrf_k": 60
-    },
-    "gpu_acceleration": {
-      "mode": "auto",
-      "log_provider": true
-    },
-    "event_sourcing": {
-      "enabled": false,
-      "compact_interval_seconds": 300,
-      "max_segment_size_mb": 10,
-      "auto_compact_on_search": true
     }
   },
   "mcp_server": {

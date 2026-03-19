@@ -17,6 +17,7 @@ Zero external dependencies — stdlib only for core event log operations.
 LanceDB is required only for the ``compact`` method.
 """
 
+import calendar
 import json
 import os
 import re
@@ -322,9 +323,9 @@ class EventLog:
                 # Parse compacted_at to check age
                 compacted_str = info.get("compacted_at", "")
                 if compacted_str:
-                    compacted_ts = time.mktime(
+                    compacted_ts = calendar.timegm(
                         time.strptime(compacted_str, "%Y-%m-%dT%H:%M:%SZ")
-                    ) - time.timezone
+                    )
                 else:
                     compacted_ts = done_file.stat().st_mtime
             except (json.JSONDecodeError, OSError, ValueError):

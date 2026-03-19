@@ -112,6 +112,9 @@ class DallEProvider(ImageProvider):
         """Check if API key is configured."""
         return bool(self._api_key)
 
+    def __repr__(self) -> str:
+        return f"DallEProvider(model={self._model!r}, api_key=<REDACTED>)"
+
     def _normalize_size(self, size: str) -> str:
         """Normalize size to a DALL-E supported value."""
         valid = (_VALID_SIZES_DALLE3 if self._model == "dall-e-3"

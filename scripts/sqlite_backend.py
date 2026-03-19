@@ -19,9 +19,7 @@ The backend implements the MemoryBackend interface for integration with
 the vector memory orchestrator.
 """
 
-import hashlib
-import json
-import os
+import logging
 import sqlite3
 import struct
 import sys
@@ -30,6 +28,8 @@ from abc import ABC, abstractmethod
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 # Add scripts/ to path for sibling package imports
 _SCRIPT_DIR = Path(__file__).resolve().parent
@@ -117,12 +117,15 @@ def _sanitize_fts_query(query: str) -> str:
     """Sanitize a query string for FTS5 to prevent syntax errors.
 
     FTS5 has special syntax characters (*, ", OR, AND, NOT, NEAR, etc.)
-    that can cause parse errors. We escape them for safe use.
+    that can cause parse errors. We strip all non-alphanumeric characters
+    (except spaces and underscores) and wrap each token in double quotes
+    to treat as literal search terms.
     """
-    # Remove FTS5 special operators and characters
-    sanitized = query.replace('"', '""')
-    # Wrap each word in double quotes to treat as literal
-    words = sanitized.split()
+    import re
+    # Strip all characters that could interfere with FTS5 syntax
+    # Keep alphanumerics, spaces, underscores, hyphens, and dots
+    cleaned = re.sub(r'[^\w\s.\-]', '', query)
+    words = cleaned.split()
     if not words:
         return '""'
     return " ".join(f'"{w}"' for w in words)
@@ -167,7 +170,7 @@ class SQLiteMemoryBackend(MemoryBackend):
             hybrid_weight_text: Weight for text/BM25 similarity (0.0-1.0).
         """
         self.db_path = Path(db_path)
-        self.dimension = dimension
+        self.dimension = self._validate_dimension(dimension)
         self.hybrid_weight_vector = hybrid_weight_vector
         self.hybrid_weight_text = hybrid_weight_text
         self._vec_available = False
@@ -177,6 +180,17 @@ class SQLiteMemoryBackend(MemoryBackend):
 
         # Initialize the database
         self._init_db()
+
+    @staticmethod
+    def _validate_dimension(dimension) -> int:
+        """Validate and return dimension as a positive integer.
+
+        Prevents SQL injection via f-string interpolation in DDL statements.
+        """
+        dim = int(dimension)
+        if dim <= 0:
+            raise ValueError(f"Embedding dimension must be positive, got {dim}")
+        return dim
 
     def _load_sqlite_vec(self, conn: sqlite3.Connection) -> bool:
         """Try to load the sqlite-vec extension.
@@ -315,7 +329,7 @@ class SQLiteMemoryBackend(MemoryBackend):
         cache = EmbeddingCache(index_dir / "embedding_cache")
 
         # Update dimension from provider
-        actual_dim = provider.dimension()
+        actual_dim = self._validate_dimension(provider.dimension())
         if actual_dim != self.dimension:
             self.dimension = actual_dim
             # Recreate vec table with correct dimension if needed
@@ -415,20 +429,22 @@ class SQLiteMemoryBackend(MemoryBackend):
 
     def _remove_file_entries(self, conn: sqlite3.Connection, file_path: str):
         """Remove all entries for a given file path."""
-        # Get IDs to remove from vec table
+        # Batch-remove from vec table first
         if self._vec_available:
             cursor = conn.execute(
                 "SELECT id FROM chunks WHERE file_path = ?", (file_path,)
             )
             ids = [row[0] for row in cursor.fetchall()]
-            for chunk_id in ids:
+            if ids:
+                placeholders = ",".join("?" * len(ids))
                 try:
                     conn.execute(
-                        "DELETE FROM chunks_vec WHERE chunk_id = ?",
-                        (chunk_id,)
+                        f"DELETE FROM chunks_vec WHERE chunk_id IN ({placeholders})",
+                        ids
                     )
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning("Failed to remove vec entries for %s: %s",
+                                   file_path, e)
 
         conn.execute("DELETE FROM chunks WHERE file_path = ?", (file_path,))
 
@@ -461,8 +477,9 @@ class SQLiteMemoryBackend(MemoryBackend):
                         "INSERT INTO chunks_vec (chunk_id, embedding) VALUES (?, ?)",
                         (chunk_id, embedding_blob)
                     )
-                except Exception:
-                    pass  # Non-fatal: vec search will be unavailable for this entry
+                except Exception as e:
+                    logger.warning("Failed to insert vec entry for chunk %d: %s",
+                                   chunk_id, e)
 
         conn.commit()
 
@@ -482,7 +499,7 @@ class SQLiteMemoryBackend(MemoryBackend):
                     from embeddings import create_provider
 
                     # Load config to get embedding settings
-                    emb_config = self._load_embedding_config()
+                    emb_config = self._load_embedding_config(conn)
                     provider = create_provider(emb_config)
                     query_embedding = provider.embed([query])[0]
                     query_blob = _float_list_to_blob(query_embedding)
@@ -509,8 +526,9 @@ class SQLiteMemoryBackend(MemoryBackend):
                             "vec_score": vec_score,
                             "text_score": 0.0,
                         }
-                except Exception:
-                    pass  # Vector search failed; fall back to text-only
+                except Exception as e:
+                    logger.warning("Vector search failed, falling back to "
+                                   "text-only: %s", e)
 
             # FTS5 text search
             if text_weight > 0:
@@ -543,8 +561,8 @@ class SQLiteMemoryBackend(MemoryBackend):
                                     "vec_score": 0.0,
                                     "text_score": text_score,
                                 }
-                except Exception:
-                    pass  # FTS search failed; use only vector results
+                except Exception as e:
+                    logger.warning("FTS search failed: %s", e)
 
             if not results_by_id:
                 return []
@@ -561,27 +579,38 @@ class SQLiteMemoryBackend(MemoryBackend):
             # Sort by hybrid score descending
             scored_ids.sort(key=lambda x: x[1], reverse=True)
 
-            # Fetch full chunk data for top-k results with SQL-level
-            # filtering to avoid returning fewer than top_k results when
-            # filters discard rows (optimization fix O5).
-            # Over-fetch to compensate, then trim to top_k.
+            # Over-fetch to compensate for post-filtering
+            fetch_limit = top_k * 3 if (file_filter or type_filter) else top_k
+            candidate_ids = [cid for cid, _ in scored_ids[:fetch_limit]]
+            score_map = {cid: s for cid, s in scored_ids[:fetch_limit]}
+
+            # Batch-fetch full chunk data (fixes N+1 query pattern)
+            if not candidate_ids:
+                return []
+
+            placeholders = ",".join("?" * len(candidate_ids))
+            query_sql = f"""SELECT id, file_path, chunk_type, name, start_line,
+                                   end_line, language, file_role, content, content_hash
+                            FROM chunks WHERE id IN ({placeholders})"""
+            params = list(candidate_ids)
+
+            # Apply filters in SQL when possible
+            if file_filter:
+                query_sql += " AND file_path LIKE ?"
+                params.append(f"%{file_filter}%")
+            if type_filter:
+                query_sql += " AND chunk_type = ?"
+                params.append(type_filter)
+
+            rows = conn.execute(query_sql, params).fetchall()
+
+            # Build results preserving score-based ordering
+            row_map = {row["id"]: row for row in rows}
             results = []
-            for chunk_id, score in scored_ids[:top_k * 3]:
-                # Build parameterized query with filters in SQL
-                sql = """SELECT id, file_path, chunk_type, name, start_line,
-                                end_line, language, file_role, content, content_hash
-                         FROM chunks WHERE id = ?"""
-                params: list = [chunk_id]
-
-                if file_filter:
-                    sql += " AND file_path LIKE ?"
-                    params.append(f"%{file_filter}%")
-                if type_filter:
-                    sql += " AND chunk_type = ?"
-                    params.append(type_filter)
-
-                row = conn.execute(sql, params).fetchone()
-
+            for chunk_id in candidate_ids:
+                if len(results) >= top_k:
+                    break
+                row = row_map.get(chunk_id)
                 if row is None:
                     continue
 
@@ -592,22 +621,27 @@ class SQLiteMemoryBackend(MemoryBackend):
                     "language": row["language"],
                     "start_line": row["start_line"],
                     "end_line": row["end_line"],
-                    "score": round(score, 6),
+                    "score": round(score_map[chunk_id], 6),
                     "content": row["content"],
                     "content_hash": row["content_hash"],
                 })
 
-                if len(results) >= top_k:
-                    break
-
         return results
 
-    def _load_embedding_config(self) -> dict:
-        """Load embedding configuration from stored metadata or defaults."""
+    def _load_embedding_config(self, conn: Optional[sqlite3.Connection] = None) -> dict:
+        """Load embedding configuration from stored metadata or defaults.
+
+        Args:
+            conn: Optional existing connection to reuse (avoids nested connections).
+        """
         try:
-            with self._connect() as conn:
+            if conn is not None:
                 model = self._get_meta(conn, "embedding_model") or "all-MiniLM-L6-v2"
-        except Exception:
+            else:
+                with self._connect() as new_conn:
+                    model = self._get_meta(new_conn, "embedding_model") or "all-MiniLM-L6-v2"
+        except Exception as e:
+            logger.warning("Failed to load embedding config: %s", e)
             model = "all-MiniLM-L6-v2"
 
         return {
@@ -693,20 +727,23 @@ class SQLiteMemoryBackend(MemoryBackend):
             entries_to_prune = row[0] if row else 0
 
             if entries_to_prune > 0:
-                # Remove from vec table first
+                # Batch-remove from vec table first
                 if self._vec_available:
                     ids_cursor = conn.execute(
                         "SELECT id FROM chunks WHERE indexed_at < ?",
                         (ttl_cutoff,)
                     )
-                    for id_row in ids_cursor.fetchall():
+                    ids = [id_row[0] for id_row in ids_cursor.fetchall()]
+                    if ids:
+                        placeholders = ",".join("?" * len(ids))
                         try:
                             conn.execute(
-                                "DELETE FROM chunks_vec WHERE chunk_id = ?",
-                                (id_row[0],)
+                                f"DELETE FROM chunks_vec WHERE chunk_id IN ({placeholders})",
+                                ids
                             )
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            logger.warning("Failed to batch-delete vec entries "
+                                           "during GC: %s", e)
 
                 conn.execute(
                     "DELETE FROM chunks WHERE indexed_at < ?",
@@ -720,16 +757,16 @@ class SQLiteMemoryBackend(MemoryBackend):
                     conn.execute(
                         "INSERT INTO chunks_fts(chunks_fts) VALUES('rebuild')"
                     )
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning("Failed to rebuild FTS index during GC: %s", e)
 
                 conn.commit()
 
                 # VACUUM to reclaim space (must be outside transaction)
                 try:
                     conn.execute("VACUUM")
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning("Failed to VACUUM during GC: %s", e)
             else:
                 conn.commit()
 

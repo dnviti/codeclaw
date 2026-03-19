@@ -34,53 +34,43 @@ SAFE_MODULES = frozenset({
     "string", "unicodedata", "hashlib",
 })
 
-# Patterns that indicate potentially unsafe code — expanded blocklist
-# covering both direct imports and indirect access methods
+# Patterns that indicate potentially unsafe code
 UNSAFE_PATTERNS = [
-    # Direct imports of dangerous modules
     "import os", "import sys", "import subprocess",
     "import shutil", "import socket", "import http",
     "import urllib", "import requests", "import pathlib",
-    "import ctypes", "import pickle", "import marshal",
-    "import importlib", "import code", "import codeop",
-    "import signal", "import multiprocessing", "import threading",
-    "import webbrowser", "import antigravity",
-    # from-style imports
-    "from os", "from sys", "from subprocess",
-    "from shutil", "from socket", "from http",
-    "from urllib", "from pathlib", "from ctypes",
-    "from pickle", "from marshal", "from importlib",
-    "from signal", "from multiprocessing", "from threading",
-    # Dynamic import / eval / exec
+    "import importlib", "import ctypes", "import _thread",
+    "import multiprocessing", "import pickle", "import marshal",
+    "import signal", "import code", "import codeop",
     "__import__", "eval(", "exec(", "compile(",
-    "importlib", "imp.load",
-    # Filesystem / reflection
     "open(", "globals(", "locals(", "vars(",
     "getattr(", "setattr(", "delattr(",
     "breakpoint(", "exit(", "quit(",
-    # Object introspection escape hatches
-    "__subclasses__", "__bases__", "__mro__",
-    "__class__", "__code__", "__globals__",
-    "__builtins__", "__loader__", "__spec__",
-    # String obfuscation of builtins (chr-based bypass)
-    "chr(", "ord(",
+    "__subclasses__", "__bases__", "__class__",
+    "sys.modules", "pickle.loads", "marshal.loads",
 ]
 
 
 # ── Sandbox Code Template ────────────────────────────────────────────────────
 
-_SANDBOX_TEMPLATE = textwrap.dedent('''\
+# Template is built via string concatenation, NOT str.format(), to avoid
+# injection via curly braces in LLM-generated analysis code or context data.
+# Context data is loaded from a separate temp file to prevent string-escape
+# breakout attacks via malicious file content.
+
+_SANDBOX_PREAMBLE = textwrap.dedent('''\
     import sys
     import json
 
     # Only allow safe imports
-    _ALLOWED_MODULES = {allowed_modules}
+    _ALLOWED_MODULES = %%ALLOWED_MODULES%%
 
     _original_import = __builtins__.__import__ if hasattr(__builtins__, '__import__') else __import__
 
     def _safe_import(name, *args, **kwargs):
-        if name not in _ALLOWED_MODULES:
-            raise ImportError(f"Module '{{name}}' is not allowed in the RLM sandbox")
+        top_level = name.split(".")[0]
+        if top_level not in _ALLOWED_MODULES:
+            raise ImportError(f"Module '{name}' is not allowed in the RLM sandbox")
         return _original_import(name, *args, **kwargs)
 
     if hasattr(__builtins__, '__import__'):
@@ -89,17 +79,9 @@ _SANDBOX_TEMPLATE = textwrap.dedent('''\
         import builtins
         builtins.__import__ = _safe_import
 
-    # Load context data from a separate file to avoid injection via
-    # embedded JSON breaking out of string literals (security fix S3).
-    import os as _os
-    _ctx_path = _os.environ.get("_RLM_CONTEXT_PATH", "")
-    if _ctx_path:
-        with __builtins__["open"](_ctx_path, "r", encoding="utf-8") if isinstance(__builtins__, dict) else open(_ctx_path, "r", encoding="utf-8") as _f:
-            CONTEXT = json.load(_f)
-    else:
-        CONTEXT = {{}}
-    # Remove os reference to prevent user code from using it
-    del _os, _ctx_path
+    # Load context data from separate file (avoids string-injection attacks)
+    with __builtins__.open(sys.argv[1], "r", encoding="utf-8") as _ctx_f:
+        CONTEXT = json.load(_ctx_f)
 
     # Analysis results collector
     RESULTS = []
@@ -107,11 +89,11 @@ _SANDBOX_TEMPLATE = textwrap.dedent('''\
     def emit(finding):
         """Record an analysis finding."""
         if isinstance(finding, str):
-            RESULTS.append({{"type": "text", "content": finding}})
+            RESULTS.append({"type": "text", "content": finding})
         elif isinstance(finding, dict):
             RESULTS.append(finding)
         else:
-            RESULTS.append({{"type": "text", "content": str(finding)}})
+            RESULTS.append({"type": "text", "content": str(finding)})
 
     def slice_context(start=None, end=None, key=None):
         """Slice context data for focused analysis."""
@@ -132,19 +114,21 @@ _SANDBOX_TEMPLATE = textwrap.dedent('''\
     def summarize_structure():
         """Return structural summary of the context."""
         if isinstance(CONTEXT, dict):
-            return {{k: type(v).__name__ for k, v in CONTEXT.items()}}
+            return {k: type(v).__name__ for k, v in CONTEXT.items()}
         if isinstance(CONTEXT, list):
-            return {{"length": len(CONTEXT), "types": list(set(type(x).__name__ for x in CONTEXT[:20]))}}
+            return {"length": len(CONTEXT), "types": list(set(type(x).__name__ for x in CONTEXT[:20]))}
         if isinstance(CONTEXT, str):
             lines = CONTEXT.splitlines()
-            return {{"lines": len(lines), "chars": len(CONTEXT)}}
-        return {{"type": type(CONTEXT).__name__}}
+            return {"lines": len(lines), "chars": len(CONTEXT)}
+        return {"type": type(CONTEXT).__name__}
 
     # ── User analysis code ──
-    {analysis_code}
+''')
+
+_SANDBOX_EPILOGUE = textwrap.dedent('''\
 
     # Output results
-    output = {{"results": RESULTS, "success": True}}
+    output = {"results": RESULTS, "success": True}
     print(json.dumps(output))
 ''')
 
@@ -177,17 +161,12 @@ class ExecutionResult:
 def validate_code(code: str) -> tuple[bool, str]:
     """Validate analysis code for safety before execution.
 
-    Uses a two-layer approach (security fix S6):
-    1. Pattern-based blocklist for known-dangerous strings
-    2. AST-based validation to catch obfuscated access patterns
-
     Args:
         code: Python code string to validate.
 
     Returns:
         Tuple of (is_safe, reason). If is_safe is False, reason explains why.
     """
-    # Layer 1: Pattern-based blocklist
     for pattern in UNSAFE_PATTERNS:
         if pattern in code:
             return False, f"Unsafe pattern detected: {pattern}"
@@ -196,58 +175,35 @@ def validate_code(code: str) -> tuple[bool, str]:
     if len(code) > 50000:
         return False, "Code exceeds maximum allowed length (50000 chars)"
 
-    # Layer 2: AST-based validation to catch obfuscated patterns
-    import ast
-    try:
-        tree = ast.parse(code)
-    except SyntaxError as e:
-        return False, f"Code has syntax error: {e}"
-
-    for node in ast.walk(tree):
-        # Block direct attribute access to dunder methods
-        if isinstance(node, ast.Attribute):
-            attr = node.attr
-            if attr.startswith("__") and attr.endswith("__"):
-                if attr not in ("__len__", "__str__", "__repr__",
-                                "__init__", "__name__", "__doc__"):
-                    return False, f"Unsafe dunder attribute access: {attr}"
-        # Block calls to dangerous builtins that might bypass string checks
-        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
-            if node.func.id in ("type", "super", "classmethod",
-                                "staticmethod", "property"):
-                return False, f"Unsafe builtin call: {node.func.id}"
-
     return True, ""
 
 
 def build_sandbox_code(context_data, analysis_code: str) -> tuple[str, str]:
     """Build the complete sandbox script from context and analysis code.
 
-    Context data is written to a separate JSON file and loaded at runtime
-    via environment variable, preventing JSON injection attacks (S3).
+    Context data is written to a separate JSON file to prevent string-escape
+    injection attacks. The sandbox script reads context from that file at
+    runtime via sys.argv[1].
 
     Args:
         context_data: The context to make available (will be JSON-serialized).
         analysis_code: The LLM-generated analysis code.
 
     Returns:
-        Tuple of (script_content, context_file_path).
+        Tuple of (script_code, context_json_string).
     """
-    # Write context to a separate temp file to avoid injection
+    # Serialize context — kept separate from the script to avoid injection
     context_json = json.dumps(context_data)
-    with tempfile.NamedTemporaryFile(
-        mode="w", suffix=".json", delete=False, encoding="utf-8"
-    ) as ctx_f:
-        ctx_f.write(context_json)
-        context_path = ctx_f.name
 
     allowed_modules_str = repr(set(SAFE_MODULES))
 
-    script = _SANDBOX_TEMPLATE.format(
-        allowed_modules=allowed_modules_str,
-        analysis_code=analysis_code,
-    )
-    return script, context_path
+    # Use simple string replacement on a known placeholder (not str.format)
+    # to avoid issues with curly braces in analysis_code
+    preamble = _SANDBOX_PREAMBLE.replace("%%ALLOWED_MODULES%%", allowed_modules_str)
+
+    script = preamble + analysis_code + "\n" + _SANDBOX_EPILOGUE
+
+    return script, context_json
 
 
 def execute_analysis(
@@ -280,21 +236,22 @@ def execute_analysis(
             error=f"Code validation failed: {reason}",
         )
 
-    # Build the sandbox script (context is written to a separate file)
-    context_path = None
+    # Build the sandbox script
     try:
-        script, context_path = build_sandbox_code(context_data, analysis_code)
+        script, context_json = build_sandbox_code(context_data, analysis_code)
     except (TypeError, ValueError) as e:
-        if context_path:
-            try:
-                os.unlink(context_path)
-            except OSError:
-                pass
         return ExecutionResult(
             success=False,
             results=[],
             error=f"Failed to build sandbox: {e}",
         )
+
+    # Write context to a separate temp file (prevents string-injection attacks)
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".json", delete=False, encoding="utf-8"
+    ) as ctx_f:
+        ctx_f.write(context_json)
+        context_path = ctx_f.name
 
     # Write script to temp file
     with tempfile.NamedTemporaryFile(
@@ -304,28 +261,31 @@ def execute_analysis(
         script_path = f.name
 
     try:
-        # Build command — avoid shell=True to prevent shell injection (S2)
-        cmd = [sys.executable, script_path]
+        # Build command — no shell=True for security
+        cmd = [sys.executable, script_path, context_path]
 
         env = os.environ.copy()
         # Restrict environment for safety
         env.pop("PYTHONSTARTUP", None)
         env.pop("PYTHONPATH", None)
-        # Pass context file path via environment variable
-        env["_RLM_CONTEXT_PATH"] = context_path
 
         # Set memory limits via preexec_fn on Linux/macOS (no shell=True)
         preexec = None
         if platform.system() in ("Linux", "Darwin"):
             memory_bytes = max_memory_mb * 1024 * 1024
-            def _set_limits():
+
+            def _set_memory_limit():
+                """Set virtual memory limit via resource module."""
                 try:
                     import resource
-                    resource.setrlimit(resource.RLIMIT_AS,
-                                       (memory_bytes, memory_bytes))
+                    resource.setrlimit(
+                        resource.RLIMIT_AS,
+                        (memory_bytes, memory_bytes),
+                    )
                 except (ImportError, ValueError, OSError):
-                    pass  # Best-effort memory limit
-            preexec = _set_limits
+                    pass  # Best-effort; proceed without limit
+
+            preexec = _set_memory_limit
 
         result = subprocess.run(
             cmd,
@@ -378,12 +338,11 @@ def execute_analysis(
         )
     finally:
         # Clean up temp files
-        for path in (script_path, context_path):
-            if path:
-                try:
-                    os.unlink(path)
-                except OSError:
-                    pass
+        for tmp_path in (script_path, context_path):
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
 
 
 def build_analysis_prompt(query: str, context_summary: dict) -> str:

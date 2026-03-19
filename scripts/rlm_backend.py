@@ -45,13 +45,37 @@ DEFAULT_PROVIDER = "ollama"
 
 VALID_STRATEGIES = ("map-reduce", "iterative-refinement", "tree")
 
+# Maximum total LLM calls to prevent combinatorial explosion (O1)
+MAX_LLM_CALLS = 50
+
 # Chunk overlap for context splitting (percentage of chunk size)
 CHUNK_OVERLAP_RATIO = 0.1
 
-# RLM-specific model recommendations — canonical Ollama list lives in
-# ollama_manager.RLM_MODEL_RECOMMENDATIONS (optimization fix O4).
-# Only cloud-specific entries are kept here.
+# RLM-specific model recommendations — models that excel at code generation
+# needed for the REPL analysis step
 RLM_MODEL_RECOMMENDATIONS = {
+    "ollama": [
+        {
+            "min_ram": 32,
+            "name": "qwen2.5-coder:32b",
+            "reason": "Best code generation for RLM analysis steps",
+        },
+        {
+            "min_ram": 16,
+            "name": "codestral:22b",
+            "reason": "Strong code generation for RLM decomposition",
+        },
+        {
+            "min_ram": 8,
+            "name": "qwen2.5-coder:7b",
+            "reason": "Efficient code generation for basic RLM queries",
+        },
+        {
+            "min_ram": 0,
+            "name": "qwen2.5-coder:1.5b",
+            "reason": "Lightweight option for simple RLM analysis",
+        },
+    ],
     "claude": [
         {
             "name": "claude-sonnet-4-20250514",
@@ -59,18 +83,6 @@ RLM_MODEL_RECOMMENDATIONS = {
         },
     ],
 }
-
-def _get_ollama_rlm_recommendations() -> list[dict]:
-    """Get Ollama RLM model recommendations from the canonical source."""
-    try:
-        from ollama_manager import RLM_MODEL_RECOMMENDATIONS as ollama_recs
-        return ollama_recs
-    except ImportError:
-        # Fallback if ollama_manager is not available
-        return [
-            {"min_ram": 8, "name": "qwen2.5-coder:7b",
-             "reason": "Efficient code generation for basic RLM queries"},
-        ]
 
 
 # ── Configuration ────────────────────────────────────────────────────────────
@@ -628,13 +640,30 @@ def search(
     if aggregation not in VALID_STRATEGIES:
         aggregation = DEFAULT_AGGREGATION
 
+    # Resolve max_context_mb early so it is available for file-read limits
+    max_context_mb = config.get("max_context_mb", DEFAULT_MAX_CONTEXT_MB)
+
     # Load context from files if paths provided
+    # Cap per-file read to avoid OOM from symlinks or huge files (S7)
+    max_file_bytes = int(max_context_mb * 1024 * 1024)
     if context_data is None:
         context_data = {}
         if context_paths:
             for fpath in context_paths:
                 try:
-                    content = Path(fpath).read_text(encoding="utf-8", errors="replace")
+                    p = Path(fpath)
+                    # Skip symlinks and files exceeding the context budget
+                    if p.is_symlink():
+                        continue
+                    if p.stat().st_size > max_file_bytes:
+                        print(
+                            f"  RLM: Skipping {fpath} "
+                            f"({p.stat().st_size / (1024*1024):.1f} MB > "
+                            f"{max_context_mb} MB limit)",
+                            file=sys.stderr,
+                        )
+                        continue
+                    content = p.read_text(encoding="utf-8", errors="replace")
                     context_data[fpath] = content
                 except OSError:
                     continue
@@ -646,10 +675,12 @@ def search(
             "metadata": {"error": "No context data provided"},
         }
 
-    # Check context size
-    max_context_mb = config.get("max_context_mb", DEFAULT_MAX_CONTEXT_MB)
-    context_str = json.dumps(context_data)
-    context_size_mb = len(context_str.encode("utf-8")) / (1024 * 1024)
+    # Check context size (estimate without full serialization to avoid O(n) copy)
+    context_size_bytes = sum(
+        len(k.encode("utf-8")) + len(v.encode("utf-8"))
+        for k, v in context_data.items()
+    )
+    context_size_mb = context_size_bytes / (1024 * 1024)
 
     if context_size_mb > max_context_mb:
         print(
@@ -661,7 +692,8 @@ def search(
     # Prepare context slices
     slices = prepare_context_slices(context_data, max_context_mb)
 
-    # Perform recursive search
+    # Perform recursive search with call budget to prevent explosion (O1)
+    call_counter = [0]  # mutable counter shared across recursion
     result = _recursive_search(
         query=query,
         context_slices=slices,
@@ -669,6 +701,7 @@ def search(
         max_depth=max_depth,
         aggregation=aggregation,
         config=config,
+        call_counter=call_counter,
     )
 
     elapsed = time.time() - start_time
@@ -694,6 +727,7 @@ def _recursive_search(
     max_depth: int,
     aggregation: str,
     config: dict,
+    call_counter: Optional[list] = None,
 ) -> dict:
     """Internal recursive search implementation.
 
@@ -709,26 +743,41 @@ def _recursive_search(
         max_depth: Maximum allowed depth.
         aggregation: Aggregation strategy.
         config: RLM configuration.
+        call_counter: Mutable list [count] tracking total LLM calls to
+            prevent combinatorial explosion.
 
     Returns:
         Aggregated result dict.
     """
+    if call_counter is None:
+        call_counter = [0]
+
     # Base case: max depth reached or single small slice
     if depth >= max_depth or len(context_slices) <= 1:
         results = []
         for ctx_slice in context_slices:
+            if call_counter[0] >= MAX_LLM_CALLS:
+                break
             context_text = json.dumps(ctx_slice) if isinstance(ctx_slice, dict) else str(ctx_slice)
             chunk_result = _analyze_chunk(query, context_text, config)
+            call_counter[0] += 1
             results.append(chunk_result)
         return aggregate(results, aggregation, config)
+
+    # Budget check before decomposition
+    if call_counter[0] >= MAX_LLM_CALLS:
+        return {"findings": ["LLM call budget exhausted"], "relevance": 0.1}
 
     # Recursive case: decompose query and process slices
     context_summary = f"{len(context_slices)} slices, depth {depth}/{max_depth}"
     sub_queries = decompose(query, context_summary, config)
+    call_counter[0] += 1  # decompose uses one LLM call
 
     all_results = []
     for sub_query in sub_queries:
         for ctx_slice in context_slices:
+            if call_counter[0] >= MAX_LLM_CALLS:
+                break
             # Further split if needed
             sub_slices = prepare_context_slices(
                 ctx_slice,
@@ -741,6 +790,7 @@ def _recursive_search(
                 max_depth=max_depth,
                 aggregation=aggregation,
                 config=config,
+                call_counter=call_counter,
             )
             all_results.append(sub_result)
 
@@ -750,17 +800,12 @@ def _recursive_search(
 def get_model_recommendations(provider: str = "ollama") -> list[dict]:
     """Get RLM-specific model recommendations for the given provider.
 
-    Ollama recommendations are sourced from ollama_manager.py to avoid
-    duplication (optimization fix O4).
-
     Args:
         provider: 'ollama' or 'claude'.
 
     Returns:
         List of model recommendation dicts.
     """
-    if provider == "ollama":
-        return _get_ollama_rlm_recommendations()
     return RLM_MODEL_RECOMMENDATIONS.get(provider, [])
 
 
