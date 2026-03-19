@@ -8,6 +8,9 @@ Requires: onnxruntime, tokenizers, numpy (optional dependencies).
 Model download:
     The ONNX model files are auto-downloaded on first use to
     ~/.cache/claw/models/<model_name>/ using urllib (stdlib).
+    Downloads use urlopen with configurable timeout and retry logic
+    with exponential backoff. Basic integrity checks (file size,
+    file type) are performed after each download.
 """
 
 import json
@@ -15,6 +18,7 @@ import os
 import platform
 import re
 import sys
+import time
 import urllib.request
 import urllib.error
 import urllib.parse
@@ -77,6 +81,224 @@ _DEFAULT_CACHE_DIR = Path.home() / ".cache" / "claw" / "models"
 _LEGACY_CACHE_DIR = Path.home() / ".cache" / "claw" / "models"
 
 _ALLOWED_DOWNLOAD_HOSTS = {"huggingface.co"}
+
+# ── Download Configuration ───────────────────────────────────────────────────
+
+# Default timeout in seconds for model file downloads (overridable via
+# project-config.json > vector_memory.download_timeout).
+_DEFAULT_DOWNLOAD_TIMEOUT = 300
+
+# Retry configuration for transient network failures
+_DOWNLOAD_MAX_RETRIES = 3
+_DOWNLOAD_BACKOFF_BASE = 2  # seconds; retries wait 2, 4, 8 ...
+
+# Read buffer size for streaming downloads (64 KB)
+_DOWNLOAD_CHUNK_SIZE = 65_536
+
+# Minimum expected file sizes (bytes) to catch truncated / error-page downloads
+_MIN_FILE_SIZES = {
+    ".onnx": 1_000_000,   # ONNX models are typically > 20 MB
+    ".json": 50,           # tokenizer/config JSON files are at least a few KB
+}
+
+# HTTP status codes that are considered transient and worth retrying
+_RETRYABLE_HTTP_CODES = {429, 500, 502, 503, 504}
+
+
+def _load_download_timeout() -> int:
+    """Load download timeout from project-config.json if available.
+
+    Looks for ``vector_memory.download_timeout`` in the configuration
+    file at ``.claude/project-config.json`` relative to the repo root.
+
+    Returns:
+        Timeout in seconds (defaults to ``_DEFAULT_DOWNLOAD_TIMEOUT``).
+    """
+    candidates = [
+        Path(".claude/project-config.json"),
+    ]
+    plugin_root = Path(__file__).resolve().parent.parent.parent
+    candidates.append(plugin_root / ".claude" / "project-config.json")
+
+    for config_path in candidates:
+        if config_path.exists():
+            try:
+                with open(config_path, "r", encoding="utf-8") as f:
+                    config = json.load(f)
+                timeout = config.get("vector_memory", {}).get(
+                    "download_timeout"
+                )
+                if isinstance(timeout, (int, float)) and timeout > 0:
+                    return int(timeout)
+            except (json.JSONDecodeError, OSError):
+                continue
+    return _DEFAULT_DOWNLOAD_TIMEOUT
+
+
+def _verify_downloaded_file(dest: Path, url: str) -> None:
+    """Run basic integrity checks on a downloaded file.
+
+    Checks:
+      1. File exists and is non-empty.
+      2. File size meets the minimum threshold for its type.
+      3. JSON files are valid JSON.
+
+    Args:
+        dest: Path to the downloaded file.
+        url:  The source URL (used only in error messages).
+
+    Raises:
+        RuntimeError: If any integrity check fails.
+    """
+    if not dest.exists():
+        raise RuntimeError(
+            f"Download verification failed: {dest.name} does not exist "
+            f"after download from {url}"
+        )
+
+    file_size = dest.stat().st_size
+    if file_size == 0:
+        dest.unlink(missing_ok=True)
+        raise RuntimeError(
+            f"Download verification failed: {dest.name} is empty "
+            f"(0 bytes) after download from {url}"
+        )
+
+    # Check minimum size for known file types
+    suffix = dest.suffix.lower()
+    min_size = _MIN_FILE_SIZES.get(suffix, 0)
+    if min_size and file_size < min_size:
+        dest.unlink(missing_ok=True)
+        raise RuntimeError(
+            f"Download verification failed: {dest.name} is only "
+            f"{file_size:,} bytes (minimum expected: {min_size:,}) "
+            f"from {url}. The file may be truncated or an error page."
+        )
+
+    # Validate JSON structure for .json files
+    if suffix == ".json":
+        try:
+            with open(dest, "r", encoding="utf-8") as f:
+                json.load(f)
+        except (json.JSONDecodeError, UnicodeDecodeError) as e:
+            dest.unlink(missing_ok=True)
+            raise RuntimeError(
+                f"Download verification failed: {dest.name} is not valid "
+                f"JSON after download from {url}: {e}"
+            )
+
+
+def _download_file(url: str, dest: Path, *,
+                   timeout: int | None = None,
+                   label: str = "") -> None:
+    """Download a file with timeout, retry logic, and integrity checks.
+
+    Uses ``urllib.request.urlopen`` with a configurable timeout instead
+    of ``urlretrieve``. Implements exponential backoff for transient
+    network errors and validates the downloaded file afterward.
+
+    Args:
+        url:     Remote URL to download.
+        dest:    Local path to write the file to.
+        timeout: Per-request timeout in seconds (default: from config
+                 or ``_DEFAULT_DOWNLOAD_TIMEOUT``).
+        label:   Human-readable label for progress messages
+                 (e.g. ``"model.onnx"``).
+    """
+    if timeout is None:
+        timeout = _load_download_timeout()
+
+    display = label or dest.name
+    last_error: Exception | None = None
+
+    for attempt in range(1, _DOWNLOAD_MAX_RETRIES + 1):
+        try:
+            req = urllib.request.Request(url)
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                content_length = resp.headers.get("Content-Length")
+                total = int(content_length) if content_length else None
+
+                downloaded = 0
+                tmp_dest = dest.with_suffix(dest.suffix + ".tmp")
+
+                with open(tmp_dest, "wb") as f:
+                    while True:
+                        chunk = resp.read(_DOWNLOAD_CHUNK_SIZE)
+                        if not chunk:
+                            break
+                        f.write(chunk)
+                        downloaded += len(chunk)
+
+                        # Progress reporting for large files
+                        if total and total > 1_000_000:
+                            pct = downloaded * 100 // total
+                            mb_done = downloaded / (1024 * 1024)
+                            mb_total = total / (1024 * 1024)
+                            print(
+                                f"\r  {display}: "
+                                f"{mb_done:.1f}/{mb_total:.1f} MB "
+                                f"({pct}%)",
+                                end="", file=sys.stderr, flush=True,
+                            )
+
+                # Newline after progress bar
+                if total and total > 1_000_000:
+                    print("", file=sys.stderr, flush=True)
+
+                # Verify Content-Length match when server provided it
+                if total and downloaded != total:
+                    tmp_dest.unlink(missing_ok=True)
+                    raise RuntimeError(
+                        f"Size mismatch for {display}: expected "
+                        f"{total:,} bytes, got {downloaded:,}"
+                    )
+
+                # Atomic rename: move temp file to final destination
+                tmp_dest.replace(dest)
+
+            # Post-download integrity checks
+            _verify_downloaded_file(dest, url)
+            return  # success
+
+        except urllib.error.HTTPError as e:
+            last_error = e
+            # Clean up partial temp file
+            tmp_dest_path = dest.with_suffix(dest.suffix + ".tmp")
+            tmp_dest_path.unlink(missing_ok=True)
+
+            if e.code in _RETRYABLE_HTTP_CODES and attempt < _DOWNLOAD_MAX_RETRIES:
+                wait = _DOWNLOAD_BACKOFF_BASE ** attempt
+                print(
+                    f"  {display}: HTTP {e.code}, retrying in "
+                    f"{wait}s (attempt {attempt}/{_DOWNLOAD_MAX_RETRIES})",
+                    file=sys.stderr, flush=True,
+                )
+                time.sleep(wait)
+                continue
+            break  # non-retryable HTTP error
+
+        except (urllib.error.URLError, OSError, RuntimeError) as e:
+            last_error = e
+            tmp_dest_path = dest.with_suffix(dest.suffix + ".tmp")
+            tmp_dest_path.unlink(missing_ok=True)
+
+            if attempt < _DOWNLOAD_MAX_RETRIES:
+                wait = _DOWNLOAD_BACKOFF_BASE ** attempt
+                print(
+                    f"  {display}: {type(e).__name__}, retrying in "
+                    f"{wait}s (attempt {attempt}/{_DOWNLOAD_MAX_RETRIES})",
+                    file=sys.stderr, flush=True,
+                )
+                time.sleep(wait)
+                continue
+            break  # exhausted retries
+
+    # All retries exhausted — clean up and raise
+    dest.unlink(missing_ok=True)
+    raise RuntimeError(
+        f"Failed to download {display} from {url} after "
+        f"{_DOWNLOAD_MAX_RETRIES} attempts: {last_error}"
+    )
 
 
 # ── GPU Provider Detection ────────────────────────────────────────────────────
@@ -514,8 +736,16 @@ class LocalOnnxProvider(EmbeddingProvider):
 
         For models in ``_MODEL_REGISTRY``, uses the exact URLs stored there.
         For any other model name, attempts a generic download from HuggingFace
-        using the ``sentence-transformers/{model}`` URL pattern.  On download
-        failure, raises ``RuntimeError`` with an actionable message.
+        using the ``sentence-transformers/{model}`` URL pattern.
+
+        Downloads use ``_download_file()`` which provides:
+        - Configurable timeout (default 300 s, via project-config.json)
+        - Retry with exponential backoff for transient failures
+        - Post-download integrity checks (file size, JSON validity)
+        - Progress reporting for large files
+
+        On download failure after all retries, raises ``RuntimeError``
+        with an actionable message.
         """
         if self._model_id in _MODEL_REGISTRY:
             registry = _MODEL_REGISTRY[self._model_id]
@@ -570,18 +800,18 @@ class LocalOnnxProvider(EmbeddingProvider):
             print(f"  Downloading {filename} for model "
                   f"'{self._model_id}'...", file=sys.stderr, flush=True)
             try:
-                urllib.request.urlretrieve(url, str(dest))
-            except (urllib.error.URLError, OSError) as e:
-                # Clean up partial download
-                if dest.exists():
-                    dest.unlink(missing_ok=True)
+                _download_file(
+                    url, dest,
+                    label=f"{self._model_id}/{filename}",
+                )
+            except RuntimeError as e:
                 raise RuntimeError(
-                    f"Failed to download {filename} from {url}: {e}\n"
+                    f"{e}\n"
                     f"Model '{self._model_id}' not found or could not be "
                     f"downloaded.\n"
                     f"Change 'embedding_model' in project-config.json or "
                     f"manually place model files in: {self._model_dir}"
-                )
+                ) from e
 
     def _inject_gpu_paths_if_needed(self) -> bool:
         """Inject GPU library paths into the environment if needed.
