@@ -743,21 +743,78 @@ def _validate_repo(repo: str) -> bool:
 
 
 def _platform_state_issue_number(cli: str, repo: str) -> "int | None":
-    """Find the open claw-release-state issue number, or None if not found."""
+    """Find the claw-release-state issue number (any state), or None.
+
+    Searches all issue states (open and closed) and returns the
+    lowest-numbered issue to ensure a stable singleton.
+    """
     try:
         result = subprocess.run(
             [cli, "issue", "list", "--label", "claw-release-state",
-             "--state", "open", "--json", "number", "--limit", "1",
+             "--state", "all", "--json", "number", "--limit", "100",
              "--repo", repo],
             capture_output=True, text=True, check=True, timeout=30,
         )
         issues = json.loads(result.stdout)
         if issues:
-            return issues[0]["number"]
+            # Use the lowest-numbered issue as the canonical singleton.
+            return min(i["number"] for i in issues)
     except (subprocess.CalledProcessError, FileNotFoundError, json.JSONDecodeError,
             KeyError, subprocess.TimeoutExpired):
         pass
     return None
+
+
+def _platform_state_deduplicate(cli: str, repo: str) -> "int | None":
+    """Find all claw-release-state issues and close duplicates.
+
+    Keeps only the lowest-numbered issue. Removes ``claude-code``,
+    ``task``, and ``status:todo`` labels from the surviving issue.
+    Returns the canonical issue number, or None if none exist.
+    """
+    try:
+        result = subprocess.run(
+            [cli, "issue", "list", "--label", "claw-release-state",
+             "--state", "all", "--json", "number,state", "--limit", "100",
+             "--repo", repo],
+            capture_output=True, text=True, check=True, timeout=30,
+        )
+        issues = json.loads(result.stdout)
+    except (subprocess.CalledProcessError, FileNotFoundError, json.JSONDecodeError,
+            subprocess.TimeoutExpired):
+        return None
+    if not issues:
+        return None
+
+    sorted_issues = sorted(issues, key=lambda i: i["number"])
+    canonical = sorted_issues[0]["number"]
+
+    # Close all duplicates (issues other than the canonical one).
+    for issue in sorted_issues[1:]:
+        try:
+            if issue.get("state", "").upper() != "CLOSED":
+                subprocess.run(
+                    [cli, "issue", "close", str(issue["number"]), "--repo", repo,
+                     "--comment", f"Duplicate of #{canonical}. Auto-closed by CodeClaw."],
+                    capture_output=True, text=True, timeout=30,
+                )
+        except (subprocess.CalledProcessError, FileNotFoundError,
+                subprocess.TimeoutExpired):
+            pass
+
+    # Remove triage labels that should not be on the release state issue.
+    for label in ("claude-code", "task", "status:todo"):
+        try:
+            subprocess.run(
+                [cli, "issue", "edit", str(canonical), "--repo", repo,
+                 "--remove-label", label],
+                capture_output=True, text=True, timeout=30,
+            )
+        except (subprocess.CalledProcessError, FileNotFoundError,
+                subprocess.TimeoutExpired):
+            pass
+
+    return canonical
 
 
 def _platform_state_get() -> dict:
@@ -786,16 +843,55 @@ def _platform_state_get() -> dict:
 
 
 def _platform_state_set(state: dict) -> None:
-    """Persist release state to the platform by creating or updating the state issue."""
+    """Persist release state to the platform by creating or updating the state issue.
+
+    If an existing issue is found (open or closed), it is reused: closed
+    issues are reopened.  Before creating a new issue a second lookup is
+    performed as a deduplication guard against race conditions.
+    """
     cfg = _get_platform_config()
     cli = _platform_cli(cfg)
     repo = cfg.get("repo", "")
     if not repo or not _validate_repo(repo):
         return
     body = json.dumps(state, indent=2)
-    num = _platform_state_issue_number(cli, repo)
+
+    # Deduplicate first — close extras and get the canonical issue.
+    num = _platform_state_deduplicate(cli, repo)
+
     try:
-        if num is None:
+        if num is not None:
+            # Reopen if closed, then update the body.
+            try:
+                subprocess.run(
+                    [cli, "issue", "reopen", str(num), "--repo", repo],
+                    capture_output=True, text=True, timeout=30,
+                )
+            except (subprocess.CalledProcessError, FileNotFoundError,
+                    subprocess.TimeoutExpired):
+                pass  # Already open — that's fine.
+            subprocess.run(
+                [cli, "issue", "edit", str(num), "--repo", repo, "--body", body],
+                capture_output=True, text=True, check=True, timeout=30,
+            )
+        else:
+            # Race-condition guard: double-check before creating.
+            num = _platform_state_issue_number(cli, repo)
+            if num is not None:
+                try:
+                    subprocess.run(
+                        [cli, "issue", "reopen", str(num), "--repo", repo],
+                        capture_output=True, text=True, timeout=30,
+                    )
+                except (subprocess.CalledProcessError, FileNotFoundError,
+                        subprocess.TimeoutExpired):
+                    pass
+                subprocess.run(
+                    [cli, "issue", "edit", str(num), "--repo", repo, "--body", body],
+                    capture_output=True, text=True, check=True, timeout=30,
+                )
+                return
+
             # Ensure the label exists before creating the issue; ignore errors
             # (label may already exist or caller may lack label-create permission).
             label_result = subprocess.run(
@@ -818,17 +914,17 @@ def _platform_state_set(state: dict) -> None:
                  "--body", body],
                 capture_output=True, text=True, check=True, timeout=30,
             )
-        else:
-            subprocess.run(
-                [cli, "issue", "edit", str(num), "--repo", repo, "--body", body],
-                capture_output=True, text=True, check=True, timeout=30,
-            )
     except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
         pass
 
 
 def _platform_state_clear() -> None:
-    """Close the claw-release-state issue on the platform."""
+    """Clear the claw-release-state issue body without closing it.
+
+    The issue remains open with an empty JSON body (``{}``) so that
+    subsequent release cycles reuse the same issue instead of creating
+    a new one.
+    """
     cfg = _get_platform_config()
     cli = _platform_cli(cfg)
     repo = cfg.get("repo", "")
@@ -839,7 +935,7 @@ def _platform_state_clear() -> None:
         return
     try:
         subprocess.run(
-            [cli, "issue", "close", str(num), "--repo", repo],
+            [cli, "issue", "edit", str(num), "--repo", repo, "--body", "{}"],
             capture_output=True, text=True, check=True, timeout=30,
         )
     except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
