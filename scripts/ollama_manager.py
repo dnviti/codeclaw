@@ -1102,6 +1102,17 @@ def health_check(expected_model: str | None = None) -> dict:
     return result
 
 
+def is_available() -> bool:
+    """Quick check whether the Ollama server is reachable.
+
+    Returns True if the server responds to a model list request,
+    False otherwise.  This is a lightweight probe intended for use
+    by ``ConflictJudge`` to decide which provider to fall back to.
+    """
+    running, _ = _fetch_model_list()
+    return running
+
+
 # ── Configuration Management ───────────────────────────────────────────────
 
 def load_ollama_config(config_path: str | None = None) -> dict | None:

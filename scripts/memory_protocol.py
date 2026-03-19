@@ -291,6 +291,7 @@ class ConflictRecord:
         field: str,
         resolution: str,
         resolved: bool = False,
+        resolve_strategy: str = "manual",
     ):
         self.conflict_id = str(uuid.uuid4())[:12]
         self.entry_a = entry_a
@@ -298,6 +299,7 @@ class ConflictRecord:
         self.field = field
         self.resolution = resolution
         self.resolved = resolved
+        self.resolve_strategy = resolve_strategy
         self.detected_at = time.time()
         self.detected_iso = time.strftime(
             "%Y-%m-%dT%H:%M:%SZ", time.gmtime(self.detected_at)
@@ -309,6 +311,7 @@ class ConflictRecord:
             "field": self.field,
             "resolution": self.resolution,
             "resolved": self.resolved,
+            "resolve_strategy": self.resolve_strategy,
             "detected_at": self.detected_at,
             "detected_iso": self.detected_iso,
             "entry_a_agent": self.entry_a.get("agent_id", "?"),
@@ -330,6 +333,7 @@ class ConflictResolver:
     """
 
     def __init__(self, root: Path):
+        self.root = root
         self.conflicts_dir = root / DEFAULT_CONFLICTS_DIR
         self.conflicts_dir.mkdir(parents=True, exist_ok=True)
 
@@ -375,6 +379,10 @@ class ConflictResolver:
     def resolve(self, conflict: ConflictRecord) -> dict:
         """Apply the resolution strategy and return the winning entry.
 
+        For opinion conflicts (flag-for-review), checks ``auto_resolve``
+        config.  If enabled, delegates to ``ConflictJudge`` instead of
+        always flagging for manual review.
+
         Returns the entry that should be kept.
         """
         if conflict.resolution == "last-writer-wins":
@@ -383,6 +391,7 @@ class ConflictResolver:
             b_time = conflict.entry_b.get("written_at", 0)
             winner = conflict.entry_b if b_time >= a_time else conflict.entry_a
             conflict.resolved = True
+            conflict.resolve_strategy = "last-writer-wins"
             return winner
 
         elif conflict.resolution == "merge":
@@ -397,12 +406,73 @@ class ConflictResolver:
                     conflict.entry_b.get("agent_id", ""),
                 ]
             conflict.resolved = True
+            conflict.resolve_strategy = "merge"
             return merged
 
         else:
-            # flag-for-review: save the conflict and return newer entry
+            # flag-for-review: attempt auto-resolution if enabled
+            auto_result = self._try_auto_resolve(conflict)
+            if auto_result is not None:
+                return auto_result
+            # Fallback: save the conflict for manual review
             self._save_conflict(conflict)
             return conflict.entry_b
+
+    def _try_auto_resolve(self, conflict: ConflictRecord) -> Optional[dict]:
+        """Attempt automated resolution of an opinion conflict via LLM judge.
+
+        Returns the winning entry if auto-resolution succeeds, or None
+        if auto-resolve is disabled or the judge cannot resolve the conflict.
+        """
+        try:
+            from conflict_judge import ConflictJudge, load_auto_resolve_config
+        except ImportError:
+            return None
+
+        config = load_auto_resolve_config(self.root)
+        if not config.get("enabled", False):
+            return None
+
+        judge = ConflictJudge(
+            root=self.root,
+            provider=config.get("provider", "ollama"),
+            model=config.get("model", ""),
+            confidence_threshold=config.get("confidence_threshold", 0.8),
+            num_votes=config.get("num_votes", 3),
+        )
+
+        strategy = config.get("strategy", "single-judge")
+        result = judge.judge(conflict.to_dict(), strategy=strategy)
+
+        if not result.get("resolved"):
+            return None
+
+        verdict = result.get("verdict", {})
+        winner_key = verdict.get("winner", "B")
+
+        if winner_key == "A":
+            winner = dict(conflict.entry_a)
+        elif winner_key == "merged":
+            winner = dict(conflict.entry_b)
+            winner["content"] = verdict.get("merged_content", "")
+            winner["merged_from"] = [
+                conflict.entry_a.get("agent_id", ""),
+                conflict.entry_b.get("agent_id", ""),
+            ]
+        else:
+            winner = dict(conflict.entry_b)
+
+        winner["auto_resolved"] = True
+        winner["judge_reasoning"] = verdict.get("reasoning", "")
+        winner["judge_confidence"] = verdict.get("confidence", 0)
+
+        conflict.resolved = True
+        conflict.resolve_strategy = f"auto-judge:{strategy}"
+
+        # Still save the conflict record (now marked resolved)
+        self._save_conflict(conflict)
+
+        return winner
 
     def _save_conflict(self, conflict: ConflictRecord):
         """Persist an unresolved conflict for later review."""
@@ -417,11 +487,21 @@ class ConflictResolver:
     def list_conflicts(
         self, resolved: Optional[bool] = None
     ) -> list[dict]:
-        """List all saved conflicts, optionally filtered by status."""
+        """List all saved conflicts, optionally filtered by status.
+
+        Each conflict dict includes a ``resolve_strategy`` field indicating
+        how it was resolved: ``manual`` (default for legacy records),
+        ``auto-judge:<strategy>``, ``last-writer-wins``, or ``merge``.
+        """
         conflicts = []
         for f in sorted(self.conflicts_dir.glob("*.json")):
+            if f.name.endswith(".resolution.json"):
+                continue  # Skip judge resolution metadata files
             try:
                 data = json.loads(f.read_text(encoding="utf-8"))
+                # Ensure resolve_strategy is present for legacy records
+                if "resolve_strategy" not in data:
+                    data["resolve_strategy"] = "manual"
                 if resolved is not None and data.get("resolved") != resolved:
                     continue
                 conflicts.append(data)
