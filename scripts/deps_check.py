@@ -507,6 +507,8 @@ def _persist_gpu_lib_paths(paths: list[str]) -> bool:
     Only persists paths that are existing directories to prevent
     injection of arbitrary paths into the config file.
 
+    Uses locked_config_update for atomic, race-condition-safe writes.
+
     Returns:
         True if persisted successfully, False otherwise.
     """
@@ -520,19 +522,33 @@ def _persist_gpu_lib_paths(paths: list[str]) -> bool:
         return False
 
     try:
-        with open(config_path, "r", encoding="utf-8") as f:
-            config = json.load(f)
+        from config_lock import locked_config_update
 
-        vm = config.setdefault("vector_memory", {})
-        gpu_cfg = vm.setdefault("gpu_acceleration", {})
-        gpu_cfg["lib_paths"] = valid_paths
+        def _update(config: dict) -> dict:
+            vm = config.setdefault("vector_memory", {})
+            gpu_cfg = vm.setdefault("gpu_acceleration", {})
+            gpu_cfg["lib_paths"] = valid_paths
+            return config
 
-        with open(config_path, "w", encoding="utf-8") as f:
-            json.dump(config, f, indent=2)
-            f.write("\n")
+        return locked_config_update(config_path, _update)
+    except ImportError:
+        # Fallback: direct write if config_lock not available
+        try:
+            with open(config_path, "r", encoding="utf-8") as f:
+                config = json.load(f)
 
-        return True
-    except (json.JSONDecodeError, OSError):
+            vm = config.setdefault("vector_memory", {})
+            gpu_cfg = vm.setdefault("gpu_acceleration", {})
+            gpu_cfg["lib_paths"] = valid_paths
+
+            with open(config_path, "w", encoding="utf-8") as f:
+                json.dump(config, f, indent=2)
+                f.write("\n")
+
+            return True
+        except (json.JSONDecodeError, OSError):
+            return False
+    except Exception:
         return False
 
 

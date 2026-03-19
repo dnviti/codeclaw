@@ -322,17 +322,29 @@ def read_platform_config(root: Path) -> dict:
 
 
 def _write_platform_config(root: Path, data: dict) -> str:
-    """Write data back to the issues-tracker config file. Returns the path used."""
+    """Write data back to the issues-tracker config file. Returns the path used.
+
+    Uses locked_config_write for atomic, race-condition-safe writes.
+    Falls back to direct write if config_lock is not available.
+    """
+    target: Path | None = None
     for name in ("issues-tracker.json", "github-issues.json"):
         p = root / ".claude" / name
         if p.exists():
-            p.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
-            return str(p)
-    # Fallback: create issues-tracker.json
-    p = root / ".claude" / "issues-tracker.json"
-    p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
-    return str(p)
+            target = p
+            break
+
+    if target is None:
+        target = root / ".claude" / "issues-tracker.json"
+        target.parent.mkdir(parents=True, exist_ok=True)
+
+    try:
+        from config_lock import locked_config_write
+        locked_config_write(target, data)
+    except ImportError:
+        target.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+
+    return str(target)
 
 
 def get_cached_branch_config(root: Path) -> dict:
