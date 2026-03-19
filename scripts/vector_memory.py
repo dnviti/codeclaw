@@ -76,6 +76,7 @@ DEFAULT_BATCH_SIZE = 64
 HASH_MANIFEST = "file_hashes.json"
 INDEX_META = "index_meta.json"
 TABLE_NAME = "chunks"
+DEFAULT_BACKEND = "lancedb"  # "lancedb" or "sqlite"
 
 
 # ── Configuration ────────────────────────────────────────────────────────────
@@ -1966,6 +1967,275 @@ def try_vector_index(root: Path, content: str, doc_name: str,
         pass  # Failures are non-fatal to avoid blocking callers
 
 
+# ── Backend-Agnostic Chunk Export ─────────────────────────────────────────────
+
+def export_chunks(file_paths: list[str], root: Path,
+                  config: dict) -> list[dict]:
+    """Generate chunks from files in a backend-agnostic format.
+
+    Both the LanceDB and SQLite backends can consume the output of this
+    function, enabling shared chunking logic.
+
+    Args:
+        file_paths: List of relative file paths to chunk.
+        root: Project root directory.
+        config: Effective vector memory configuration.
+
+    Returns:
+        List of chunk dicts with keys: content, file_path, chunk_type,
+        name, start_line, end_line, language, file_role, content_hash.
+    """
+    from chunkers import chunk_file, chunk_text_document
+
+    chunk_size = config.get("chunk_size", DEFAULT_CHUNK_SIZE)
+    all_chunks: list[dict] = []
+
+    for rel_path in file_paths:
+        fpath = root / rel_path
+        content = read_file_safe(fpath)
+        if not content:
+            continue
+
+        ext = fpath.suffix.lower()
+        if ext in {".md", ".txt", ".rst"}:
+            chunks = chunk_text_document(rel_path, content,
+                                         max_chunk_size=chunk_size)
+        else:
+            chunks = chunk_file(rel_path, content,
+                                max_chunk_size=chunk_size)
+
+        for chunk in chunks:
+            all_chunks.append({
+                "content": chunk.content,
+                "file_path": chunk.file_path,
+                "chunk_type": chunk.chunk_type,
+                "name": chunk.name,
+                "start_line": chunk.start_line,
+                "end_line": chunk.end_line,
+                "language": chunk.language,
+                "file_role": chunk.file_role,
+                "content_hash": chunk.content_hash,
+            })
+
+    return all_chunks
+
+
+def get_configured_backend(root: Path, config: dict) -> Optional[str]:
+    """Return the configured backend name ('lancedb' or 'sqlite').
+
+    Checks config for a 'backend' key, falling back to DEFAULT_BACKEND.
+    """
+    return config.get("backend", DEFAULT_BACKEND)
+
+
+def _create_sqlite_backend(root: Path, config: dict):
+    """Create and return a SQLiteMemoryBackend instance."""
+    from sqlite_backend import create_sqlite_backend
+    return create_sqlite_backend(root, config)
+
+
+def _resolve_backend(args, root: Path, config: dict) -> Optional[str]:
+    """Resolve the backend to use from CLI args or config.
+
+    CLI --backend flag overrides config. Returns 'lancedb' or 'sqlite'.
+    """
+    backend = getattr(args, "backend", None)
+    if backend:
+        return backend
+    return get_configured_backend(root, config)
+
+
+# ── SQLite Backend CLI Wrappers ──────────────────────────────────────────────
+
+def _cmd_index_sqlite(args):
+    """Index command routed to SQLite backend."""
+    root = Path(args.root).resolve()
+    config = get_effective_config(root)
+    backend = _create_sqlite_backend(root, config)
+
+    print("Vector Memory — Indexing (SQLite backend)", file=sys.stderr)
+    print(f"  Root: {root}", file=sys.stderr)
+    print(f"  Database: {backend.db_path}", file=sys.stderr)
+
+    # Build file list
+    gitignore_patterns = load_gitignore_patterns(root)
+    new_manifest = build_hash_manifest(root, gitignore_patterns, config)
+
+    force_full = args.full or getattr(args, "force_init", False)
+    if force_full:
+        files_to_index = list(new_manifest.keys())
+        mode_label = "force-init" if getattr(args, "force_init", False) else "full rebuild"
+        print(f"  Mode: {mode_label} ({len(files_to_index)} files)",
+              file=sys.stderr)
+    else:
+        index_dir = root / config["index_path"]
+        old_manifest = load_stored_manifest(index_dir)
+        added, modified, removed = diff_manifests(old_manifest, new_manifest)
+        files_to_index = added + modified
+        print(f"  Mode: incremental", file=sys.stderr)
+        print(f"    Added: {len(added)}, Modified: {len(modified)}, "
+              f"Removed: {len(removed)}", file=sys.stderr)
+        # Remove deleted files
+        for fp in removed:
+            backend.remove_file(fp)
+
+    if not files_to_index:
+        print("  Nothing to index — everything is up to date.", file=sys.stderr)
+        index_dir = root / config["index_path"]
+        save_manifest(index_dir, new_manifest)
+        return
+
+    result = backend.index(files_to_index, root, config, full=force_full)
+    index_dir = root / config["index_path"]
+    index_dir.mkdir(parents=True, exist_ok=True)
+    save_manifest(index_dir, new_manifest)
+
+    print(f"  Done: {result['chunks_indexed']} chunks from "
+          f"{result['files_indexed']} files in {result['elapsed_seconds']}s",
+          file=sys.stderr)
+
+
+def _cmd_search_sqlite(args):
+    """Search command routed to SQLite backend."""
+    root = Path(args.root).resolve()
+    config = get_effective_config(root)
+    backend = _create_sqlite_backend(root, config)
+
+    sqlite_cfg = config.get("sqlite", {})
+    hybrid_weight = sqlite_cfg.get("hybrid_weight_vector", 0.7)
+
+    results = backend.search(
+        query=args.query,
+        top_k=args.top_k,
+        file_filter=args.file_filter,
+        type_filter=args.type_filter,
+        hybrid_weight=hybrid_weight,
+    )
+
+    if args.json_output:
+        output = []
+        for r in results:
+            entry = dict(r)
+            if not args.full_content:
+                entry["content"] = entry.get("content", "")[:500]
+            output.append(entry)
+        print(json.dumps(output, indent=2))
+    else:
+        if not results:
+            print("No results found.")
+            return
+
+        print(f"\nSearch results for: {args.query!r}")
+        print(f"{'=' * 60}")
+        for i, r in enumerate(results, 1):
+            print(f"\n[{i}] {r['file_path']}:"
+                  f"{r['start_line']}-{r['end_line']}"
+                  f"  ({r['chunk_type']}: {r['name']})"
+                  f"  score={r['score']:.4f}")
+            content = r.get("content", "")
+            if not args.full_content:
+                content = content[:300]
+                if len(r.get("content", "")) > 300:
+                    content += "..."
+            print(f"    {content[:200].replace(chr(10), chr(10) + '    ')}")
+        print()
+
+
+def _cmd_status_sqlite(args):
+    """Status command routed to SQLite backend."""
+    root = Path(args.root).resolve()
+    config = get_effective_config(root)
+    backend = _create_sqlite_backend(root, config)
+
+    status = backend.status()
+    status["enabled"] = config.get("enabled", True)
+
+    # Check staleness
+    index_dir = root / config["index_path"]
+    stored = load_stored_manifest(index_dir)
+    if stored:
+        gitignore_patterns = load_gitignore_patterns(root)
+        current = build_hash_manifest(root, gitignore_patterns, config)
+        added, modified, removed = diff_manifests(stored, current)
+        status["stale_files"] = len(added) + len(modified) + len(removed)
+    else:
+        status["stale_files"] = -1
+
+    if args.json_output:
+        print(json.dumps(status, indent=2))
+    else:
+        print("Vector Memory Status (SQLite backend)")
+        print("=" * 40)
+        print(f"  Backend:      sqlite")
+        print(f"  Database:     {status.get('db_path', '?')}")
+        print(f"  Vec support:  {'yes' if status.get('vec_available') else 'no (install sqlite-vec for vector search)'}")
+        print(f"  Enabled:      {status.get('enabled', False)}")
+        li = status.get("last_indexed")
+        print(f"  Last indexed: {li if li else 'never'}")
+        print(f"  Indexed files: {status.get('indexed_files', 0)}")
+        print(f"  Total chunks: {status.get('total_chunks', 0)}")
+        print(f"  Index size:   {status.get('index_size_mb', 0):.2f} MB")
+        sf = status.get("stale_files", -1)
+        if sf == 0:
+            print(f"  Staleness:    up to date")
+        elif sf > 0:
+            print(f"  Staleness:    {sf} file(s) changed since last index")
+        else:
+            print(f"  Staleness:    unknown (no manifest)")
+
+
+def _cmd_clear_sqlite(args):
+    """Clear command routed to SQLite backend."""
+    root = Path(args.root).resolve()
+    config = get_effective_config(root)
+
+    if not args.force:
+        print("Use --force to confirm deletion of the SQLite index.",
+              file=sys.stderr)
+        sys.exit(1)
+
+    sqlite_cfg = config.get("sqlite", {})
+    db_path = root / sqlite_cfg.get("db_path", ".claude/memory/sqlite/memory.db")
+
+    removed = False
+    for suffix in ("", "-wal", "-shm"):
+        p = Path(str(db_path) + suffix)
+        if p.exists():
+            p.unlink()
+            removed = True
+
+    if removed:
+        print(f"SQLite index cleared: {db_path}", file=sys.stderr)
+    else:
+        print(f"No SQLite index found at: {db_path}", file=sys.stderr)
+
+
+def _cmd_gc_sqlite(args):
+    """GC command routed to SQLite backend."""
+    root = Path(args.root).resolve()
+    config = get_effective_config(root)
+    consistency = get_effective_consistency_config(root)
+    backend = _create_sqlite_backend(root, config)
+
+    ttl_days = args.ttl_days if args.ttl_days is not None else consistency.get("gc_ttl_days", 30)
+
+    if not args.json_output:
+        print("Vector Memory — Garbage Collection (SQLite backend)", file=sys.stderr)
+        print(f"  Database: {backend.db_path}", file=sys.stderr)
+        print(f"  TTL: {ttl_days} days", file=sys.stderr)
+
+    report = backend.gc(ttl_days=ttl_days, deep=args.deep)
+
+    if args.json_output:
+        print(json.dumps(report, indent=2))
+    else:
+        print(f"  Entries pruned:  {report['entries_pruned']}", file=sys.stderr)
+        print(f"  Size before:     {report['size_before_mb']:.2f} MB", file=sys.stderr)
+        print(f"  Size after:      {report['size_after_mb']:.2f} MB", file=sys.stderr)
+        print(f"  Space freed:     {report['size_freed_mb']:.2f} MB", file=sys.stderr)
+        print("  Done.", file=sys.stderr)
+
+
 # ── CLI ──────────────────────────────────────────────────────────────────────
 
 def main():
@@ -1999,6 +2269,8 @@ Examples:
                      help="Full rebuild (ignore incremental hashes)")
     idx.add_argument("--force-init", action="store_true", dest="force_init",
                      help="Force initialization even if index already exists (used by setup)")
+    idx.add_argument("--backend", choices=["lancedb", "sqlite"], default=None,
+                     help="Storage backend (default: from config or lancedb)")
 
     # ── search ──
     srch = sub.add_parser("search", help="Semantic search over indexed content")
@@ -2019,6 +2291,8 @@ Examples:
                       help="Show full chunk content instead of truncated")
     srch.add_argument("--version", type=int, default=None,
                       help="Query at a specific dataset version (point-in-time)")
+    srch.add_argument("--backend", choices=["lancedb", "sqlite"], default=None,
+                      help="Storage backend (default: from config or lancedb)")
 
     # ── compact ──
     cpt = sub.add_parser("compact",
@@ -2034,12 +2308,16 @@ Examples:
     stat.add_argument("--root", default=".", help="Project root directory")
     stat.add_argument("--json", dest="json_output", action="store_true",
                       help="Output as JSON")
+    stat.add_argument("--backend", choices=["lancedb", "sqlite"], default=None,
+                      help="Storage backend (default: from config or lancedb)")
 
     # ── clear ──
     clr = sub.add_parser("clear", help="Reset the vector index")
     clr.add_argument("--root", default=".", help="Project root directory")
     clr.add_argument("--force", action="store_true",
                      help="Confirm deletion")
+    clr.add_argument("--backend", choices=["lancedb", "sqlite"], default=None,
+                     help="Storage backend (default: from config or lancedb)")
 
     # ── configure ──
     cfg = sub.add_parser("configure", help="Show vector memory configuration")
@@ -2056,6 +2334,8 @@ Examples:
                       help="Deep GC: also clear embedding cache")
     gc_p.add_argument("--json", dest="json_output", action="store_true",
                       help="Output as JSON")
+    gc_p.add_argument("--backend", choices=["lancedb", "sqlite"], default=None,
+                      help="Storage backend (default: from config or lancedb)")
 
     # ── agents ──
     ag = sub.add_parser("agents", help="List active/historical agent sessions")
@@ -2124,20 +2404,42 @@ Examples:
         parser.print_help()
         sys.exit(1)
 
+    # Resolve backend for commands that support it
+    backend = None
+    if hasattr(args, "backend") and args.command in ("index", "search", "status", "gc", "clear"):
+        root = Path(getattr(args, "root", ".")).resolve()
+        config = get_effective_config(root)
+        backend = _resolve_backend(args, root, config)
+
     if args.command == "index":
-        cmd_index(args)
+        if backend == "sqlite":
+            _cmd_index_sqlite(args)
+        else:
+            cmd_index(args)
     elif args.command == "search":
-        cmd_search(args)
+        if backend == "sqlite":
+            _cmd_search_sqlite(args)
+        else:
+            cmd_search(args)
     elif args.command == "compact":
         cmd_compact(args)
     elif args.command == "status":
-        cmd_status(args)
+        if backend == "sqlite":
+            _cmd_status_sqlite(args)
+        else:
+            cmd_status(args)
     elif args.command == "clear":
-        cmd_clear(args)
+        if backend == "sqlite":
+            _cmd_clear_sqlite(args)
+        else:
+            cmd_clear(args)
     elif args.command == "configure":
         cmd_configure(args)
     elif args.command == "gc":
-        cmd_gc(args)
+        if backend == "sqlite":
+            _cmd_gc_sqlite(args)
+        else:
+            cmd_gc(args)
     elif args.command == "agents":
         cmd_agents(args)
     elif args.command == "conflicts":
