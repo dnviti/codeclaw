@@ -39,27 +39,38 @@ UNSAFE_PATTERNS = [
     "import os", "import sys", "import subprocess",
     "import shutil", "import socket", "import http",
     "import urllib", "import requests", "import pathlib",
+    "import importlib", "import ctypes", "import _thread",
+    "import multiprocessing", "import pickle", "import marshal",
+    "import signal", "import code", "import codeop",
     "__import__", "eval(", "exec(", "compile(",
     "open(", "globals(", "locals(", "vars(",
     "getattr(", "setattr(", "delattr(",
     "breakpoint(", "exit(", "quit(",
+    "__subclasses__", "__bases__", "__class__",
+    "sys.modules", "pickle.loads", "marshal.loads",
 ]
 
 
 # ── Sandbox Code Template ────────────────────────────────────────────────────
 
-_SANDBOX_TEMPLATE = textwrap.dedent('''\
+# Template is built via string concatenation, NOT str.format(), to avoid
+# injection via curly braces in LLM-generated analysis code or context data.
+# Context data is loaded from a separate temp file to prevent string-escape
+# breakout attacks via malicious file content.
+
+_SANDBOX_PREAMBLE = textwrap.dedent('''\
     import sys
     import json
 
     # Only allow safe imports
-    _ALLOWED_MODULES = {allowed_modules}
+    _ALLOWED_MODULES = %%ALLOWED_MODULES%%
 
     _original_import = __builtins__.__import__ if hasattr(__builtins__, '__import__') else __import__
 
     def _safe_import(name, *args, **kwargs):
-        if name not in _ALLOWED_MODULES:
-            raise ImportError(f"Module '{{name}}' is not allowed in the RLM sandbox")
+        top_level = name.split(".")[0]
+        if top_level not in _ALLOWED_MODULES:
+            raise ImportError(f"Module '{name}' is not allowed in the RLM sandbox")
         return _original_import(name, *args, **kwargs)
 
     if hasattr(__builtins__, '__import__'):
@@ -68,8 +79,9 @@ _SANDBOX_TEMPLATE = textwrap.dedent('''\
         import builtins
         builtins.__import__ = _safe_import
 
-    # Load context data
-    CONTEXT = json.loads("""{context_json}""")
+    # Load context data from separate file (avoids string-injection attacks)
+    with __builtins__.open(sys.argv[1], "r", encoding="utf-8") as _ctx_f:
+        CONTEXT = json.load(_ctx_f)
 
     # Analysis results collector
     RESULTS = []
@@ -77,11 +89,11 @@ _SANDBOX_TEMPLATE = textwrap.dedent('''\
     def emit(finding):
         """Record an analysis finding."""
         if isinstance(finding, str):
-            RESULTS.append({{"type": "text", "content": finding}})
+            RESULTS.append({"type": "text", "content": finding})
         elif isinstance(finding, dict):
             RESULTS.append(finding)
         else:
-            RESULTS.append({{"type": "text", "content": str(finding)}})
+            RESULTS.append({"type": "text", "content": str(finding)})
 
     def slice_context(start=None, end=None, key=None):
         """Slice context data for focused analysis."""
@@ -102,19 +114,21 @@ _SANDBOX_TEMPLATE = textwrap.dedent('''\
     def summarize_structure():
         """Return structural summary of the context."""
         if isinstance(CONTEXT, dict):
-            return {{k: type(v).__name__ for k, v in CONTEXT.items()}}
+            return {k: type(v).__name__ for k, v in CONTEXT.items()}
         if isinstance(CONTEXT, list):
-            return {{"length": len(CONTEXT), "types": list(set(type(x).__name__ for x in CONTEXT[:20]))}}
+            return {"length": len(CONTEXT), "types": list(set(type(x).__name__ for x in CONTEXT[:20]))}
         if isinstance(CONTEXT, str):
             lines = CONTEXT.splitlines()
-            return {{"lines": len(lines), "chars": len(CONTEXT)}}
-        return {{"type": type(CONTEXT).__name__}}
+            return {"lines": len(lines), "chars": len(CONTEXT)}
+        return {"type": type(CONTEXT).__name__}
 
     # ── User analysis code ──
-    {analysis_code}
+''')
+
+_SANDBOX_EPILOGUE = textwrap.dedent('''\
 
     # Output results
-    output = {{"results": RESULTS, "success": True}}
+    output = {"results": RESULTS, "success": True}
     print(json.dumps(output))
 ''')
 
@@ -164,28 +178,32 @@ def validate_code(code: str) -> tuple[bool, str]:
     return True, ""
 
 
-def build_sandbox_code(context_data, analysis_code: str) -> str:
+def build_sandbox_code(context_data, analysis_code: str) -> tuple[str, str]:
     """Build the complete sandbox script from context and analysis code.
+
+    Context data is written to a separate JSON file to prevent string-escape
+    injection attacks. The sandbox script reads context from that file at
+    runtime via sys.argv[1].
 
     Args:
         context_data: The context to make available (will be JSON-serialized).
         analysis_code: The LLM-generated analysis code.
 
     Returns:
-        Complete Python script string ready for execution.
+        Tuple of (script_code, context_json_string).
     """
-    # Serialize context
+    # Serialize context — kept separate from the script to avoid injection
     context_json = json.dumps(context_data)
-    # Escape triple quotes in context to avoid breaking the template
-    context_json = context_json.replace('"""', '\\"\\"\\"')
 
     allowed_modules_str = repr(set(SAFE_MODULES))
 
-    return _SANDBOX_TEMPLATE.format(
-        allowed_modules=allowed_modules_str,
-        context_json=context_json,
-        analysis_code=analysis_code,
-    )
+    # Use simple string replacement on a known placeholder (not str.format)
+    # to avoid issues with curly braces in analysis_code
+    preamble = _SANDBOX_PREAMBLE.replace("%%ALLOWED_MODULES%%", allowed_modules_str)
+
+    script = preamble + analysis_code + "\n" + _SANDBOX_EPILOGUE
+
+    return script, context_json
 
 
 def execute_analysis(
@@ -220,13 +238,20 @@ def execute_analysis(
 
     # Build the sandbox script
     try:
-        script = build_sandbox_code(context_data, analysis_code)
+        script, context_json = build_sandbox_code(context_data, analysis_code)
     except (TypeError, ValueError) as e:
         return ExecutionResult(
             success=False,
             results=[],
             error=f"Failed to build sandbox: {e}",
         )
+
+    # Write context to a separate temp file (prevents string-injection attacks)
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".json", delete=False, encoding="utf-8"
+    ) as ctx_f:
+        ctx_f.write(context_json)
+        context_path = ctx_f.name
 
     # Write script to temp file
     with tempfile.NamedTemporaryFile(
@@ -236,36 +261,41 @@ def execute_analysis(
         script_path = f.name
 
     try:
-        # Build command with memory limits on Linux
-        cmd = [sys.executable, script_path]
+        # Build command — no shell=True for security
+        cmd = [sys.executable, script_path, context_path]
 
         env = os.environ.copy()
         # Restrict environment for safety
         env.pop("PYTHONSTARTUP", None)
         env.pop("PYTHONPATH", None)
 
-        # Use ulimit for memory limits on Linux/macOS
+        # Set memory limits via preexec_fn on Linux/macOS (no shell=True)
+        preexec = None
         if platform.system() in ("Linux", "Darwin"):
             memory_bytes = max_memory_mb * 1024 * 1024
-            shell_cmd = f"ulimit -v {memory_bytes} 2>/dev/null; {sys.executable} {script_path}"
-            result = subprocess.run(
-                shell_cmd,
-                shell=True,
-                capture_output=True,
-                text=True,
-                timeout=timeout_seconds,
-                env=env,
-                cwd=tempfile.gettempdir(),
-            )
-        else:
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=timeout_seconds,
-                env=env,
-                cwd=tempfile.gettempdir(),
-            )
+
+            def _set_memory_limit():
+                """Set virtual memory limit via resource module."""
+                try:
+                    import resource
+                    resource.setrlimit(
+                        resource.RLIMIT_AS,
+                        (memory_bytes, memory_bytes),
+                    )
+                except (ImportError, ValueError, OSError):
+                    pass  # Best-effort; proceed without limit
+
+            preexec = _set_memory_limit
+
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=timeout_seconds,
+            env=env,
+            cwd=tempfile.gettempdir(),
+            preexec_fn=preexec,
+        )
 
         if result.returncode != 0:
             return ExecutionResult(
@@ -307,11 +337,12 @@ def execute_analysis(
             error=f"Execution error: {e}",
         )
     finally:
-        # Clean up temp file
-        try:
-            os.unlink(script_path)
-        except OSError:
-            pass
+        # Clean up temp files
+        for tmp_path in (script_path, context_path):
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
 
 
 def build_analysis_prompt(query: str, context_summary: dict) -> str:

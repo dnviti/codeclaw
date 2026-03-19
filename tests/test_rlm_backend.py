@@ -604,18 +604,18 @@ class TestBuildSandboxCode:
 
         context = {"file.py": "x = 1"}
         code = "emit(summarize_structure())"
-        script = build_sandbox_code(context, code)
+        script, context_json = build_sandbox_code(context, code)
 
         assert "CONTEXT" in script
         assert "emit" in script
         assert "summarize_structure" in script
-        assert "file.py" in script
+        assert "file.py" in context_json
 
     def test_sandbox_includes_safe_modules(self):
         """Sandbox code includes the safe modules allowlist."""
         from rlm_executor import build_sandbox_code
 
-        script = build_sandbox_code("test data", "pass")
+        script, _ = build_sandbox_code("test data", "pass")
         assert "_ALLOWED_MODULES" in script
 
 
@@ -647,12 +647,12 @@ class TestExecuteAnalysis:
         from rlm_executor import execute_analysis, build_sandbox_code
 
         # Verify the sandbox code can be built and includes search_context
-        script = build_sandbox_code(
+        script, context_json = build_sandbox_code(
             {"main.py": "def hello(): pass"},
             'matches = search_context(r"def \\w+")\nemit({"count": len(matches)})',
         )
         assert "search_context" in script
-        assert "def hello" in script
+        assert "def hello" in context_json
 
     def test_summarize_structure_helper(self):
         """The summarize_structure helper works within the sandbox."""
@@ -983,6 +983,10 @@ class TestRLMConstants:
         """UNSAFE_PATTERNS covers critical dangerous operations."""
         from rlm_executor import UNSAFE_PATTERNS
 
-        critical = ["import os", "import subprocess", "eval(", "exec(", "open("]
+        critical = [
+            "import os", "import subprocess", "eval(", "exec(", "open(",
+            "import importlib", "import ctypes", "import _thread",
+            "import multiprocessing", "__subclasses__",
+        ]
         for pattern in critical:
             assert pattern in UNSAFE_PATTERNS, f"Missing critical pattern: {pattern}"
