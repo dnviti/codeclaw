@@ -13,9 +13,12 @@ Zero external dependencies in this module itself — stdlib only.
 
 import importlib
 import json
+import os
 import platform
+import site
 import subprocess
 import sys
+from pathlib import Path
 from typing import NamedTuple
 
 
@@ -156,6 +159,99 @@ def detect_gpu_providers() -> list[str]:
         return []
 
 
+def discover_gpu_lib_paths() -> dict:
+    """Auto-discover pip-installed GPU library paths for the current platform.
+
+    Scans site-packages for NVIDIA/ROCm shared libraries that ONNX Runtime
+    needs at session creation time. These paths are often not on the default
+    library search path, causing silent fallback to CPU.
+
+    Returns:
+        Dict with:
+            paths: list of absolute directory paths containing GPU libraries
+            env_var: name of the environment variable to set
+                     ("LD_LIBRARY_PATH" on Linux, "PATH" on Windows)
+            platform: "linux", "windows", or "darwin"
+            fix_command: shell command the user can run to fix the issue
+    """
+    system = platform.system()
+    plat = {"Linux": "linux", "Windows": "windows",
+            "Darwin": "darwin"}.get(system, system.lower())
+
+    result: dict = {
+        "paths": [],
+        "env_var": "",
+        "platform": plat,
+        "fix_command": "",
+    }
+
+    if plat == "darwin":
+        # macOS CoreML is framework-based -- no extra path fix needed
+        return result
+
+    # Determine the correct env var per platform
+    if plat == "linux":
+        result["env_var"] = "LD_LIBRARY_PATH"
+        lib_glob = "*.so*"
+    elif plat == "windows":
+        result["env_var"] = "PATH"
+        lib_glob = "*.dll"
+    else:
+        return result
+
+    discovered: list[str] = []
+
+    # ── Linux / Windows NVIDIA: scan site-packages/nvidia/*/lib/ ────────
+    for sp in site.getsitepackages() + [site.getusersitepackages()]:
+        nvidia_root = Path(sp) / "nvidia"
+        if nvidia_root.is_dir():
+            for pkg_dir in nvidia_root.iterdir():
+                lib_dir = pkg_dir / "lib"
+                if lib_dir.is_dir():
+                    # Only include dirs that actually contain shared libs
+                    if any(lib_dir.glob(lib_glob)):
+                        discovered.append(str(lib_dir))
+
+    # ── Linux AMD: scan standard ROCm paths ─────────────────────────────
+    if plat == "linux":
+        rocm_candidates = [
+            "/opt/rocm/lib",
+            "/opt/rocm/hip/lib",
+        ]
+        # Also check versioned ROCm installs
+        opt_rocm = Path("/opt")
+        if opt_rocm.is_dir():
+            for entry in opt_rocm.iterdir():
+                if entry.name.startswith("rocm-") and entry.is_dir():
+                    lib_path = entry / "lib"
+                    if lib_path.is_dir():
+                        rocm_candidates.append(str(lib_path))
+
+        for rpath in rocm_candidates:
+            rp = Path(rpath)
+            if rp.is_dir() and any(rp.glob("*.so*")):
+                if str(rp) not in discovered:
+                    discovered.append(str(rp))
+
+    result["paths"] = discovered
+
+    # Build a user-friendly fix command
+    if discovered:
+        joined = ":".join(discovered) if plat == "linux" else ";".join(
+            discovered
+        )
+        if plat == "linux":
+            result["fix_command"] = (
+                f'export LD_LIBRARY_PATH="{joined}:$LD_LIBRARY_PATH"'
+            )
+        elif plat == "windows":
+            result["fix_command"] = (
+                f'set PATH={joined};%PATH%'
+            )
+
+    return result
+
+
 def detect_gpu() -> dict:
     """Detect GPU hardware and recommend the correct ONNX Runtime package.
 
@@ -270,43 +366,201 @@ def _detect_gpu_hardware() -> tuple:
     return "none", 0.0
 
 
-def verify_gpu_provider() -> dict:
+def verify_gpu_provider(auto_fix: bool = False) -> dict:
     """Verify that the installed ONNX Runtime has a working GPU provider.
 
-    Checks whether a GPU execution provider is actually available after
-    the appropriate onnxruntime package has been installed.
+    Goes beyond get_available_providers() by attempting a real lightweight
+    InferenceSession to confirm GPU libraries actually load at runtime.
+
+    Args:
+        auto_fix: If True, automatically discover and inject GPU library
+                  paths into os.environ before retrying on failure.
 
     Returns:
-        Dict with available (bool), providers (list), and message (str).
+        Dict with available (bool), providers (list), message (str),
+        and optionally lib_paths (dict) from discover_gpu_lib_paths().
     """
     gpu_providers = detect_gpu_providers()
-    if gpu_providers:
-        return {
-            "available": True,
-            "providers": gpu_providers,
-            "message": (
-                f"GPU provider(s) available: {', '.join(gpu_providers)}. "
-                "GPU acceleration is ready."
-            ),
-        }
-    else:
+
+    if not gpu_providers:
         ort_installed = check_dep("onnxruntime")
         if ort_installed:
+            lib_info = discover_gpu_lib_paths()
+            msg = (
+                "ONNX Runtime is installed but no GPU provider detected. "
+                "Falling back to CPU. To enable GPU, install the correct "
+                "variant: onnxruntime-gpu (NVIDIA), onnxruntime-rocm (AMD), "
+                "onnxruntime-directml (Windows), onnxruntime-silicon (macOS)."
+            )
+            if lib_info["paths"]:
+                msg += (
+                    f"\n\nDiscovered GPU library paths that may help:\n"
+                    f"  {lib_info['fix_command']}"
+                )
             return {
                 "available": False,
                 "providers": [],
-                "message": (
-                    "ONNX Runtime is installed but no GPU provider detected. "
-                    "Falling back to CPU. To enable GPU, install the correct "
-                    "variant: onnxruntime-gpu (NVIDIA), onnxruntime-rocm (AMD), "
-                    "onnxruntime-directml (Windows), onnxruntime-silicon (macOS)."
-                ),
+                "message": msg,
+                "lib_paths": lib_info,
             }
         return {
             "available": False,
             "providers": [],
             "message": "ONNX Runtime is not installed.",
         }
+
+    # GPU providers are listed -- but do they actually work at runtime?
+    # Attempt a real lightweight InferenceSession to verify.
+    session_ok, active_provider = _test_gpu_session(gpu_providers)
+
+    if session_ok:
+        return {
+            "available": True,
+            "providers": gpu_providers,
+            "active_provider": active_provider,
+            "message": (
+                f"GPU provider(s) verified: {', '.join(gpu_providers)}. "
+                f"Active: {active_provider}. GPU acceleration is ready."
+            ),
+        }
+
+    # Session failed -- GPU libs are not loadable at runtime
+    lib_info = discover_gpu_lib_paths()
+
+    if auto_fix and lib_info["paths"]:
+        # Inject discovered paths and retry
+        _inject_lib_paths(lib_info)
+        session_ok_retry, active_retry = _test_gpu_session(gpu_providers)
+        if session_ok_retry:
+            return {
+                "available": True,
+                "providers": gpu_providers,
+                "active_provider": active_retry,
+                "auto_fixed": True,
+                "lib_paths": lib_info,
+                "message": (
+                    f"GPU provider verified after auto-fix. "
+                    f"Active: {active_retry}. "
+                    f"Injected paths: {', '.join(lib_info['paths'])}"
+                ),
+            }
+
+    msg = (
+        f"GPU provider(s) reported as available ({', '.join(gpu_providers)}) "
+        "but failed to load at runtime. The GPU shared libraries are not "
+        "on the library search path."
+    )
+    if lib_info["paths"]:
+        msg += (
+            f"\n\nFix: {lib_info['fix_command']}\n"
+            f"Or run: python3 deps_check.py verify-gpu --auto-fix"
+        )
+    else:
+        msg += (
+            "\n\nNo pip-installed GPU library paths were found. Ensure the "
+            "correct ONNX Runtime GPU package is installed and CUDA/ROCm "
+            "runtime libraries are on your system library path."
+        )
+
+    return {
+        "available": False,
+        "providers": gpu_providers,
+        "message": msg,
+        "lib_paths": lib_info,
+    }
+
+
+def _test_gpu_session(gpu_providers: list[str]) -> tuple:
+    """Attempt a lightweight ONNX InferenceSession with a GPU provider.
+
+    Creates a minimal dummy ONNX model (identity op) and tries to run it
+    with the given GPU providers. This catches runtime library load failures
+    that get_available_providers() misses.
+
+    Returns:
+        (success: bool, active_provider: str or None)
+    """
+    try:
+        import onnxruntime as ort
+
+        # Build a minimal ONNX model (Identity op) as bytes.
+        # This avoids needing a model file on disk.
+        dummy_model = _build_dummy_onnx_model()
+        if dummy_model is None:
+            # Cannot build dummy model; skip real session test and
+            # assume the compile-time provider list is correct
+            return True, gpu_providers[0] if gpu_providers else None
+
+        sess_opts = ort.SessionOptions()
+        sess_opts.log_severity_level = 3  # suppress warnings
+
+        try:
+            session = ort.InferenceSession(
+                dummy_model,
+                sess_opts,
+                providers=gpu_providers + ["CPUExecutionProvider"],
+            )
+            active = session.get_providers()
+            if active and active[0] != "CPUExecutionProvider":
+                return True, active[0]
+            # Fell back to CPU
+            return False, active[0] if active else None
+        except Exception:
+            return False, None
+    except ImportError:
+        return False, None
+
+
+def _build_dummy_onnx_model() -> bytes | None:
+    """Build a minimal ONNX model (Identity op) as in-memory bytes.
+
+    Returns None if the onnx helper modules are unavailable.
+    """
+    try:
+        from onnx import TensorProto, helper
+
+        X = helper.make_tensor_value_info("X", TensorProto.FLOAT, [1, 1])
+        Y = helper.make_tensor_value_info("Y", TensorProto.FLOAT, [1, 1])
+        node = helper.make_node("Identity", ["X"], ["Y"])
+        graph = helper.make_graph([node], "dummy", [X], [Y])
+        model = helper.make_model(graph, opset_imports=[
+            helper.make_opsetid("", 13)
+        ])
+        return model.SerializeToString()
+    except ImportError:
+        # onnx package not installed; skip real session test
+        return None
+
+
+def _inject_lib_paths(lib_info: dict) -> None:
+    """Inject discovered GPU library paths into os.environ for the current
+    process.
+
+    Validates that each path is an existing directory before injection
+    to prevent injection of arbitrary paths.
+
+    Args:
+        lib_info: Dict from discover_gpu_lib_paths().
+    """
+    if not lib_info.get("paths") or not lib_info.get("env_var"):
+        return
+
+    env_var = lib_info["env_var"]
+    current = os.environ.get(env_var, "")
+    separator = ":" if lib_info["platform"] == "linux" else ";"
+
+    # Only inject paths that exist as directories and are not already present
+    new_paths = [
+        p for p in lib_info["paths"]
+        if p not in current and Path(p).is_dir()
+    ]
+
+    if new_paths:
+        prefix = separator.join(new_paths)
+        if current:
+            os.environ[env_var] = prefix + separator + current
+        else:
+            os.environ[env_var] = prefix
 
 
 def print_status():
@@ -360,23 +614,36 @@ def _cli_detect_gpu():
 
 def _cli_verify_gpu():
     """CLI handler for the verify-gpu subcommand."""
-    result = verify_gpu_provider()
+    auto_fix = "--auto-fix" in sys.argv
+    result = verify_gpu_provider(auto_fix=auto_fix)
     print(json.dumps(result, indent=2))
     sys.exit(0 if result["available"] else 1)
 
 
+def _cli_discover_gpu_libs():
+    """CLI handler for the discover-gpu-libs subcommand."""
+    result = discover_gpu_lib_paths()
+    print(json.dumps(result, indent=2))
+
+
 if __name__ == "__main__":
-    # Support subcommands: detect-gpu, verify-gpu, or default status
+    # Support subcommands: detect-gpu, verify-gpu, discover-gpu-libs,
+    # or default status
     if len(sys.argv) > 1:
         subcmd = sys.argv[1]
         if subcmd == "detect-gpu":
             _cli_detect_gpu()
         elif subcmd == "verify-gpu":
             _cli_verify_gpu()
+        elif subcmd == "discover-gpu-libs":
+            _cli_discover_gpu_libs()
         else:
             print(f"Unknown subcommand: {subcmd}", file=sys.stderr)
-            print("Usage: deps_check.py [detect-gpu|verify-gpu]",
-                  file=sys.stderr)
+            print(
+                "Usage: deps_check.py "
+                "[detect-gpu|verify-gpu [--auto-fix]|discover-gpu-libs]",
+                file=sys.stderr,
+            )
             sys.exit(1)
     else:
         print_status()

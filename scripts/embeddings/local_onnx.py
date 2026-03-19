@@ -12,6 +12,7 @@ Model download:
 
 import json
 import os
+import platform
 import sys
 import urllib.request
 import urllib.error
@@ -51,6 +52,143 @@ _PROVIDER_PREFERENCE = [
 ]
 
 _VALID_GPU_MODES = ("auto", "gpu", "cpu")
+
+
+def _load_gpu_lib_paths_from_config() -> list[str]:
+    """Load stored GPU library paths from project-config.json.
+
+    Looks for vector_memory.gpu_acceleration.lib_paths in the config
+    file located at .claude/project-config.json relative to the
+    repository root.
+
+    Returns:
+        List of directory paths, or empty list if not configured.
+    """
+    # Try common config locations
+    candidates = [
+        Path(".claude/project-config.json"),
+    ]
+    # Also check relative to this file's location (plugin root)
+    plugin_root = Path(__file__).resolve().parent.parent.parent
+    candidates.append(plugin_root / ".claude" / "project-config.json")
+
+    for config_path in candidates:
+        if config_path.exists():
+            try:
+                with open(config_path, "r", encoding="utf-8") as f:
+                    config = json.load(f)
+                gpu_cfg = config.get("vector_memory", {}).get(
+                    "gpu_acceleration", {}
+                )
+                raw_paths = gpu_cfg.get("lib_paths", [])
+                # Validate: must be a list of strings
+                if isinstance(raw_paths, list):
+                    return [p for p in raw_paths if isinstance(p, str)]
+                return []
+            except (json.JSONDecodeError, OSError):
+                continue
+    return []
+
+
+def _inject_gpu_lib_paths(paths: list[str]) -> None:
+    """Prepend GPU library paths to the platform's library search path.
+
+    Linux:  prepend to LD_LIBRARY_PATH
+    Windows: prepend to PATH
+    macOS:  no-op (CoreML is framework-based)
+
+    Only injects paths that are not already present in the env var.
+    Validates that each path is an existing directory before injection
+    to prevent injection of arbitrary paths from config files.
+    """
+    if not paths:
+        return
+
+    system = platform.system()
+    if system == "Darwin":
+        return  # CoreML needs no path fix
+    elif system == "Linux":
+        env_var = "LD_LIBRARY_PATH"
+        separator = ":"
+    elif system == "Windows":
+        env_var = "PATH"
+        separator = ";"
+    else:
+        return
+
+    current = os.environ.get(env_var, "")
+    # Only inject paths that exist as directories and are not already present
+    new_paths = [
+        p for p in paths
+        if p not in current and Path(p).is_dir()
+    ]
+
+    if new_paths:
+        prefix = separator.join(new_paths)
+        if current:
+            os.environ[env_var] = prefix + separator + current
+        else:
+            os.environ[env_var] = prefix
+
+
+def _build_platform_gpu_error_message(gpu_mode: str,
+                                      active_provider: str) -> str:
+    """Build a platform-aware actionable error message for GPU fallback.
+
+    Args:
+        gpu_mode: The requested GPU mode ("gpu").
+        active_provider: The provider that actually loaded (e.g. "CPU").
+
+    Returns:
+        A detailed error message with platform-specific instructions.
+    """
+    system = platform.system()
+
+    base_msg = (
+        f"gpu_mode='{gpu_mode}' requested but ONNX Runtime silently fell "
+        f"back to {active_provider}. The GPU shared libraries failed to load "
+        f"at session creation time."
+    )
+
+    if system == "Linux":
+        platform_msg = (
+            "\n\nLinux fix options:\n"
+            "  1. Auto-fix: python3 scripts/deps_check.py verify-gpu "
+            "--auto-fix\n"
+            "  2. Manual: export LD_LIBRARY_PATH to include "
+            "site-packages/nvidia/*/lib/\n"
+            "     Example: export LD_LIBRARY_PATH=$(python3 -c "
+            "\"import nvidia.cublas.lib; import nvidia.cudnn.lib; "
+            "print(':'.join([nvidia.cublas.lib.__path__[0], "
+            "nvidia.cudnn.lib.__path__[0]]))\"):$LD_LIBRARY_PATH\n"
+            "  3. Store lib paths in project-config.json under "
+            "vector_memory.gpu_acceleration.lib_paths for automatic "
+            "injection"
+        )
+    elif system == "Windows":
+        platform_msg = (
+            "\n\nWindows fix options:\n"
+            "  1. Auto-fix: python scripts\\deps_check.py verify-gpu "
+            "--auto-fix\n"
+            "  2. Manual: Add site-packages\\nvidia\\*\\lib to your "
+            "PATH environment variable\n"
+            "  3. Store lib paths in project-config.json under "
+            "vector_memory.gpu_acceleration.lib_paths for automatic "
+            "injection"
+        )
+    elif system == "Darwin":
+        platform_msg = (
+            "\n\nmacOS: CoreML provider should not require library path "
+            "fixes. Ensure onnxruntime-silicon is installed:\n"
+            "  pip install onnxruntime-silicon"
+        )
+    else:
+        platform_msg = (
+            "\n\nEnsure GPU runtime libraries are on the system library "
+            "search path."
+        )
+
+    return base_msg + platform_msg
 
 
 def _detect_execution_providers(gpu_mode: str = "auto") -> list[str]:
@@ -188,6 +326,10 @@ class LocalOnnxProvider(EmbeddingProvider):
             ort.GraphOptimizationLevel.ORT_ENABLE_ALL
         )
 
+        # ── Auto-inject GPU library paths before session creation ────
+        if self._gpu_mode in ("auto", "gpu"):
+            self._inject_gpu_paths_if_needed()
+
         # Select execution providers based on gpu_mode
         providers = _detect_execution_providers(self._gpu_mode)
         self._session = ort.InferenceSession(
@@ -199,10 +341,26 @@ class LocalOnnxProvider(EmbeddingProvider):
         # Record which provider is actually active
         self._active_provider = self._session.get_providers()[0] \
             if self._session.get_providers() else providers[0]
+
+        # ── Post-init GPU verification ───────────────────────────────
+        # Catch silent fallback: GPU was requested but CPU is active
+        if (self._gpu_mode == "gpu"
+                and self._active_provider == "CPUExecutionProvider"):
+            raise RuntimeError(
+                _build_platform_gpu_error_message(
+                    self._gpu_mode, self._active_provider
+                )
+            )
+
         if self._log_provider:
+            fallback_note = ""
+            if (self._gpu_mode == "auto"
+                    and self._active_provider == "CPUExecutionProvider"
+                    and len(providers) > 1):
+                fallback_note = " [GPU unavailable, using CPU fallback]"
             print(
                 f"  ONNX provider: {self._active_provider} "
-                f"(mode={self._gpu_mode})",
+                f"(mode={self._gpu_mode}){fallback_note}",
                 file=sys.stderr, flush=True,
             )
 
@@ -243,6 +401,34 @@ class LocalOnnxProvider(EmbeddingProvider):
                     f"You can manually download the model files to: "
                     f"{self._model_dir}"
                 )
+
+    def _inject_gpu_paths_if_needed(self) -> None:
+        """Inject GPU library paths into the environment if needed.
+
+        Checks two sources in order:
+        1. project-config.json gpu_acceleration.lib_paths (persisted by
+           /setup)
+        2. Runtime discovery via deps_check.discover_gpu_lib_paths()
+           (fallback)
+        """
+        # Source 1: stored config paths
+        config_paths = _load_gpu_lib_paths_from_config()
+        if config_paths:
+            _inject_gpu_lib_paths(config_paths)
+            return
+
+        # Source 2: runtime discovery (fallback)
+        try:
+            # Import from sibling module -- deps_check is in scripts/
+            script_dir = Path(__file__).resolve().parent.parent
+            if str(script_dir) not in sys.path:
+                sys.path.insert(0, str(script_dir))
+            from deps_check import discover_gpu_lib_paths
+            lib_info = discover_gpu_lib_paths()
+            if lib_info.get("paths"):
+                _inject_gpu_lib_paths(lib_info["paths"])
+        except ImportError:
+            pass  # deps_check not available; skip discovery
 
     def embed(self, texts: list[str]) -> list[list[float]]:
         """Embed texts using local ONNX model."""
