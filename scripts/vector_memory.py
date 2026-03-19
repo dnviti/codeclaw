@@ -215,6 +215,10 @@ def get_effective_config(root: Path) -> dict:
     to match the always-on default behavior introduced in VMEM-0024.
     """
     user_cfg = load_config(root)
+    search_log_defaults = {"enabled": False,
+                           "path": ".claude/memory/search_log.jsonl",
+                           "include_content": False}
+    user_search_log = user_cfg.get("search_log", {})
     return {
         "enabled": user_cfg.get("enabled", True),
         "auto_index": user_cfg.get("auto_index", True),
@@ -226,6 +230,10 @@ def get_effective_config(root: Path) -> dict:
         "batch_size": user_cfg.get("batch_size", DEFAULT_BATCH_SIZE),
         "include_patterns": user_cfg.get("include_patterns", []),
         "exclude_patterns": user_cfg.get("exclude_patterns", []),
+        "search_log": {
+            k: user_search_log.get(k, v)
+            for k, v in search_log_defaults.items()
+        },
     }
 
 
@@ -671,6 +679,50 @@ def _save_meta(index_dir: Path, config: dict, file_count: int):
     path.write_text(json.dumps(meta, indent=2), encoding="utf-8")
 
 
+# ── Search Logging ───────────────────────────────────────────────────────────
+
+def _log_search(root: Path, config: dict, query: str, top_k: int,
+                file_filter: str, type_filter: str, df) -> None:
+    """Append a JSONL entry for a search query if search_log is enabled.
+
+    Non-blocking: failures are silently ignored to never affect search.
+    """
+    log_cfg = config.get("search_log", {})
+    if not log_cfg.get("enabled"):
+        return
+    try:
+        log_path = root / log_cfg.get("path",
+                                       ".claude/memory/search_log.jsonl")
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+
+        include_content = log_cfg.get("include_content", False)
+        results = []
+        for _, row in df.iterrows():
+            entry = {
+                "file_path": row.get("file_path", ""),
+                "name": row.get("name", ""),
+                "chunk_type": row.get("chunk_type", ""),
+                "score": float(row.get("_distance", 0.0)),
+            }
+            if include_content:
+                entry["content"] = row.get("content", "")[:200]
+            results.append(entry)
+
+        record = {
+            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "query": query,
+            "top_k": top_k,
+            "file_filter": file_filter or None,
+            "type_filter": type_filter or None,
+            "result_count": len(results),
+            "results": results,
+        }
+        with open(log_path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(record, separators=(",", ":")) + "\n")
+    except Exception:
+        pass  # Never block search on log failure
+
+
 # ── Search Command ───────────────────────────────────────────────────────────
 # Sequential: bounded by fixed pattern list (~5 queries), parallelizing adds
 # thread complexity for marginal gain
@@ -743,6 +795,9 @@ def cmd_search(args):
             table.search(query_embedding),
             top_k, file_filter, type_filter,
         )
+
+    # Log search query and results if enabled
+    _log_search(root, config, query, top_k, file_filter, type_filter, df)
 
     # Format output
     if args.json_output:
