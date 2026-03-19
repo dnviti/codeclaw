@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.0.0] - 2026-03-19
+
+### Added
+- [BETA] /crazy skill — fully autonomous end-to-end project builder (CRZY-0043) (#158)
+- Unified memory orchestrator for tandem multi-backend coordination (MORC-0040) (#150)
+- SQLite hybrid memory backend with FTS5 and sqlite-vec (SQLM-0038) (#149)
+- RLM-style recursive context processing for deep memory analysis (RLM-0039) (#148)
+- Event-sourced memory log for concurrent agent writes (VMEM-0030) (#146)
+- Pluggable distributed lock backend for networked agent coordination (VMEM-0028) (#144)
+- LLM-as-judge voting protocol for opinion conflict auto-resolution (VMEM-0029) (#143)
+- GPU-accelerated ONNX inference for vector store embeddings (VMEM-0041) (#152)
+- On-demand image generation with interactive preview (IMGN-0023) (#139)
+- Frontend task design wizard with template search and color palette picker (FEND-0024) (#136)
+- Enhance /task skill with semantic codebase exploration (VMEM-0033) (#141)
+- Enhance /idea skill with vector-powered duplicate detection (VMEM-0034) (#162)
+- Enhance /docs skill with semantic source discovery and visual richness tiers (VMEM-0036, DOCS-0045) (#142, #160)
+- Enhance /tests skill with semantic gap analysis and test pattern discovery (VMEM-0035) (#147)
+- Enhance /help skill with semantic search over skills and documentation (VMEM-0037) (#140)
+- MCP vector memory toggleable via configuration parameter (MCP-0032) (#138)
+- Cache branch topology and protection settings (CONF-0031) (#145)
+- Edit flows for /task edit, /idea edit, and /release edit (EDIT-0044) (#157)
+- Rebrand project from CodeClaw to CodeClaw with plugin id claw (REBR-0042) (#156)
+
+### Fixed
+- Add missing timeout parameter to FileLockBackend.__init__
+- Resolve RLM model recommendations collision and restore export_context
+- Resolve vector memory and MCP review findings (config caching, glob filtering, filter injection hardening)
+- Resolve memory subsystem review findings (redundant reads, full UUID event IDs)
+- Resolve RLM and ollama review findings (AST-based code validation, model recommendations consolidation)
+- Resolve config, utility, and provider review findings (path validation, dynamic version read, duplicate run_cmd removal)
+- Resolve task/docs/test manager review findings (magic number extraction, design decision documentation)
+- Resolve skill definition review findings (security considerations, trust boundary documentation)
+- Address security and optimization findings from PR review (#162)
+
 ## [3.5.2] - 2026-03-18
 
 ### Added

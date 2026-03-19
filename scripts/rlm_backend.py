@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""RLM-style recursive context processing backend for CTDF.
+"""RLM-style recursive context processing backend for CodeClaw.
 
 Implements a MemoryBackend interface for Recursive Language Model (RLM) style
 processing. When contexts exceed the model's window, the system decomposes

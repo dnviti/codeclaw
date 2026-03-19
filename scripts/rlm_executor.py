@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""RLM REPL executor for CTDF — sandboxed context analysis via code generation.
+"""RLM REPL executor for CodeClaw — sandboxed context analysis via code generation.
 
 Constructs and executes Python code snippets that slice and query context
 programmatically. The LLM generates analysis code that operates on context

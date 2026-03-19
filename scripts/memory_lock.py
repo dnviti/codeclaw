@@ -552,7 +552,7 @@ class RedisLockBackend(LockBackend):
         agent_id: str = "",
         session_id: str = "",
         redis_url: str = "redis://localhost:6379",
-        redis_key_prefix: str = "ctdf:",
+        redis_key_prefix: str = "claw:",
         auto_renew_interval: float = DEFAULT_AUTO_RENEW_INTERVAL,
     ):
         self.store_path = Path(store_path).resolve()
@@ -974,7 +974,7 @@ def create_lock(
             agent_id=agent_id,
             session_id=session_id,
             redis_url=config.get("redis_url", "redis://localhost:6379"),
-            redis_key_prefix=config.get("redis_key_prefix", "ctdf:"),
+            redis_key_prefix=config.get("redis_key_prefix", "claw:"),
             auto_renew_interval=config.get(
                 "auto_renew_interval", DEFAULT_AUTO_RENEW_INTERVAL
             ),

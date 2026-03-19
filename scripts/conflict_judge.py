@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""LLM-as-judge conflict resolution engine for CTDF vector memory.
+"""LLM-as-judge conflict resolution engine for CodeClaw vector memory.
 
 Provides automated resolution for "opinion" category conflicts that would
 otherwise accumulate in ``.claude/memory/conflicts/`` waiting for manual

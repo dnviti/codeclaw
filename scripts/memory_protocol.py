@@ -705,7 +705,7 @@ class MemoryProtocol:
             timeout=timeout,
             sqlite_path=self.lock_backend_config.get("sqlite_path"),
             redis_url=self.lock_backend_config.get("redis_url", "redis://localhost:6379"),
-            redis_key_prefix=self.lock_backend_config.get("redis_key_prefix", "ctdf:"),
+            redis_key_prefix=self.lock_backend_config.get("redis_key_prefix", "claw:"),
             auto_renew_interval=self.lock_backend_config.get("auto_renew_interval", 10),
         )
 

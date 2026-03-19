@@ -184,7 +184,7 @@ Ask: "Ready to start implementation, or would you like to adjust the approach?"
 
 #### Step 5.5: Image Generation (on-demand)
 
-During implementation, if the task requires visual assets (detected from description keywords like "icon", "banner", "mockup", "diagram", "placeholder image", "logo", or explicit user request), offer image generation using the CTDF image generator.
+During implementation, if the task requires visual assets (detected from description keywords like "icon", "banner", "mockup", "diagram", "placeholder image", "logo", or explicit user request), offer image generation using the CodeClaw image generator.
 
 **Prerequisites:** Image generation must be enabled in `project-config.json` > `image_generation` > `enabled`. If disabled, skip this step.
 

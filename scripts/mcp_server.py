@@ -174,7 +174,7 @@ def _load_lock_backend_config(root: str) -> dict:
                         "redis_url", "redis://localhost:6379"
                     ),
                     "redis_key_prefix": lb_cfg.get(
-                        "redis_key_prefix", "ctdf:"
+                        "redis_key_prefix", "claw:"
                     ),
                     "timeout": lb_cfg.get("timeout", 30),
                     "auto_renew_interval": lb_cfg.get(
@@ -208,7 +208,7 @@ def create_server(root: str = "."):
     lock_backend_config = _load_lock_backend_config(root)
 
     # Intentional: env vars propagate config to child processes (subprocess communication pattern)
-    os.environ.setdefault("CTDF_LOCK_BACKEND_TYPE", lock_backend_config.get("type", "file"))
+    os.environ.setdefault("CodeClaw_LOCK_BACKEND_TYPE", lock_backend_config.get("type", "file"))
 
     # ── Conditionally register vector memory tools ──
     vm_enabled = is_enabled(root)

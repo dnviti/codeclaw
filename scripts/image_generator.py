@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""On-demand image generation with interactive preview for CTDF.
+"""On-demand image generation with interactive preview for CodeClaw.
 
 Provides a provider-agnostic image generation pipeline with cross-platform
 preview and confirm/regenerate/cancel workflow. Supports local diffusion
@@ -160,7 +160,7 @@ class ImageGenerator:
         image_bytes = gen_provider.generate(prompt, size=size, style=style)
 
         # Save to temp file (O-2: register for cleanup at exit)
-        temp_dir = Path(tempfile.mkdtemp(prefix="ctdf_img_"))
+        temp_dir = Path(tempfile.mkdtemp(prefix="claw_img_"))
         _TEMP_DIRS.append(temp_dir)
         # S-2: Sanitize prompt for filename — strip non-alphanum, guard
         # against dot-only or hidden-file names
@@ -385,7 +385,7 @@ def cmd_config(args: argparse.Namespace) -> None:
 def main() -> None:
     """CLI entry point for image generator."""
     parser = argparse.ArgumentParser(
-        description="CTDF Image Generator — on-demand image generation "
+        description="CodeClaw Image Generator — on-demand image generation "
                     "with interactive preview."
     )
     subparsers = parser.add_subparsers(dest="command", required=True)

@@ -49,7 +49,7 @@
       "type": "file",
       "sqlite_path": ".claude/memory/locks/lock.db",
       "redis_url": "redis://localhost:6379",
-      "redis_key_prefix": "ctdf:",
+      "redis_key_prefix": "claw:",
       "timeout": 30,
       "auto_renew_interval": 10,
       "_comment": "Lock backend for multi-agent coordination. Types: file (default, single-machine), sqlite (networked filesystems), redis (distributed, requires pip install redis)"
@@ -80,13 +80,19 @@
       "timeout_seconds": 120
     },
     "orchestrator": {
-      "backends": ["lancedb"],
+      "backends": [
+        "lancedb"
+      ],
       "routing_weights": {
         "lancedb": 1.0,
         "sqlite": 0.8,
         "rlm": 0.6
       },
-      "fallback_chain": ["lancedb", "sqlite", "rlm"],
+      "fallback_chain": [
+        "lancedb",
+        "sqlite",
+        "rlm"
+      ],
       "query_routing": {
         "exact": "sqlite",
         "semantic": "lancedb",

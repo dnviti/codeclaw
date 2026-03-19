@@ -796,7 +796,7 @@ class MemoryOrchestrator:
 
             config = get_effective_config(self.root)
             index_dir = self.root / config["index_path"]
-            agent_id = os.environ.get("CTDF_AGENT_ID",
+            agent_id = os.environ.get("CodeClaw_AGENT_ID",
                                        f"agent-{os.getpid()}")
             lock = MemoryLock(index_dir, agent_id=agent_id)
             return lock.write() if exclusive else lock.read()

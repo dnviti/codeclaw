@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Vector memory layer for CTDF — semantic search over repository content.
+"""Vector memory layer for CodeClaw — semantic search over repository content.
 
 Provides an embedded vector database (LanceDB) that indexes source code,
 tasks, git history, and agent-generated documents for semantic retrieval.
@@ -473,8 +473,8 @@ def cmd_index(args):
     lock = None
     try:
         from memory_lock import MemoryLock
-        agent_id = os.environ.get("CTDF_AGENT_ID", f"agent-{os.getpid()}")
-        session_id = os.environ.get("CTDF_SESSION_ID", "")
+        agent_id = os.environ.get("CodeClaw_AGENT_ID", f"agent-{os.getpid()}")
+        session_id = os.environ.get("CodeClaw_SESSION_ID", "")
         lock = MemoryLock(index_dir, agent_id=agent_id, session_id=session_id)
     except ImportError:
         pass
@@ -688,7 +688,7 @@ def cmd_search(args):
     lock = None
     try:
         from memory_lock import MemoryLock
-        agent_id = os.environ.get("CTDF_AGENT_ID", f"agent-{os.getpid()}")
+        agent_id = os.environ.get("CodeClaw_AGENT_ID", f"agent-{os.getpid()}")
         lock = MemoryLock(index_dir, agent_id=agent_id)
     except ImportError:
         pass
@@ -1223,8 +1223,8 @@ def hook_file_changed(file_path: str):
         lock = None
         try:
             from memory_lock import MemoryLock
-            agent_id = os.environ.get("CTDF_AGENT_ID", f"agent-{os.getpid()}")
-            session_id = os.environ.get("CTDF_SESSION_ID", "")
+            agent_id = os.environ.get("CodeClaw_AGENT_ID", f"agent-{os.getpid()}")
+            session_id = os.environ.get("CodeClaw_SESSION_ID", "")
             lock = MemoryLock(index_dir, agent_id=agent_id, session_id=session_id, timeout=5.0)
         except ImportError:
             pass
@@ -1254,10 +1254,10 @@ def hook_file_changed(file_path: str):
                 embeddings = cache.embed_with_cache(provider, texts)
 
                 # Tag entries with agent metadata if available
-                agent_id = os.environ.get("CTDF_AGENT_ID", "")
-                agent_type = os.environ.get("CTDF_AGENT_TYPE", "task")
-                session_id = os.environ.get("CTDF_SESSION_ID", "")
-                task_code = os.environ.get("CTDF_TASK_CODE", "")
+                agent_id = os.environ.get("CodeClaw_AGENT_ID", "")
+                agent_type = os.environ.get("CodeClaw_AGENT_TYPE", "task")
+                session_id = os.environ.get("CodeClaw_SESSION_ID", "")
+                task_code = os.environ.get("CodeClaw_TASK_CODE", "")
 
                 records = []
                 for chunk, emb in zip(chunks, embeddings):
@@ -1447,7 +1447,7 @@ def try_vector_index(root: Path, content: str, doc_name: str,
 
 def main():
     parser = argparse.ArgumentParser(
-        description="CTDF Vector Memory — semantic search over repository content",
+        description="CodeClaw Vector Memory — semantic search over repository content",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:

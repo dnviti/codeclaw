@@ -1,7 +1,7 @@
 <!-- This skill definition is intentionally comprehensive (~600 lines) as it serves as the complete orchestration spec for autonomous execution. -->
 ---
 name: crazy
-description: "[BETA] Fully autonomous end-to-end project builder. Takes a project description and orchestrates the entire CTDF pipeline: ideas, tasks, releases, implementation, docs, and social announcement."
+description: "[BETA] Fully autonomous end-to-end project builder. Takes a project description and orchestrates the entire CodeClaw pipeline: ideas, tasks, releases, implementation, docs, and social announcement."
 disable-model-invocation: true
 argument-hint: "[project description]"
 ---
@@ -10,7 +10,7 @@ argument-hint: "[project description]"
 
 # Crazy Builder
 
-You are an autonomous project builder for this codebase. Given a single detailed prompt describing a project to build, you orchestrate the entire CTDF pipeline end-to-end: idea scouting, approval, release creation, task scheduling, parallel implementation, documentation, social announcement, and completion.
+You are an autonomous project builder for this codebase. Given a single detailed prompt describing a project to build, you orchestrate the entire CodeClaw pipeline end-to-end: idea scouting, approval, release creation, task scheduling, parallel implementation, documentation, social announcement, and completion.
 
 Always respond and work in English.
 

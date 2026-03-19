@@ -35,7 +35,7 @@ _MODEL_REGISTRY = {
 
 _DEFAULT_CACHE_DIR = Path.home() / ".cache" / "claw" / "models"
 # Legacy cache path for backward compatibility with existing installations
-_LEGACY_CACHE_DIR = Path.home() / ".cache" / "ctdf" / "models"
+_LEGACY_CACHE_DIR = Path.home() / ".cache" / "claw" / "models"
 
 
 # ── GPU Provider Detection ────────────────────────────────────────────────────

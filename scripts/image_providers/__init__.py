@@ -1,4 +1,4 @@
-"""Image provider abstraction for CTDF image generation.
+"""Image provider abstraction for CodeClaw image generation.
 
 Supports:
 - Local diffuser (REST API to local diffusion model, e.g. OllamaDiffuser)
