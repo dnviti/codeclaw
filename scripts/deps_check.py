@@ -11,8 +11,10 @@ package variant during setup.
 Zero external dependencies in this module itself — stdlib only.
 """
 
+import fnmatch
 import importlib
 import json
+import logging
 import os
 import platform
 import site
@@ -20,6 +22,226 @@ import subprocess
 import sys
 from pathlib import Path
 from typing import NamedTuple
+
+logger = logging.getLogger(__name__)
+
+# ── Optional locked config support ─────────────────────────────────────────
+try:
+    from config_lock import locked_config_update as _locked_config_update
+except ImportError:
+    _locked_config_update = None
+
+# Cache platform detection once at import time (the OS never changes mid-run).
+_PLATFORM_SYSTEM: str = platform.system()
+
+
+# ── GPU Path Allowlist ────────────────────────────────────────────────────────
+
+# Default directories that are allowed for GPU library path injection.
+# These cover standard system library paths, CUDA, ROCm, and pip
+# site-packages locations.  Users can override via the config key
+# ``vector_memory.gpu_acceleration.gpu_path_allowlist``.
+DEFAULT_GPU_PATH_ALLOWLIST: list[str] = [
+    "/usr/lib",
+    "/usr/lib64",
+    "/usr/local/lib",
+    "/usr/local/lib64",
+    "/usr/local/cuda*/lib*",       # CUDA toolkit (versioned)
+    "/opt/cuda*/lib*",
+    "/opt/rocm*/lib*",             # ROCm (versioned)
+    "/opt/rocm/lib",
+    "/opt/rocm/hip/lib",
+]
+
+# Patterns that match any pip site-packages nvidia/rocm subdirectory.
+# These are added programmatically because site-packages paths vary.
+_SITE_PACKAGES_GPU_GLOBS: list[str] = [
+    "*/nvidia/*/lib",
+    "*/nvidia/*/lib64",
+    "*/torch/lib",
+    "*/onnxruntime/capi",
+]
+
+
+def _load_gpu_path_allowlist_from_config() -> list[str] | None:
+    """Load a user-configured GPU path allowlist from project-config.json.
+
+    Returns:
+        The allowlist (may be empty list to deny all), or ``None`` if the
+        config key is absent (meaning "use defaults").
+    """
+    candidates = [
+        Path(".claude/project-config.json"),
+    ]
+    # Also check relative to this file's location (plugin root)
+    plugin_root = Path(__file__).resolve().parent.parent
+    candidates.append(plugin_root / ".claude" / "project-config.json")
+
+    for config_path in candidates:
+        if config_path.exists():
+            try:
+                with open(config_path, "r", encoding="utf-8") as f:
+                    config = json.load(f)
+                gpu_cfg = config.get("vector_memory", {}).get(
+                    "gpu_acceleration", {}
+                )
+                if "gpu_path_allowlist" in gpu_cfg:
+                    raw = gpu_cfg["gpu_path_allowlist"]
+                    if isinstance(raw, list):
+                        return [p for p in raw if isinstance(p, str)]
+                    return None
+            except (json.JSONDecodeError, OSError):
+                continue
+    return None
+
+
+def _build_effective_allowlist(
+    config_allowlist: list[str] | None = None,
+) -> list[str]:
+    """Build the effective GPU path allowlist.
+
+    Merges the default system allowlist with dynamic site-packages patterns
+    and any user-supplied overrides from config.
+
+    Args:
+        config_allowlist: Explicit allowlist from project-config.json.
+            ``None`` means "use defaults".  An empty list means "deny all
+            non-site-packages paths" (site-packages GPU dirs are always
+            permitted as a safety baseline).
+
+    Returns:
+        List of glob-style path patterns that are permitted.
+    """
+    # Site-packages GPU dirs are always permitted (they are pip-managed)
+    site_dirs: list[str] = []
+    try:
+        for sp in site.getsitepackages() + [site.getusersitepackages()]:
+            for glob_pat in _SITE_PACKAGES_GPU_GLOBS:
+                site_dirs.append(os.path.join(sp, glob_pat))
+    except Exception:
+        pass
+
+    if config_allowlist is not None:
+        # User explicitly set the allowlist -- honour it but always keep
+        # site-packages patterns as a baseline.
+        # Reject overly-broad patterns that would effectively disable the
+        # allowlist (e.g. "*", "?", "/*").
+        safe_patterns: list[str] = []
+        for pat in config_allowlist:
+            stripped = pat.strip().rstrip("/\\")
+            if stripped in ("*", "?", "**", "/*", "\\*"):
+                logger.warning(
+                    "Ignoring overly-broad gpu_path_allowlist pattern: %r "
+                    "(would match all paths)",
+                    pat,
+                )
+                continue
+            safe_patterns.append(pat)
+        return safe_patterns + site_dirs
+
+    # Default allowlist + site-packages
+    system = _PLATFORM_SYSTEM
+    base = list(DEFAULT_GPU_PATH_ALLOWLIST)
+
+    if system == "Windows":
+        # Add typical Windows CUDA paths
+        base.extend([
+            "C:\\Program Files\\NVIDIA*\\*\\lib*",
+            "C:\\cuda*\\lib*",
+        ])
+
+    return base + site_dirs
+
+
+def _path_matches_allowlist(path: str, allowlist: list[str]) -> bool:
+    """Check whether *path* is permitted by at least one allowlist pattern.
+
+    Matching rules (applied to the **resolved** absolute path):
+    * Literal prefix match -- the path starts with the pattern prefix.
+    * Glob match via ``fnmatch`` for patterns containing ``*`` or ``?``.
+    * All comparisons are case-sensitive on Linux, case-insensitive on
+      Windows.
+
+    Args:
+        path: Absolute path to validate.
+        allowlist: List of allowed path prefixes / glob patterns.
+
+    Returns:
+        ``True`` if the path is permitted, ``False`` otherwise.
+    """
+    try:
+        resolved = str(Path(path).resolve())
+    except (OSError, ValueError):
+        return False
+
+    is_win = _PLATFORM_SYSTEM == "Windows"
+    if is_win:
+        resolved_lower = resolved.lower()
+
+    for pattern in allowlist:
+        if not pattern:
+            continue
+        # Glob-style pattern
+        if "*" in pattern or "?" in pattern:
+            try:
+                if fnmatch.fnmatch(resolved, pattern):
+                    return True
+                if is_win and fnmatch.fnmatch(
+                    resolved_lower, pattern.lower()
+                ):
+                    return True
+            except (ValueError, OSError):
+                continue
+        else:
+            # Literal prefix match
+            try:
+                pattern_resolved = str(Path(pattern).resolve())
+            except (OSError, ValueError):
+                continue
+            if is_win:
+                if resolved_lower.startswith(pattern_resolved.lower()):
+                    return True
+            else:
+                if resolved.startswith(pattern_resolved):
+                    return True
+    return False
+
+
+def validate_gpu_paths(
+    paths: list[str],
+    allowlist: list[str] | None = None,
+) -> tuple[list[str], list[str]]:
+    """Validate a list of GPU library paths against the allowlist.
+
+    Args:
+        paths: Candidate directory paths.
+        allowlist: Override allowlist.  ``None`` means auto-build from
+            config + defaults.
+
+    Returns:
+        ``(allowed, rejected)`` -- two lists of paths.
+    """
+    if allowlist is None:
+        config_al = _load_gpu_path_allowlist_from_config()
+        effective = _build_effective_allowlist(config_al)
+    else:
+        effective = allowlist
+
+    allowed: list[str] = []
+    rejected: list[str] = []
+
+    for p in paths:
+        if _path_matches_allowlist(p, effective):
+            allowed.append(p)
+        else:
+            rejected.append(p)
+            logger.warning(
+                "GPU path rejected by allowlist: %s  "
+                "(not matched by any pattern in gpu_path_allowlist)",
+                p,
+            )
+
+    return allowed, rejected
 
 
 class DepStatus(NamedTuple):
@@ -159,12 +381,17 @@ def detect_gpu_providers() -> list[str]:
         return []
 
 
-def discover_gpu_lib_paths() -> dict:
+def discover_gpu_lib_paths(create_if_missing: bool = False) -> dict:
     """Auto-discover pip-installed GPU library paths for the current platform.
 
     Scans site-packages for NVIDIA/ROCm shared libraries that ONNX Runtime
     needs at session creation time. These paths are often not on the default
     library search path, causing silent fallback to CPU.
+
+    Args:
+        create_if_missing: If True and the platform env var (e.g.
+            LD_LIBRARY_PATH) is unset or empty, inject the discovered
+            paths into os.environ so the current process can use them.
 
     Returns:
         Dict with:
@@ -173,6 +400,7 @@ def discover_gpu_lib_paths() -> dict:
                      ("LD_LIBRARY_PATH" on Linux, "PATH" on Windows)
             platform: "linux", "windows", or "darwin"
             fix_command: shell command the user can run to fix the issue
+            env_created: bool, True if env var was created/updated
     """
     system = platform.system()
     plat = {"Linux": "linux", "Windows": "windows",
@@ -234,6 +462,7 @@ def discover_gpu_lib_paths() -> dict:
                     discovered.append(str(rp))
 
     result["paths"] = discovered
+    result["env_created"] = False
 
     # Build a user-friendly fix command
     if discovered:
@@ -248,6 +477,24 @@ def discover_gpu_lib_paths() -> dict:
             result["fix_command"] = (
                 f'set PATH={joined};%PATH%'
             )
+
+        # Optionally create/update the env var in the current process
+        if create_if_missing:
+            env_var = result["env_var"]
+            separator = ":" if plat == "linux" else ";"
+            current = os.environ.get(env_var, "")
+            current_set = set(current.split(separator)) if current else set()
+            new_paths = [
+                p for p in discovered
+                if p not in current_set and Path(p).is_dir()
+            ]
+            if new_paths:
+                prefix = separator.join(new_paths)
+                if current:
+                    os.environ[env_var] = prefix + separator + current
+                else:
+                    os.environ[env_var] = prefix
+                result["env_created"] = True
 
     return result
 
@@ -432,6 +679,9 @@ def verify_gpu_provider(auto_fix: bool = False) -> dict:
         _inject_lib_paths(lib_info)
         session_ok_retry, active_retry = _test_gpu_session(gpu_providers)
         if session_ok_retry:
+            # Persist lib_paths to project-config.json so subsequent
+            # runs skip re-discovery
+            _persist_gpu_lib_paths(lib_info["paths"])
             return {
                 "available": True,
                 "providers": gpu_providers,
@@ -468,6 +718,71 @@ def verify_gpu_provider(auto_fix: bool = False) -> dict:
         "message": msg,
         "lib_paths": lib_info,
     }
+
+
+def _persist_gpu_lib_paths(paths: list[str]) -> bool:
+    """Persist discovered GPU library paths to project-config.json.
+
+    Writes to vector_memory.gpu_acceleration.lib_paths so subsequent
+    runs use the stored paths instead of re-discovering.
+
+    Only persists paths that are existing directories **and** pass the
+    GPU path allowlist validation to prevent injection of arbitrary
+    paths into the config file.
+
+    Uses locked_config_update for atomic, race-condition-safe writes.
+
+    Returns:
+        True if persisted successfully, False otherwise.
+    """
+    config_path = Path(".claude/project-config.json")
+    if not config_path.exists():
+        return False
+
+    # Validate: only persist paths that are existing directories
+    valid_paths = [p for p in paths if Path(p).is_dir()]
+    if not valid_paths:
+        return False
+
+    # Validate against GPU path allowlist
+    allowed, rejected = validate_gpu_paths(valid_paths)
+    if rejected:
+        logger.warning(
+            "Refusing to persist %d GPU path(s) that failed allowlist "
+            "validation: %s",
+            len(rejected),
+            ", ".join(rejected),
+        )
+    if not allowed:
+        return False
+
+    def _update(config: dict) -> dict:
+        vm = config.setdefault("vector_memory", {})
+        gpu_cfg = vm.setdefault("gpu_acceleration", {})
+        gpu_cfg["lib_paths"] = allowed
+        return config
+
+    if _locked_config_update is not None:
+        try:
+            return _locked_config_update(config_path, _update)
+        except Exception as exc:
+            logger.debug("Failed to persist GPU lib paths: %s", exc)
+            return False
+
+    # Fallback: direct write if config_lock not available
+    try:
+        with open(config_path, "r", encoding="utf-8") as f:
+            config = json.load(f)
+
+        updated = _update(config)
+
+        with open(config_path, "w", encoding="utf-8") as f:
+            json.dump(updated, f, indent=2)
+            f.write("\n")
+
+        return True
+    except (json.JSONDecodeError, OSError):
+        return False
 
 
 def _test_gpu_session(gpu_providers: list[str]) -> tuple:
@@ -536,8 +851,9 @@ def _inject_lib_paths(lib_info: dict) -> None:
     """Inject discovered GPU library paths into os.environ for the current
     process.
 
-    Validates that each path is an existing directory before injection
-    to prevent injection of arbitrary paths.
+    Validates that each path is an existing directory **and** passes the
+    GPU path allowlist before injection to prevent injection of arbitrary
+    paths.
 
     Args:
         lib_info: Dict from discover_gpu_lib_paths().
@@ -548,12 +864,24 @@ def _inject_lib_paths(lib_info: dict) -> None:
     env_var = lib_info["env_var"]
     current = os.environ.get(env_var, "")
     separator = ":" if lib_info["platform"] == "linux" else ";"
+    current_set = set(current.split(separator)) if current else set()
 
     # Only inject paths that exist as directories and are not already present
-    new_paths = [
+    candidate_paths = [
         p for p in lib_info["paths"]
-        if p not in current and Path(p).is_dir()
+        if p not in current_set and Path(p).is_dir()
     ]
+
+    # Validate against GPU path allowlist
+    new_paths, rejected = validate_gpu_paths(candidate_paths)
+    if rejected:
+        logger.warning(
+            "Blocked %d GPU library path(s) from %s injection "
+            "(not in gpu_path_allowlist): %s",
+            len(rejected),
+            env_var,
+            ", ".join(rejected),
+        )
 
     if new_paths:
         prefix = separator.join(new_paths)

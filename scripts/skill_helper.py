@@ -11,19 +11,29 @@ All output is JSON.  Zero external dependencies — stdlib only.
 import argparse
 import configparser
 import json
+import logging
 import os
 import platform as platform_mod
 import re
 import subprocess
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 # ── Platform Adapter Support ───────────────────────────────────────────────
 # Add scripts/ to path so platform_adapter module can be found
 _SCRIPT_DIR = Path(__file__).resolve().parent
 if str(_SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPT_DIR))
+
+# ── Optional locked config support ─────────────────────────────────────────
+try:
+    from config_lock import locked_config_write as _locked_config_write
+except ImportError:
+    _locked_config_write = None
 
 # ── Constants ───────────────────────────────────────────────────────────────
 
@@ -322,17 +332,28 @@ def read_platform_config(root: Path) -> dict:
 
 
 def _write_platform_config(root: Path, data: dict) -> str:
-    """Write data back to the issues-tracker config file. Returns the path used."""
+    """Write data back to the issues-tracker config file. Returns the path used.
+
+    Uses locked_config_write for atomic, race-condition-safe writes.
+    Falls back to direct write if config_lock is not available.
+    """
+    target: Path | None = None
     for name in ("issues-tracker.json", "github-issues.json"):
         p = root / ".claude" / name
         if p.exists():
-            p.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
-            return str(p)
-    # Fallback: create issues-tracker.json
-    p = root / ".claude" / "issues-tracker.json"
-    p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
-    return str(p)
+            target = p
+            break
+
+    if target is None:
+        target = root / ".claude" / "issues-tracker.json"
+        target.parent.mkdir(parents=True, exist_ok=True)
+
+    if _locked_config_write is not None:
+        _locked_config_write(target, data)
+    else:
+        target.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+
+    return str(target)
 
 
 def get_cached_branch_config(root: Path) -> dict:
@@ -1212,12 +1233,18 @@ def cmd_detect_branch_strategy(_args) -> dict:
 # Subcommand: setup-task-worktree
 # ════════════════════════════════════════════════════════════════════════════
 
-def _is_worktree_enabled(root: Path) -> bool:
-    """Check whether worktree-based task isolation is enabled in project config.
+def _load_worktree_config(root: Path) -> dict:
+    """Load worktree configuration from project-config.json.
 
-    Reads ``worktrees.enabled`` from project-config.json.  Returns False
-    (disabled) by default — worktrees are a [BETA] opt-in feature.
+    Returns the ``worktrees`` section with defaults applied.
+    Validates that ``base_dir`` is a safe relative path.
     """
+    defaults = {
+        "enabled": True,
+        "max_count": 10,
+        "cleanup_after_days": 7,
+        "base_dir": ".worktrees",
+    }
     for cfg_name in [
         root / ".claude" / "project-config.json",
         root / "config" / "project-config.json",
@@ -1225,10 +1252,141 @@ def _is_worktree_enabled(root: Path) -> bool:
         if cfg_name.exists():
             try:
                 data = json.loads(cfg_name.read_text(encoding="utf-8"))
-                return bool(data.get("worktrees", {}).get("enabled", False))
+                wt = data.get("worktrees", {})
+                merged = {**defaults, **{k: v for k, v in wt.items() if not k.startswith("_")}}
+                # Sanitize base_dir: reject absolute paths or path traversal
+                bd = Path(merged.get("base_dir", ".worktrees"))
+                if bd.is_absolute() or ".." in bd.parts:
+                    logger.warning(
+                        "Ignoring unsafe worktrees.base_dir '%s' — falling back to '.worktrees'",
+                        merged["base_dir"],
+                    )
+                    merged["base_dir"] = ".worktrees"
+                return merged
             except (json.JSONDecodeError, OSError):
                 pass
-    return False
+    return defaults
+
+
+def _is_worktree_enabled(root: Path) -> bool:
+    """Check whether worktree-based task isolation is enabled in project config.
+
+    Reads ``worktrees.enabled`` from project-config.json.  Returns True
+    by default — worktrees are the standard task isolation mode.
+    """
+    return _load_worktree_config(root).get("enabled", True)
+
+
+def _is_worktree_dirty(wt_path: str) -> bool:
+    """Check if a worktree has uncommitted changes (dirty working tree)."""
+    try:
+        result = subprocess.run(
+            ["git", "status", "--porcelain"],
+            capture_output=True, text=True, check=True,
+            cwd=wt_path,
+        )
+        return bool(result.stdout.strip())
+    except (subprocess.CalledProcessError, FileNotFoundError, OSError):
+        # If we cannot determine status, assume dirty to be safe
+        return True
+
+
+def _enforce_worktree_limits(root: Path, wt_config: dict) -> list[str]:
+    """Prune worktrees that exceed max_count or cleanup_after_days.
+
+    Skips worktrees with uncommitted changes to prevent data loss.
+    Returns a list of removed worktree paths for logging.
+    """
+    max_count = wt_config.get("max_count", 10)
+    cleanup_days = wt_config.get("cleanup_after_days", 7)
+    removed: list[str] = []
+
+    # Collect existing worktrees (excluding the main repo)
+    try:
+        result = subprocess.run(
+            ["git", "worktree", "list", "--porcelain"],
+            capture_output=True, text=True, check=True,
+            cwd=str(root),
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return removed
+
+    worktrees: list[dict] = []
+    current: dict = {}
+    for line in result.stdout.splitlines():
+        if line.startswith("worktree "):
+            current = {"path": line.split(" ", 1)[1]}
+        elif line.startswith("branch "):
+            current["branch"] = line.split(" ", 1)[1]
+        elif line == "":
+            if current and current.get("path") != str(root):
+                worktrees.append(current)
+            current = {}
+    if current and current.get("path") != str(root):
+        worktrees.append(current)
+
+    # Add mtime for age-based cleanup
+    now = time.time()
+    cutoff = now - (cleanup_days * 86400)
+    for wt in worktrees:
+        p = Path(wt["path"])
+        try:
+            wt["mtime"] = p.stat().st_mtime
+        except OSError:
+            wt["mtime"] = 0
+
+    # Sort oldest first
+    worktrees.sort(key=lambda w: w["mtime"])
+
+    # 1. Remove worktrees older than cleanup_after_days
+    surviving: list[dict] = []
+    for wt in worktrees:
+        if wt["mtime"] < cutoff and wt["mtime"] > 0:
+            # Skip worktrees with uncommitted changes to prevent data loss
+            if _is_worktree_dirty(wt["path"]):
+                logger.warning(
+                    "Skipping removal of stale worktree %s — has uncommitted changes",
+                    wt["path"],
+                )
+                surviving.append(wt)
+                continue
+            try:
+                subprocess.run(
+                    ["git", "worktree", "remove", "--force", wt["path"]],
+                    capture_output=True, text=True, check=True,
+                    cwd=str(root),
+                )
+                removed.append(wt["path"])
+            except subprocess.CalledProcessError:
+                surviving.append(wt)
+        else:
+            surviving.append(wt)
+    worktrees = surviving
+
+    # 2. Remove oldest worktrees if count exceeds max_count
+    # Leave room for the new one being created (max_count - 1)
+    while len(worktrees) >= max_count and worktrees:
+        wt = worktrees[0]
+        # Skip worktrees with uncommitted changes to prevent data loss
+        if _is_worktree_dirty(wt["path"]):
+            logger.warning(
+                "Skipping removal of worktree %s (over limit) — has uncommitted changes",
+                wt["path"],
+            )
+            worktrees.pop(0)
+            continue
+        try:
+            subprocess.run(
+                ["git", "worktree", "remove", "--force", wt["path"]],
+                capture_output=True, text=True, check=True,
+                cwd=str(root),
+            )
+            removed.append(wt["path"])
+        except subprocess.CalledProcessError:
+            pass
+        worktrees.pop(0)
+
+    return removed
 
 
 _SEMVER_RE = re.compile(r"^\d+\.\d+\.\d+$")
@@ -1269,11 +1427,41 @@ def _get_active_release_version(root: Path) -> str | None:
     return None
 
 
+def _verify_worktree_memory_sharing(main_root: Path, wt_dir: Path) -> bool:
+    """Verify that vector memory resolves to the main repo from a worktree.
+
+    Checks that the vector index path from the worktree points to the
+    shared location in the main repository, not a worktree-local copy.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--git-common-dir", "--git-dir"],
+            capture_output=True, text=True, check=True,
+            cwd=str(wt_dir),
+        )
+        lines = result.stdout.strip().splitlines()
+        if len(lines) >= 2:
+            common = Path(lines[0]).resolve()
+            git_dir = Path(lines[1]).resolve()
+            resolved_root = common.parent if common != git_dir else git_dir.parent
+            if resolved_root == main_root.resolve():
+                return True
+            logger.warning(
+                "Worktree %s resolves to %s instead of main repo %s — "
+                "memory may not be shared",
+                wt_dir, resolved_root, main_root,
+            )
+            return False
+    except (subprocess.CalledProcessError, FileNotFoundError, OSError):
+        pass
+    return False
+
+
 def cmd_setup_task_worktree(args) -> dict:
     """Consolidate 5-step worktree creation into one command.
 
-    When ``worktrees.enabled`` is False (the default), falls back to
-    standard branch switching instead of creating a git worktree.
+    When ``worktrees.enabled`` is False, falls back to standard branch
+    switching instead of creating a git worktree.  The default is True.
     """
     task_code = args.task_code
     base_branch = args.base_branch or "develop"
@@ -1282,9 +1470,10 @@ def cmd_setup_task_worktree(args) -> dict:
         return {"success": False, "error": "task_code is required"}
 
     root = get_main_repo_root()
+    wt_config = _load_worktree_config(root)
 
-    # [BETA] Check if worktree isolation is enabled in project config
-    if not _is_worktree_enabled(root):
+    # Check if worktree isolation is enabled in project config
+    if not wt_config.get("enabled", True):
         # Fallback: use shared release/<version> branch for all tasks
         # Query active release to determine the release branch name
         release_version = _get_active_release_version(root)
@@ -1334,20 +1523,42 @@ def cmd_setup_task_worktree(args) -> dict:
         }
     code_lower = task_code.lower()
     branch_name = f"task/{code_lower}"
-    wt_dir = root / ".worktrees" / "task" / code_lower
+    base_dir = wt_config.get("base_dir", ".worktrees")
+
+    # Validate base_dir to prevent path traversal (S-1)
+    base_dir_path = Path(base_dir)
+    if base_dir_path.is_absolute() or ".." in base_dir_path.parts:
+        return {
+            "success": False,
+            "error": f"Invalid worktrees.base_dir '{base_dir}': must be a relative path without '..' components",
+        }
+    # Ensure resolved path stays within project root
+    resolved_base = (root / base_dir).resolve()
+    if not str(resolved_base).startswith(str(root.resolve())):
+        return {
+            "success": False,
+            "error": f"Invalid worktrees.base_dir '{base_dir}': resolves outside project root",
+        }
+
+    wt_dir = root / base_dir / "task" / code_lower
+
+    # 0. Enforce worktree limits (max_count, cleanup_after_days)
+    removed = _enforce_worktree_limits(root, wt_config)
 
     # 1. Ensure directories exist
-    (root / ".worktrees" / "task").mkdir(parents=True, exist_ok=True)
+    (root / base_dir / "task").mkdir(parents=True, exist_ok=True)
 
-    # 2. Ensure .gitignore has .worktrees/
+    # 2. Ensure .gitignore has the worktree base_dir (line-level match)
     gitignore = root / ".gitignore"
+    gitignore_entry = f"{base_dir}/"
     if gitignore.exists():
         content = gitignore.read_text(encoding="utf-8")
-        if ".worktrees" not in content and ".worktrees/" not in content:
+        lines = content.splitlines()
+        if base_dir not in lines and gitignore_entry not in lines:
             with open(gitignore, "a", encoding="utf-8") as f:
-                f.write("\n.worktrees/\n")
+                f.write(f"\n{gitignore_entry}\n")
     else:
-        gitignore.write_text(".worktrees/\n", encoding="utf-8")
+        gitignore.write_text(f"{gitignore_entry}\n", encoding="utf-8")
 
     # 3. Check if worktree already exists
     if wt_dir.exists() and (wt_dir / ".git").exists():
@@ -1397,6 +1608,9 @@ def cmd_setup_task_worktree(args) -> dict:
     if submodules:
         git_run("submodule", "update", "--init", "--recursive", cwd=str(wt_dir))
 
+    # Validate shared memory accessibility from the new worktree
+    memory_shared = _verify_worktree_memory_sharing(root, wt_dir)
+
     return {
         "success": True,
         "worktree_dir": str(wt_dir),
@@ -1404,6 +1618,8 @@ def cmd_setup_task_worktree(args) -> dict:
         "created": True,
         "reused_existing": False,
         "submodules_initialized": len(submodules) > 0,
+        "removed_stale": removed,
+        "memory_shared": memory_shared,
     }
 
 

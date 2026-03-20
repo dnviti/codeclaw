@@ -45,6 +45,7 @@
     "batch_size": 64,
     "include_patterns": [],
     "exclude_patterns": [],
+    "worktree_shared": true,
     "lock_backend": {
       "type": "file",
       "sqlite_path": ".claude/memory/locks/lock.db",
@@ -65,7 +66,16 @@
       "mode": "auto",
       "log_provider": true,
       "lib_paths": [],
-      "_comment": "GPU mode auto-detected during /setup. Values: auto (detect at runtime), gpu (require GPU), cpu (force CPU). lib_paths: auto-discovered GPU library directories injected into LD_LIBRARY_PATH/PATH at runtime. Package mapping: nvidia=onnxruntime-gpu, amd=onnxruntime-rocm, apple=onnxruntime-silicon, windows=onnxruntime-directml, none=onnxruntime"
+      "gpu_path_allowlist": [],
+      "_comment": "GPU mode auto-detected during /setup. Values: auto (detect at runtime), gpu (require GPU), cpu (force CPU). lib_paths: auto-discovered GPU library directories injected into LD_LIBRARY_PATH/PATH at runtime. gpu_path_allowlist: restrict which directories may be added to LD_LIBRARY_PATH from config. Empty list = use built-in defaults (system lib dirs, CUDA, ROCm, pip site-packages). Set explicit paths/globs to override. Package mapping: nvidia=onnxruntime-gpu, amd=onnxruntime-rocm, apple=onnxruntime-silicon, windows=onnxruntime-directml, none=onnxruntime"
+    },
+    "search_log": {
+      "enabled": false,
+      "path": ".claude/memory/search_log.jsonl",
+      "include_content": false,
+      "max_size_mb": 10,
+      "retention_days": 30,
+      "_privacy_notice": "When enabled, search queries and result metadata are written to disk in plaintext. This may include sensitive data such as code patterns, file paths, and search terms. Logs are created with 0o600 permissions and auto-purged after retention_days."
     },
     "event_sourcing": {
       "enabled": false,
@@ -165,7 +175,10 @@
     "offloading_level": 5
   },
   "worktrees": {
-    "enabled": false,
-    "_comment": "[BETA] When true, /task pick creates isolated git worktrees per task. When false (default), standard branch switching is used."
+    "enabled": true,
+    "max_count": 10,
+    "cleanup_after_days": 7,
+    "base_dir": ".worktrees",
+    "_comment": "When true, /task pick creates isolated git worktrees per task. max_count auto-prunes oldest idle worktrees when exceeded. cleanup_after_days removes worktrees older than N days."
   }
 }
