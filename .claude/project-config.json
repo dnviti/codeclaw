@@ -36,6 +36,7 @@
     "batch_size": 64,
     "include_patterns": [],
     "exclude_patterns": [],
+    "worktree_shared": true,
     "search_log": {
       "enabled": false,
       "path": ".claude/memory/search_log.jsonl",
@@ -94,7 +95,11 @@
     ]
   },
   "worktrees": {
-    "enabled": false
+    "enabled": true,
+    "max_count": 10,
+    "cleanup_after_days": 7,
+    "base_dir": ".worktrees",
+    "_comment": "When true, /task pick creates isolated git worktrees per task. max_count auto-prunes oldest idle worktrees when exceeded. cleanup_after_days removes worktrees older than N days."
   },
   "ollama": {
     "enabled": true,
