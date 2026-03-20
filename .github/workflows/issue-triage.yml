@@ -24,7 +24,23 @@ jobs:
           sparse-checkout: .claude/issues-tracker.json
           sparse-checkout-cone-mode: false
 
+      - name: Check for release state issue
+        id: release_state_check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          # Skip triage entirely if the issue carries the claw-release-state label.
+          ISSUE_LABELS=$(gh issue view "$ISSUE_NUMBER" --json labels --jq '.labels[].name' 2>/dev/null || true)
+          if echo "$ISSUE_LABELS" | grep -q '^claw-release-state$'; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "Issue #$ISSUE_NUMBER has claw-release-state label — skipping triage."
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Triage issue
+        if: steps.release_state_check.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}

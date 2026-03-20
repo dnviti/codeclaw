@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.0.2] - 2026-03-20
+
+### Added
+- enable worktrees by default with shared memory integration (VMEM-0052) (#224)
+- auto-create GPU env vars and retry before fallback to CPU (VMEM-0001) (#204)
+- log vector search query results to file (VMEM-0051) (#202)
+
+### Fixed
+- add cross-platform file locking for config writes (RPAT-0001) (#215)
+- add download timeout and integrity checks for model fetching (RPAT-0004) (#217)
+- add GPU path allowlist for config-loaded library paths (RPAT-0002) (#218)
+- validate and auto-download embedding model on config change (VMEM-0050) (#200)
+- use single release branch when worktrees disabled (BRNCH-0001) (#188)
+- detect silent GPU-to-CPU fallback and auto-configure paths (FIX-0047) (#189)
+- worktree-aware root resolution for memory subsystem (VMEM-0002) (#191)
+- enforce singleton release state issue and prevent duplicates (FIX-0048) (#187)
+- disable agent worktree isolation when project worktrees are disabled (FIX-0049) (#192)
+
+### Security
+- add search log security controls and privacy documentation (RPAT-0003) (#216)
+
 ## [4.0.1] - 2026-03-19
 
 ### Added

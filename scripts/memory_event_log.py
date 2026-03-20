@@ -39,6 +39,22 @@ DEFAULT_MAX_SEGMENT_SIZE_MB = 10
 DEFAULT_COMPACT_INTERVAL = 300  # seconds
 
 
+def _resolve_worktree_root(root: Path) -> Path:
+    """Resolve root through git worktrees to the main repository.
+
+    Delegates to ``mcp_tools.resolve_main_repo_root()`` — the single
+    canonical implementation — so that bug fixes and enhancements only
+    need to be applied in one place.
+
+    Falls back to ``Path(root).resolve()`` when the import is unavailable.
+    """
+    try:
+        from mcp_tools import resolve_main_repo_root
+        return resolve_main_repo_root(str(root))
+    except ImportError:
+        return Path(root).resolve()
+
+
 # ── Event Data Classes ───────────────────────────────────────────────────────
 
 class MemoryEvent:
@@ -126,7 +142,7 @@ class EventLog:
         events_dir: Optional[str] = None,
         max_segment_size_mb: float = DEFAULT_MAX_SEGMENT_SIZE_MB,
     ):
-        self.root = Path(root).resolve()
+        self.root = _resolve_worktree_root(root)
         self.events_dir = self.root / (events_dir or DEFAULT_EVENTS_DIR)
         self.events_dir.mkdir(parents=True, exist_ok=True)
         self.max_segment_size_bytes = int(max_segment_size_mb * 1024 * 1024)

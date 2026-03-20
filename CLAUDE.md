@@ -29,7 +29,7 @@ STAGING_BRANCH="staging"
 PRODUCTION_BRANCH="main"
 
 # Release
-PACKAGE_JSON_PATHS=".claude-plugin/plugin.json"
+PACKAGE_JSON_PATHS=".claude-plugin/plugin.json .claude-plugin/marketplace.json"
 CHANGELOG_FILE="CHANGELOG.md"
 TAG_PREFIX="v"
 GITHUB_REPO_URL="https://github.com/dnviti/claude-task-development-framework"

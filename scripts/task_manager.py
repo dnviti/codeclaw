@@ -2305,6 +2305,29 @@ def cmd_create_patch_task(args):
 
 # ── Subcommand: remove-worktree ───────────────────────────────────────────
 
+def _is_worktree_enabled_tm(root: Path) -> bool:
+    """Check whether worktree-based task isolation is enabled in project config.
+
+    Mirror of skill_helper._is_worktree_enabled for use in task_manager.
+    """
+    for cfg_name in [
+        root / ".claude" / "project-config.json",
+        root / "config" / "project-config.json",
+    ]:
+        if cfg_name.exists():
+            try:
+                data = json.loads(cfg_name.read_text(encoding="utf-8"))
+                return bool(data.get("worktrees", {}).get("enabled", False))
+            except (json.JSONDecodeError, OSError):
+                pass
+    return False
+
+
+def _is_shared_release_branch(branch_name: str) -> bool:
+    """Return True if the branch follows the shared release/<version> pattern."""
+    return bool(re.match(r"^release/\d+\.\d+\.\d+$", branch_name))
+
+
 def cmd_remove_worktree(args):
     """Remove a task worktree and optionally its branch."""
     main_root = get_main_repo_root()
@@ -2316,9 +2339,41 @@ def cmd_remove_worktree(args):
     branch_removed = False
     merged_to_develop = False
     merge_warning = ""
+    shared_release_branch = False
 
     # Must run from main_root (can't be inside the worktree being removed)
     cwd = str(main_root)
+
+    # When worktrees are disabled, tasks share a release/<version> branch.
+    # Detect the current branch to check if it's a shared release branch.
+    if not _is_worktree_enabled_tm(main_root):
+        try:
+            current_branch_result = subprocess.run(
+                ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+                capture_output=True, text=True, check=True, cwd=cwd,
+                timeout=DEFAULT_GIT_TIMEOUT_SECONDS,
+            )
+            current = current_branch_result.stdout.strip()
+            if _is_shared_release_branch(current):
+                shared_release_branch = True
+                branch_name = current
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            pass
+
+        if shared_release_branch:
+            # Skip merge and branch deletion — the shared release branch
+            # must persist until the release pipeline merges it.
+            result = {
+                "success": True,
+                "worktree_removed": False,
+                "branch_removed": False,
+                "merged_to_develop": False,
+                "shared_release_branch": True,
+                "branch_preserved": branch_name,
+                "path": wt_path,
+            }
+            print(json.dumps(result))
+            return
 
     # Merge task branch into development branch before removing worktree
     no_merge = getattr(args, "no_merge_to_develop", False)

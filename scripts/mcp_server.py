@@ -57,7 +57,7 @@ def _check_mcp_sdk() -> bool:
 
 # ── Resource Helpers ─────────────────────────────────────────────────────────
 
-from mcp_tools import is_enabled
+from mcp_tools import is_enabled, resolve_main_repo_root
 
 
 def _build_status(root: str) -> dict:
@@ -65,10 +65,13 @@ def _build_status(root: str) -> dict:
 
     Uses get_cached_config() to avoid redundant config reads when this
     resource is polled multiple times during a server session.
+
+    The *root* parameter is expected to be already resolved through
+    worktrees by ``run_server()`` / ``create_server()``.
     """
     from mcp_tools import get_cached_config
 
-    root_path = Path(root).resolve()
+    root_path = resolve_main_repo_root(root)
     cached_cfg = get_cached_config(root)
 
     # If vector memory is disabled by config, return immediately
@@ -128,7 +131,7 @@ def _list_namespaces(root_path: Path) -> list[str]:
 
 def _build_backends_status(root: str) -> dict:
     """Build a status dict describing available memory backends."""
-    root_path = Path(root).resolve()
+    root_path = resolve_main_repo_root(root)
 
     try:
         from memory_orchestrator import MemoryOrchestrator
@@ -240,8 +243,14 @@ def create_server(root: str = "."):
 
 
 def run_server(root: str = "."):
-    """Run the MCP server with stdio transport."""
-    server = create_server(root)
+    """Run the MCP server with stdio transport.
+
+    Resolves *root* through git worktrees before passing it to
+    ``create_server()`` so that server-level resources (``memory://status``,
+    ``memory://backends``) always point to the main repo's memory directory.
+    """
+    resolved_root = str(resolve_main_repo_root(root))
+    server = create_server(resolved_root)
     server.run(transport="stdio")
 
 

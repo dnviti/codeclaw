@@ -383,14 +383,24 @@ Use `AskUserQuestion`:
 
    Do NOT continue with remaining sub-steps if pip fails — skip to Step 10 with a warning.
 
-   **After install, verify GPU provider is available:**
+   **After install, discover GPU library paths and auto-configure:**
 
    ```bash
-   python3 ${CLAUDE_PLUGIN_ROOT}/scripts/deps_check.py verify-gpu
+   python3 ${CLAUDE_PLUGIN_ROOT}/scripts/deps_check.py discover-gpu-libs
    ```
 
-   - If `available` is `true`: report the active GPU provider(s).
-   - If `available` is `false` and a GPU was detected: warn that GPU provider failed to load and falling back to CPU mode. Set `gpu_mode` to `"cpu"` for the config update below.
+   Parse the JSON result. If `paths` is non-empty:
+   - Auto-inject the discovered paths into the current process environment before verification
+   - Store the paths for later persistence in project-config.json (see step 2 below)
+
+   **Verify GPU provider is available (with auto-fix):**
+
+   ```bash
+   python3 ${CLAUDE_PLUGIN_ROOT}/scripts/deps_check.py verify-gpu --auto-fix
+   ```
+
+   - If `available` is `true`: report the active GPU provider(s). Note whether `auto_fixed` was needed.
+   - If `available` is `false` and a GPU was detected: warn that GPU provider failed to load and falling back to CPU mode. Set `gpu_mode` to `"cpu"` for the config update below. Display the `fix_command` from the discovery output so the user can manually fix their environment.
 
 2. **Update project config:**
 
@@ -405,6 +415,7 @@ Use `AskUserQuestion`:
    - `vector_memory.auto_index = true`
    - `vector_memory.gpu_acceleration.mode` = `<gpu_mode>` from GPU detection (`"gpu"` or `"cpu"`)
    - `vector_memory.gpu_acceleration.log_provider = true`
+   - `vector_memory.gpu_acceleration.lib_paths` = `<paths>` array from `discover-gpu-libs` output (e.g., `["/path/to/site-packages/nvidia/cublas/lib", ...]`). Set to `[]` if no paths were discovered or on macOS. These paths are auto-injected by `local_onnx.py` at runtime before creating the ONNX session, ensuring GPU libraries are found without manual `LD_LIBRARY_PATH`/`PATH` configuration.
    - `mcp_server.enabled = true`
    - `mcp_server.auto_start = true`
 

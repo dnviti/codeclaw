@@ -110,6 +110,8 @@ def apply_search_filters(search_query, top_k: int,
 DEFAULT_INDEX_DIR = ".claude/memory/vectors"
 DEFAULT_CHUNK_SIZE = 2000
 DEFAULT_BATCH_SIZE = 64
+DEFAULT_SEARCH_LOG_MAX_SIZE_MB = 10
+DEFAULT_SEARCH_LOG_RETENTION_DAYS = 30
 HASH_MANIFEST = "file_hashes.json"
 INDEX_META = "index_meta.json"
 TABLE_NAME = "chunks"
@@ -215,6 +217,19 @@ def get_effective_config(root: Path) -> dict:
     to match the always-on default behavior introduced in VMEM-0024.
     """
     user_cfg = load_config(root)
+    # PRIVACY NOTE (RPAT-0003): Search logging records user queries and
+    # result metadata to disk in plaintext JSONL.  This data may contain
+    # sensitive information (proprietary code patterns, internal file paths,
+    # intellectual-property-revealing search terms).  Search logging is
+    # therefore DISABLED by default (opt-in only).  When enabled, log files
+    # are created with 0o600 permissions (owner read/write only) and are
+    # subject to automatic retention-based purging (see retention_days).
+    search_log_defaults = {"enabled": False,
+                           "path": ".claude/memory/search_log.jsonl",
+                           "include_content": False,
+                           "max_size_mb": DEFAULT_SEARCH_LOG_MAX_SIZE_MB,
+                           "retention_days": DEFAULT_SEARCH_LOG_RETENTION_DAYS}
+    user_search_log = user_cfg.get("search_log", {})
     return {
         "enabled": user_cfg.get("enabled", True),
         "auto_index": user_cfg.get("auto_index", True),
@@ -226,6 +241,10 @@ def get_effective_config(root: Path) -> dict:
         "batch_size": user_cfg.get("batch_size", DEFAULT_BATCH_SIZE),
         "include_patterns": user_cfg.get("include_patterns", []),
         "exclude_patterns": user_cfg.get("exclude_patterns", []),
+        "search_log": {
+            k: user_search_log.get(k, v)
+            for k, v in search_log_defaults.items()
+        },
     }
 
 
@@ -671,6 +690,216 @@ def _save_meta(index_dir: Path, config: dict, file_count: int):
     path.write_text(json.dumps(meta, indent=2), encoding="utf-8")
 
 
+# ── Search Logging ───────────────────────────────────────────────────────────
+#
+# DATA SENSITIVITY WARNING (RPAT-0003):
+# Search logs contain user queries and result metadata written to disk as
+# plaintext JSONL.  This data can reveal:
+#   - Proprietary code patterns and internal API names
+#   - File paths exposing project structure and naming conventions
+#   - Intellectual property through search query terms
+#   - Developer workflow and investigation patterns
+#
+# Mitigations:
+#   S-0: Search logging is DISABLED by default (opt-in only via config).
+#   S-1: Path-traversal guard prevents log writes outside the project root.
+#   S-2: Privacy notice is printed to stderr the first time logging is used.
+#   S-3: Log files are created with 0o600 permissions (owner read/write only).
+#   S-4: Retention-based auto-purge removes entries older than retention_days.
+#   S-5: Rotated logs (.jsonl.1) inherit the same restrictive permissions.
+#
+# To enable search logging, set vector_memory.search_log.enabled = true in
+# project-config.json.  To control retention, set search_log.retention_days
+# (default 30).  Set to 0 to disable automatic purging.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Module-level flag to track whether the privacy notice has been shown
+# during this process lifetime, to avoid printing it on every search call.
+_search_log_privacy_notice_shown = False
+
+# Module-level flag to ensure retention purge runs at most once per process
+# lifetime, avoiding redundant O(n) read-parse-rewrite on every search call.
+_search_log_purge_done = False
+
+
+def _emit_privacy_notice() -> None:
+    """Print a one-time privacy notice when search logging is active.
+
+    S-2: Informs the user that search queries are being persisted to disk,
+    what data is captured, and how to disable logging or adjust retention.
+    """
+    global _search_log_privacy_notice_shown
+    if _search_log_privacy_notice_shown:
+        return
+    _search_log_privacy_notice_shown = True
+    print(
+        "PRIVACY NOTICE: Search query logging is enabled. Your search "
+        "queries, result metadata, and optionally content snippets are "
+        "being written to disk in plaintext. This data may contain "
+        "sensitive information. To disable, set "
+        "vector_memory.search_log.enabled to false in project-config.json. "
+        "Log retention is controlled by search_log.retention_days "
+        "(current default: 30 days).",
+        file=sys.stderr,
+    )
+
+
+def _purge_expired_log_entries(log_path: Path, retention_days: int) -> None:
+    """Remove log entries older than retention_days from the JSONL file.
+
+    S-4: Automatic retention-based purging reduces the window of exposure
+    for sensitive search query data on disk.  Entries without a parseable
+    timestamp are preserved (fail-safe).
+
+    A retention_days value of 0 disables purging entirely.
+
+    Performance: purge runs at most once per process lifetime to avoid
+    redundant O(n) read-parse-rewrite on every search call.
+    """
+    global _search_log_purge_done
+    if _search_log_purge_done:
+        return
+    _search_log_purge_done = True
+
+    if retention_days <= 0:
+        return
+    if not log_path.exists():
+        return
+
+    cutoff_ts = time.time() - (retention_days * 86400)
+    cutoff_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(cutoff_ts))
+
+    try:
+        lines = log_path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return
+
+    kept: list[str] = []
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            entry = json.loads(line)
+            ts = entry.get("timestamp", "")
+            # ISO 8601 timestamps sort lexicographically
+            if ts and ts < cutoff_iso:
+                continue  # expired — drop
+        except (json.JSONDecodeError, TypeError):
+            pass  # Unparseable lines are kept (fail-safe)
+        kept.append(line)
+
+    # Rewrite the file with restrictive permissions
+    try:
+        fd = os.open(str(log_path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
+                      0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            for line in kept:
+                f.write(line + "\n")
+    except OSError as exc:
+        print(f"Warning: search log purge rewrite failed: {exc}",
+              file=sys.stderr)
+
+
+def _log_search(root: Path, config: dict, query: str, top_k: int,
+                file_filter: str, type_filter: str, df) -> None:
+    """Append a JSONL entry for a search query if search_log is enabled.
+
+    Non-blocking: failures are logged to stderr but never affect search.
+
+    Security controls:
+        S-0: Opt-in only — returns immediately if not explicitly enabled.
+        S-1: Path-traversal guard — log path must resolve within project root.
+        S-2: Privacy notice — printed to stderr on first invocation.
+        S-3: Restrictive file permissions — 0o600 (owner read/write only).
+        S-4: Retention purge — entries older than retention_days are removed.
+        S-5: Rotated log permissions — backup file also uses 0o600.
+
+    Data sensitivity: the log records query text, file paths, chunk types,
+    and optionally content snippets.  See the module-level DATA SENSITIVITY
+    WARNING above for the full risk assessment.
+    """
+    log_cfg = config.get("search_log", {})
+    # S-0: Search logging is opt-in; disabled by default
+    if not log_cfg.get("enabled"):
+        return
+
+    # S-2: Emit privacy notice on first use
+    _emit_privacy_notice()
+
+    try:
+        raw_path = log_cfg.get("path", ".claude/memory/search_log.jsonl")
+        log_path = (root / raw_path).resolve()
+
+        # S-1: Guard against path traversal — log must stay under root
+        try:
+            log_path.relative_to(root.resolve())
+        except ValueError:
+            print(f"Warning: search_log.path {raw_path!r} resolves outside "
+                  f"project root; logging skipped.", file=sys.stderr)
+            return
+
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # S-4: Purge expired entries based on retention_days
+        retention_days = log_cfg.get("retention_days",
+                                     DEFAULT_SEARCH_LOG_RETENTION_DAYS)
+        _purge_expired_log_entries(log_path, retention_days)
+
+        # O-1: Rotate log if it exceeds configured max size
+        max_bytes = log_cfg.get("max_size_mb",
+                                DEFAULT_SEARCH_LOG_MAX_SIZE_MB) * 1024 * 1024
+        if log_path.exists() and log_path.stat().st_size >= max_bytes:
+            rotated = log_path.with_suffix(".jsonl.1")
+            if rotated.exists():
+                rotated.unlink()
+            log_path.rename(rotated)
+            # S-5: Ensure rotated log retains restrictive permissions
+            try:
+                os.chmod(str(rotated), 0o600)
+            except OSError:
+                pass
+
+        include_content = log_cfg.get("include_content", False)
+        results = []
+        for _, row in df.iterrows():
+            entry = {
+                "file_path": row.get("file_path", ""),
+                "name": row.get("name", ""),
+                "chunk_type": row.get("chunk_type", ""),
+                "score": float(row.get("_distance", 0.0)),
+            }
+            # DATA SENSITIVITY: include_content exposes actual code snippets
+            # in the log.  This option is disabled by default and should only
+            # be enabled in trusted environments.
+            if include_content:
+                entry["content"] = row.get("content", "")[:200]
+            results.append(entry)
+
+        record = {
+            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "query": query,
+            "top_k": top_k,
+            "file_filter": file_filter or None,
+            "type_filter": type_filter or None,
+            "result_count": len(results),
+            "results": results,
+        }
+
+        # S-3: Open with restrictive permissions (owner read/write only)
+        fd = os.open(str(log_path),
+                     os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+        try:
+            with os.fdopen(fd, "a", encoding="utf-8") as f:
+                f.write(json.dumps(record, separators=(",", ":")) + "\n")
+        except Exception:
+            # fd is already closed by os.fdopen on failure
+            raise
+    except Exception as exc:
+        # O-3: Warn on stderr instead of silently swallowing
+        print(f"Warning: search log write failed: {exc}", file=sys.stderr)
+
+
 # ── Search Command ───────────────────────────────────────────────────────────
 # Sequential: bounded by fixed pattern list (~5 queries), parallelizing adds
 # thread complexity for marginal gain
@@ -743,6 +972,9 @@ def cmd_search(args):
             table.search(query_embedding),
             top_k, file_filter, type_filter,
         )
+
+    # Log search query and results if enabled
+    _log_search(root, config, query, top_k, file_filter, type_filter, df)
 
     # Format output
     if args.json_output:
@@ -1178,6 +1410,30 @@ def cmd_conflicts(args):
         print()
 
 
+# ── Validate Model Command ──────────────────────────────────────────────────
+
+def cmd_validate_model(args):
+    """Check if the configured embedding model is available or downloadable."""
+    root = Path(args.root).resolve()
+    config = get_effective_config(root)
+    model_name = args.model or config["embedding_model"]
+
+    try:
+        from embeddings.local_onnx import LocalOnnxProvider
+        result = LocalOnnxProvider.validate_model(model_name)
+    except Exception as e:
+        result = {
+            "valid": False,
+            "model": model_name,
+            "path": "",
+            "error": str(e),
+        }
+
+    print(json.dumps(result, indent=2))
+    if not result["valid"]:
+        sys.exit(1)
+
+
 # ── Hook: Incremental Update ────────────────────────────────────────────────
 
 def hook_file_changed(file_path: str):
@@ -1568,6 +1824,20 @@ Examples:
     cfl.add_argument("--json", dest="json_output", action="store_true",
                      help="Output as JSON")
 
+    # ── validate-model ──
+    vm = sub.add_parser("validate-model",
+                        help="Check if the configured embedding model is available")
+    vm.add_argument("--root", default=".", help="Project root directory")
+    vm.add_argument("--model", default=None,
+                    help="Model name to validate (default: from config)")
+
+    # ── verify-worktree-sharing ──
+    vws = sub.add_parser("verify-worktree-sharing",
+                         help="Verify vector memory is shared across worktrees")
+    vws.add_argument("--root", default=".", help="Project root directory")
+    vws.add_argument("--json", dest="json_output", action="store_true",
+                     help="Output as JSON")
+
     # ── hook (internal) ──
     hk = sub.add_parser("hook", help="Internal: incremental update hook")
     hk.add_argument("file_path", help="Path to the changed file")
@@ -1594,8 +1864,119 @@ Examples:
         cmd_agents(args)
     elif args.command == "conflicts":
         cmd_conflicts(args)
+    elif args.command == "validate-model":
+        cmd_validate_model(args)
+    elif args.command == "verify-worktree-sharing":
+        cmd_verify_worktree_sharing(args)
     elif args.command == "hook":
         hook_file_changed(args.file_path)
+
+
+def cmd_verify_worktree_sharing(args):
+    """Verify that vector memory resolves to a shared location across worktrees."""
+    import subprocess as _sp
+
+    root = Path(args.root).resolve()
+    if not (root / ".git").exists() and not (root / ".git").is_file():
+        print(f"Warning: {root} does not appear to be a git repository", file=sys.stderr)
+    main_root = _find_project_root()
+    config = load_config(main_root)
+    index_path = main_root / config.get("index_path", ".claude/memory/vectors")
+    worktree_shared = config.get("worktree_shared", True)
+
+    # Check current environment
+    try:
+        result = _sp.run(
+            ["git", "rev-parse", "--git-common-dir", "--git-dir"],
+            capture_output=True, text=True, check=True,
+            cwd=str(root),
+        )
+        lines = result.stdout.strip().splitlines()
+        common = Path(lines[0]).resolve() if len(lines) >= 1 else None
+        git_dir = Path(lines[1]).resolve() if len(lines) >= 2 else None
+        in_worktree = common is not None and git_dir is not None and common != git_dir
+    except (_sp.CalledProcessError, FileNotFoundError):
+        in_worktree = False
+        common = None
+        git_dir = None
+
+    # List all worktrees
+    worktrees = []
+    try:
+        wt_result = _sp.run(
+            ["git", "worktree", "list", "--porcelain"],
+            capture_output=True, text=True, check=True,
+            cwd=str(main_root),
+        )
+        current = {}
+        for line in wt_result.stdout.splitlines():
+            if line.startswith("worktree "):
+                current = {"path": line.split(" ", 1)[1]}
+            elif line.startswith("branch "):
+                current["branch"] = line.split(" ", 1)[1]
+            elif line == "":
+                if current:
+                    worktrees.append(current)
+                current = {}
+        if current:
+            worktrees.append(current)
+    except (_sp.CalledProcessError, FileNotFoundError):
+        pass
+
+    report = {
+        "main_root": str(main_root),
+        "current_dir": str(root),
+        "in_worktree": in_worktree,
+        "worktree_shared_config": worktree_shared,
+        "index_path": str(index_path),
+        "index_exists": index_path.exists(),
+        "worktree_count": len(worktrees),
+        "all_share_memory": True,
+        "worktrees": [],
+    }
+
+    for wt in worktrees:
+        wt_path = Path(wt["path"])
+        # Check if this worktree would resolve to the main repo's memory
+        try:
+            r = _sp.run(
+                ["git", "rev-parse", "--git-common-dir"],
+                capture_output=True, text=True, check=True,
+                cwd=wt["path"],
+            )
+            resolved = Path(r.stdout.strip()).resolve().parent
+            shares = resolved == main_root.resolve()
+        except (_sp.CalledProcessError, FileNotFoundError, OSError):
+            shares = wt_path.resolve() == main_root.resolve()
+
+        # Check if worktree has a LOCAL memory dir (bad — should use shared)
+        local_mem = wt_path / ".claude" / "memory" / "vectors"
+        has_local = local_mem.exists() and wt_path.resolve() != main_root.resolve()
+
+        report["worktrees"].append({
+            "path": str(wt_path),
+            "branch": wt.get("branch", "unknown"),
+            "shares_memory": shares,
+            "has_local_memory": has_local,
+        })
+        if not shares or has_local:
+            report["all_share_memory"] = False
+
+    if getattr(args, "json_output", False):
+        print(json.dumps(report, indent=2))
+    else:
+        status = "PASS" if report["all_share_memory"] else "WARN"
+        print(f"Worktree Memory Sharing: {status}")
+        print(f"  Main root: {report['main_root']}")
+        print(f"  Index path: {report['index_path']} ({'exists' if report['index_exists'] else 'missing'})")
+        print(f"  Config worktree_shared: {report['worktree_shared_config']}")
+        print(f"  Worktrees: {report['worktree_count']}")
+        if report["worktrees"]:
+            for wt in report["worktrees"]:
+                flag = "OK" if wt["shares_memory"] and not wt["has_local_memory"] else "WARN"
+                print(f"    [{flag}] {wt['branch']} — {wt['path']}")
+                if wt["has_local_memory"]:
+                    print(f"         WARNING: has local memory dir (should use shared)")
 
 
 if __name__ == "__main__":

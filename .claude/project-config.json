@@ -35,7 +35,16 @@
     "index_path": ".claude/memory/vectors",
     "batch_size": 64,
     "include_patterns": [],
-    "exclude_patterns": []
+    "exclude_patterns": [],
+    "worktree_shared": true,
+    "search_log": {
+      "enabled": false,
+      "path": ".claude/memory/search_log.jsonl",
+      "include_content": false,
+      "max_size_mb": 10,
+      "retention_days": 30,
+      "_privacy_notice": "When enabled, search queries and result metadata are written to disk in plaintext. This may include sensitive data such as code patterns, file paths, and search terms. Logs are created with 0o600 permissions and auto-purged after retention_days."
+    }
   },
   "mcp_server": {
     "enabled": true,
@@ -84,6 +93,13 @@
         "post_url": "https://news.ycombinator.com/submit"
       }
     ]
+  },
+  "worktrees": {
+    "enabled": true,
+    "max_count": 10,
+    "cleanup_after_days": 7,
+    "base_dir": ".worktrees",
+    "_comment": "When true, /task pick creates isolated git worktrees per task. max_count auto-prunes oldest idle worktrees when exceeded. cleanup_after_days removes worktrees older than N days."
   },
   "ollama": {
     "enabled": true,
