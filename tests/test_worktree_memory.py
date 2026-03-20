@@ -78,6 +78,28 @@ class TestLoadWorktreeConfig:
         assert result["enabled"] is False
         assert result["max_count"] == 3
 
+    def test_rejects_absolute_base_dir(self, tmp_path):
+        from skill_helper import _load_worktree_config
+
+        cfg_dir = tmp_path / ".claude"
+        cfg_dir.mkdir()
+        cfg = {"worktrees": {"base_dir": "/tmp/evil"}}
+        (cfg_dir / "project-config.json").write_text(json.dumps(cfg))
+
+        result = _load_worktree_config(tmp_path)
+        assert result["base_dir"] == ".worktrees", "absolute base_dir should be rejected"
+
+    def test_rejects_traversal_base_dir(self, tmp_path):
+        from skill_helper import _load_worktree_config
+
+        cfg_dir = tmp_path / ".claude"
+        cfg_dir.mkdir()
+        cfg = {"worktrees": {"base_dir": "../../etc"}}
+        (cfg_dir / "project-config.json").write_text(json.dumps(cfg))
+
+        result = _load_worktree_config(tmp_path)
+        assert result["base_dir"] == ".worktrees", "traversal base_dir should be rejected"
+
 
 # ── _is_worktree_enabled tests ──────────────────────────────────────────────
 
@@ -109,6 +131,38 @@ class TestIsWorktreeEnabled:
         (cfg_dir / "project-config.json").write_text(json.dumps(cfg))
 
         assert _is_worktree_enabled(tmp_path) is True
+
+
+# ── _is_worktree_dirty tests ────────────────────────────────────────────────
+
+
+class TestIsWorktreeDirty:
+    """Test dirty-state detection for worktrees."""
+
+    def test_clean_worktree(self, tmp_path):
+        from skill_helper import _is_worktree_dirty
+
+        with mock.patch("skill_helper.subprocess.run") as mock_run:
+            mock_run.return_value = mock.Mock(stdout="", returncode=0)
+            assert _is_worktree_dirty(str(tmp_path)) is False
+
+    def test_dirty_worktree(self, tmp_path):
+        from skill_helper import _is_worktree_dirty
+
+        with mock.patch("skill_helper.subprocess.run") as mock_run:
+            mock_run.return_value = mock.Mock(
+                stdout=" M scripts/skill_helper.py\n", returncode=0
+            )
+            assert _is_worktree_dirty(str(tmp_path)) is True
+
+    def test_assumes_dirty_on_failure(self, tmp_path):
+        from skill_helper import _is_worktree_dirty
+
+        with mock.patch(
+            "skill_helper.subprocess.run",
+            side_effect=FileNotFoundError("git not found"),
+        ):
+            assert _is_worktree_dirty(str(tmp_path)) is True
 
 
 # ── _enforce_worktree_limits tests ──────────────────────────────────────────

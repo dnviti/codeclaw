@@ -11,13 +11,17 @@ All output is JSON.  Zero external dependencies — stdlib only.
 import argparse
 import configparser
 import json
+import logging
 import os
 import platform as platform_mod
 import re
 import subprocess
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 # ── Platform Adapter Support ───────────────────────────────────────────────
 # Add scripts/ to path so platform_adapter module can be found
@@ -1233,6 +1237,7 @@ def _load_worktree_config(root: Path) -> dict:
     """Load worktree configuration from project-config.json.
 
     Returns the ``worktrees`` section with defaults applied.
+    Validates that ``base_dir`` is a safe relative path.
     """
     defaults = {
         "enabled": True,
@@ -1248,7 +1253,16 @@ def _load_worktree_config(root: Path) -> dict:
             try:
                 data = json.loads(cfg_name.read_text(encoding="utf-8"))
                 wt = data.get("worktrees", {})
-                return {**defaults, **{k: v for k, v in wt.items() if not k.startswith("_")}}
+                merged = {**defaults, **{k: v for k, v in wt.items() if not k.startswith("_")}}
+                # Sanitize base_dir: reject absolute paths or path traversal
+                bd = Path(merged.get("base_dir", ".worktrees"))
+                if bd.is_absolute() or ".." in bd.parts:
+                    logger.warning(
+                        "Ignoring unsafe worktrees.base_dir '%s' — falling back to '.worktrees'",
+                        merged["base_dir"],
+                    )
+                    merged["base_dir"] = ".worktrees"
+                return merged
             except (json.JSONDecodeError, OSError):
                 pass
     return defaults
@@ -1263,16 +1277,28 @@ def _is_worktree_enabled(root: Path) -> bool:
     return _load_worktree_config(root).get("enabled", True)
 
 
+def _is_worktree_dirty(wt_path: str) -> bool:
+    """Check if a worktree has uncommitted changes (dirty working tree)."""
+    try:
+        result = subprocess.run(
+            ["git", "status", "--porcelain"],
+            capture_output=True, text=True, check=True,
+            cwd=wt_path,
+        )
+        return bool(result.stdout.strip())
+    except (subprocess.CalledProcessError, FileNotFoundError, OSError):
+        # If we cannot determine status, assume dirty to be safe
+        return True
+
+
 def _enforce_worktree_limits(root: Path, wt_config: dict) -> list[str]:
     """Prune worktrees that exceed max_count or cleanup_after_days.
 
+    Skips worktrees with uncommitted changes to prevent data loss.
     Returns a list of removed worktree paths for logging.
     """
-    import time
-
     max_count = wt_config.get("max_count", 10)
     cleanup_days = wt_config.get("cleanup_after_days", 7)
-    base_dir_name = wt_config.get("base_dir", ".worktrees")
     removed: list[str] = []
 
     # Collect existing worktrees (excluding the main repo)
@@ -1313,8 +1339,17 @@ def _enforce_worktree_limits(root: Path, wt_config: dict) -> list[str]:
     worktrees.sort(key=lambda w: w["mtime"])
 
     # 1. Remove worktrees older than cleanup_after_days
-    for wt in worktrees[:]:
+    surviving: list[dict] = []
+    for wt in worktrees:
         if wt["mtime"] < cutoff and wt["mtime"] > 0:
+            # Skip worktrees with uncommitted changes to prevent data loss
+            if _is_worktree_dirty(wt["path"]):
+                logger.warning(
+                    "Skipping removal of stale worktree %s — has uncommitted changes",
+                    wt["path"],
+                )
+                surviving.append(wt)
+                continue
             try:
                 subprocess.run(
                     ["git", "worktree", "remove", "--force", wt["path"]],
@@ -1322,14 +1357,24 @@ def _enforce_worktree_limits(root: Path, wt_config: dict) -> list[str]:
                     cwd=str(root),
                 )
                 removed.append(wt["path"])
-                worktrees.remove(wt)
             except subprocess.CalledProcessError:
-                pass
+                surviving.append(wt)
+        else:
+            surviving.append(wt)
+    worktrees = surviving
 
     # 2. Remove oldest worktrees if count exceeds max_count
     # Leave room for the new one being created (max_count - 1)
     while len(worktrees) >= max_count and worktrees:
-        wt = worktrees.pop(0)  # oldest
+        wt = worktrees[0]
+        # Skip worktrees with uncommitted changes to prevent data loss
+        if _is_worktree_dirty(wt["path"]):
+            logger.warning(
+                "Skipping removal of worktree %s (over limit) — has uncommitted changes",
+                wt["path"],
+            )
+            worktrees.pop(0)
+            continue
         try:
             subprocess.run(
                 ["git", "worktree", "remove", "--force", wt["path"]],
@@ -1339,6 +1384,7 @@ def _enforce_worktree_limits(root: Path, wt_config: dict) -> list[str]:
             removed.append(wt["path"])
         except subprocess.CalledProcessError:
             pass
+        worktrees.pop(0)
 
     return removed
 
@@ -1478,6 +1524,22 @@ def cmd_setup_task_worktree(args) -> dict:
     code_lower = task_code.lower()
     branch_name = f"task/{code_lower}"
     base_dir = wt_config.get("base_dir", ".worktrees")
+
+    # Validate base_dir to prevent path traversal (S-1)
+    base_dir_path = Path(base_dir)
+    if base_dir_path.is_absolute() or ".." in base_dir_path.parts:
+        return {
+            "success": False,
+            "error": f"Invalid worktrees.base_dir '{base_dir}': must be a relative path without '..' components",
+        }
+    # Ensure resolved path stays within project root
+    resolved_base = (root / base_dir).resolve()
+    if not str(resolved_base).startswith(str(root.resolve())):
+        return {
+            "success": False,
+            "error": f"Invalid worktrees.base_dir '{base_dir}': resolves outside project root",
+        }
+
     wt_dir = root / base_dir / "task" / code_lower
 
     # 0. Enforce worktree limits (max_count, cleanup_after_days)
@@ -1486,15 +1548,17 @@ def cmd_setup_task_worktree(args) -> dict:
     # 1. Ensure directories exist
     (root / base_dir / "task").mkdir(parents=True, exist_ok=True)
 
-    # 2. Ensure .gitignore has the worktree base_dir
+    # 2. Ensure .gitignore has the worktree base_dir (line-level match)
     gitignore = root / ".gitignore"
+    gitignore_entry = f"{base_dir}/"
     if gitignore.exists():
         content = gitignore.read_text(encoding="utf-8")
-        if base_dir not in content and f"{base_dir}/" not in content:
+        lines = content.splitlines()
+        if base_dir not in lines and gitignore_entry not in lines:
             with open(gitignore, "a", encoding="utf-8") as f:
-                f.write(f"\n{base_dir}/\n")
+                f.write(f"\n{gitignore_entry}\n")
     else:
-        gitignore.write_text(f"{base_dir}/\n", encoding="utf-8")
+        gitignore.write_text(f"{gitignore_entry}\n", encoding="utf-8")
 
     # 3. Check if worktree already exists
     if wt_dir.exists() and (wt_dir / ".git").exists():

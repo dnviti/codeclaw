@@ -1877,6 +1877,8 @@ def cmd_verify_worktree_sharing(args):
     import subprocess as _sp
 
     root = Path(args.root).resolve()
+    if not (root / ".git").exists() and not (root / ".git").is_file():
+        print(f"Warning: {root} does not appear to be a git repository", file=sys.stderr)
     main_root = _find_project_root()
     config = load_config(main_root)
     index_path = main_root / config.get("index_path", ".claude/memory/vectors")
