@@ -2,7 +2,7 @@
 title: Configuration
 description: Environment variables, configuration files, feature flags, and project settings
 generated-by: claw-docs
-generated-at: 2026-03-19T00:00:00Z
+generated-at: 2026-03-20T00:25:00Z
 source-files:
   - config/project-config.example.json
   - config/mcp-server.example.json
@@ -145,9 +145,19 @@ Project-specific settings used by skills during task creation and releases.
       "hybrid_weight_text": 0.3,
       "db_path": ".claude/memory/sqlite/memory.db"
     },
+    "worktree_shared": true,
     "gpu_acceleration": {
       "mode": "auto",
-      "log_provider": true
+      "log_provider": true,
+      "lib_paths": [],
+      "gpu_path_allowlist": []
+    },
+    "search_log": {
+      "enabled": false,
+      "path": ".claude/memory/search_log.jsonl",
+      "include_content": false,
+      "max_size_mb": 10,
+      "retention_days": 30
     },
     "event_sourcing": {
       "enabled": false,
@@ -202,6 +212,12 @@ Project-specific settings used by skills during task creation and releases.
     "enabled": false,
     "model": "",
     "offloading_level": 5
+  },
+  "worktrees": {
+    "enabled": true,
+    "max_count": 10,
+    "cleanup_after_days": 7,
+    "base_dir": ".worktrees"
   }
 }
 ```
@@ -266,6 +282,7 @@ Project-specific settings used by skills during task creation and releases.
 | `batch_size` | Embedding batch size for indexing (default: 64) |
 | `include_patterns` | Glob patterns of files to always index |
 | `exclude_patterns` | Glob patterns of files to never index |
+| `worktree_shared` | Share a single vector index across all worktrees (default: `true`). When enabled, worktrees resolve the index path to the main repo |
 | `backend` | Primary backend engine: `"lancedb"` (default) |
 
 **`vector_memory.lock_backend` section:**
@@ -298,6 +315,22 @@ SQLite FTS5 hybrid search backend (alternative/complement to LanceDB).
 |-------|-------------|
 | `mode` | GPU acceleration mode: `"auto"` (default), `"cpu"`, or `"gpu"` |
 | `log_provider` | Log which execution provider is selected (default: `true`) |
+| `lib_paths` | Auto-discovered GPU library directories injected into `LD_LIBRARY_PATH`/`PATH` at runtime (default: `[]`) |
+| `gpu_path_allowlist` | Restrict which directories may be added to `LD_LIBRARY_PATH` from config. Empty list = use built-in defaults (system lib dirs, CUDA, ROCm, pip site-packages). Set explicit paths/globs to override (default: `[]`) |
+
+**`vector_memory.search_log` section:**
+
+Search query logging for debugging and analysis. Disabled by default for privacy.
+
+| Field | Description |
+|-------|-------------|
+| `enabled` | Enable search query logging (default: `false`). Opt-in only |
+| `path` | Log file path (default: `.claude/memory/search_log.jsonl`) |
+| `include_content` | Include matched chunk content in log entries (default: `false`) |
+| `max_size_mb` | Maximum log file size before rotation (default: 10) |
+| `retention_days` | Auto-purge log entries older than N days (default: 30) |
+
+> **Privacy notice:** When enabled, search queries and result metadata are written to disk in plaintext. This may include sensitive data such as code patterns, file paths, and search terms. Logs are created with `0o600` permissions (owner-only read/write) and auto-purged after `retention_days`.
 
 **`vector_memory.event_sourcing` section:**
 
@@ -376,6 +409,17 @@ Quick-enable for Ollama. For full Ollama configuration, use `ollama-config.json`
 | `enabled` | Enable Ollama local model routing |
 | `model` | Model name to use (auto-detected if empty) |
 | `offloading_level` | Default offloading level 0–10 (default: 5) |
+
+**`worktrees` section:**
+
+Controls git worktree-based task isolation. Worktrees are enabled by default since v4.0.2.
+
+| Field | Description |
+|-------|-------------|
+| `enabled` | Enable worktree-based task isolation (default: `true`). When `false`, falls back to standard branch switching |
+| `max_count` | Maximum number of concurrent worktrees. Oldest idle worktrees are auto-pruned when exceeded (default: 10). Worktrees with uncommitted changes are never auto-removed |
+| `cleanup_after_days` | Remove worktrees older than N days on next `/task pick` (default: 7). Skips worktrees with dirty working trees |
+| `base_dir` | Base directory for worktree storage (default: `.worktrees`). Must be a relative path; absolute paths and path traversal are rejected |
 
 ### ollama-config.json
 
@@ -555,3 +599,5 @@ CodeClaw uses configuration-driven feature flags rather than compile-time flags:
 | MCP server | `project-config.json → mcp_server.enabled` | Exposes vector memory via MCP protocol |
 | Ollama routing | `ollama-config.json → enabled` | Routes tool calls/tasks to local model |
 | Social announce | `project-config.json → social_announce.platforms.<name>.enabled` | Enables release announcements |
+| Worktrees | `project-config.json → worktrees.enabled` | Git worktree-based task isolation (enabled by default since v4.0.2) |
+| Search logging | `project-config.json → vector_memory.search_log.enabled` | Opt-in search query logging with privacy controls |

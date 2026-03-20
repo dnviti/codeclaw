@@ -2,7 +2,7 @@
 title: LLM Context
 description: Consolidated single-file reference for LLM/bot consumption — architecture, APIs, configuration, and quick-start
 generated-by: claw-docs
-generated-at: 2026-03-19T00:00:00Z
+generated-at: 2026-03-20T00:25:00Z
 source-files:
   - README.md
   - CLAUDE.md
@@ -30,7 +30,7 @@ source-files:
 
 <!-- MACHINE-READABLE METADATA
 project: CodeClaw
-version: 4.0.0
+version: 4.0.2
 type: claude-code-plugin
 language: python3
 dependencies: stdlib-only (lancedb+onnxruntime+tokenizers+mcp optional for vector memory)
@@ -43,7 +43,7 @@ hooks: PreToolUse(Bash|Read|Grep|Glob|Edit|Write), PostToolUse(Edit|Write)
 
 ## Project Summary
 
-CodeClaw is a project-agnostic Claude Code plugin (v4.0.0) that provides:
+CodeClaw is a project-agnostic Claude Code plugin (v4.0.2) that provides:
 1. **Task and idea management** — Structured plain-text files (`to-do.txt`, `progressing.txt`, `done.txt`, `ideas.txt`)
 2. **GitHub/GitLab Issues integration** — Local-only, platform-only, or dual-sync modes
 3. **Gated 9-stage release pipeline** — Branch creation → task verification → PR analysis → staging → testing → production tagging → announcement → cleanup
@@ -75,7 +75,9 @@ Hooks (hooks.json)    → Event-driven integration (PreToolUse + PostToolUse)
 |--------|---------|
 | `scripts/task_manager.py` | Task/idea CRUD, platform sync, worktree management (~2,700 lines) |
 | `scripts/release_manager.py` | Version detection, changelog, release state (local + platform) |
-| `scripts/skill_helper.py` | Context gathering, argument dispatch, worktree setup |
+| `scripts/skill_helper.py` | Context gathering, argument dispatch, worktree lifecycle (enabled by default, auto-prune, shared memory verification) |
+| `scripts/config_lock.py` | Cross-platform file locking for atomic config writes (fcntl/msvcrt) |
+| `scripts/deps_check.py` | Dependency checking with GPU path allowlist security |
 | `scripts/ollama_manager.py` | Local model routing, hardware detection, tool-calling loop |
 | `scripts/vector_memory.py` | LanceDB indexing, semantic search, GC, agent sessions |
 | `scripts/mcp_server.py` | MCP stdio server exposing vector memory tools via FastMCP |
@@ -112,7 +114,7 @@ Hooks (hooks.json)    → Event-driven integration (PreToolUse + PostToolUse)
 develop → staging → main
 ```
 
-- `develop` — All feature PRs; worktree task branches merge here on teardown
+- `develop` — All feature PRs; worktree task branches merge here on teardown (worktrees enabled by default with `max_count: 10`, `cleanup_after_days: 7`)
 - `staging` — Pre-release validation; tagged `vX.X.X-staging`
 - `main` — Production; tagged `vX.X.X`
 
@@ -229,6 +231,8 @@ Essential subcommands:
 - `gc --root PATH --ttl-days N --deep --json` — garbage-collect stale entries
 - `agents --root PATH --status STATUS` — list active/historical agent sessions
 - `conflicts --root PATH --resolve ID` — show/resolve contradictions between agents
+- `validate-model --root PATH --model MODEL` — validate embedding model files
+- `verify-worktree-sharing --root PATH --json` — verify vector memory is shared across worktrees
 - `hook FILE_PATH` — PostToolUse hook: auto-index an edited file
 
 ### mcp_server.py
@@ -306,7 +310,9 @@ Always exits 0. Never blocks Claude. Applies NFKC normalization to prevent Unico
       "hybrid_weight_vector": 0.7,
       "hybrid_weight_text": 0.3
     },
-    "gpu_acceleration": { "mode": "auto" },
+    "worktree_shared": true,
+    "gpu_acceleration": { "mode": "auto", "gpu_path_allowlist": [] },
+    "search_log": { "enabled": false, "retention_days": 30 },
     "event_sourcing": { "enabled": false },
     "rlm": { "enabled": false, "provider": "ollama", "max_depth": 3 },
     "orchestrator": {
@@ -336,6 +342,12 @@ Always exits 0. Never blocks Claude. Applies NFKC normalization to prevent Unico
   "ollama": {
     "enabled": false,
     "offloading_level": 5      // 0-10
+  },
+  "worktrees": {
+    "enabled": true,            // enabled by default since v4.0.2
+    "max_count": 10,            // auto-prune oldest when exceeded
+    "cleanup_after_days": 7,    // remove stale worktrees
+    "base_dir": ".worktrees"    // must be relative path
   }
 }
 ```
@@ -457,6 +469,8 @@ scripts/
 ├── mcp_server.py           # MCP stdio server for vector memory
 ├── memory_orchestrator.py  # Multi-backend coordination (LanceDB + SQLite + RLM)
 ├── memory_protocol.py      # Multi-agent consistency protocol
+├── config_lock.py          # Cross-platform file locking for config writes
+├── deps_check.py           # Dependency checking with GPU path allowlist
 ├── memory_lock.py          # Distributed lock backends (file/SQLite/Redis)
 ├── sqlite_backend.py       # SQLite FTS5 + vec hybrid backend
 ├── memory_event_log.py     # Event-sourced memory for concurrent writes
@@ -493,5 +507,5 @@ skills/
 └── crazy/SKILL.md          # [BETA] Autonomous project builder
 
 hooks/hooks.json            # PreToolUse + PostToolUse definitions
-.claude-plugin/plugin.json  # Plugin manifest (version: 4.0.0)
+.claude-plugin/plugin.json  # Plugin manifest (version: 4.0.2)
 ```

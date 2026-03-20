@@ -2,7 +2,7 @@
 title: Development
 description: Contributing guidelines, local development setup, testing, branch strategy, and coding conventions
 generated-by: claw-docs
-generated-at: 2026-03-19T00:00:00Z
+generated-at: 2026-03-20T00:25:00Z
 source-files:
   - README.md
   - CLAUDE.md
@@ -82,6 +82,7 @@ codeclaw/
 │   ├── memory_orchestrator.py   # Multi-backend memory coordination
 │   ├── sqlite_backend.py        # SQLite FTS5 + vec hybrid backend
 │   ├── memory_event_log.py      # Event-sourced memory for concurrent writes
+│   ├── config_lock.py            # Cross-platform file locking for config writes
 │   ├── memory_lock.py           # Distributed lock backends (file/SQLite/Redis)
 │   ├── conflict_judge.py        # LLM-as-judge conflict resolution
 │   ├── rlm_backend.py           # Recursive context processing
@@ -206,7 +207,7 @@ flowchart LR
     DEV -->|"worktree teardown:<br>merge task branch locally"| DEV
 ```
 
-- **Feature branches** — Created per-task in worktrees at `.worktrees/task/<code>/`, named `task/<code>`
+- **Feature branches** — Created per-task in worktrees (enabled by default since v4.0.2) at `.worktrees/task/<code>/`, named `task/<code>`. Worktrees are auto-pruned when exceeding `max_count` (default: 10) or `cleanup_after_days` (default: 7)
 - **develop** — Active development; all feature PRs target here. On worktree teardown, the task branch is merged into local develop before the worktree is removed
 - **staging** — Pre-release validation; tagged `vX.X.X-staging`
 - **main** — Production releases with semantic version tags `vX.X.X`
@@ -265,6 +266,17 @@ Key behaviors:
 - **MCP server** — `mcp_server.py` provides semantic search, indexing, memory storage, and task context tools via stdio transport
 - **Garbage collection** — Run `python3 scripts/vector_memory.py gc --json` to prune stale entries
 - **Index location** — `.claude/memory/vectors` (gitignored via `.gitignore`)
+- **Worktree-shared memory** — When `vector_memory.worktree_shared` is `true` (default), all worktrees resolve to the main repo's vector index. Verify with `python3 scripts/vector_memory.py verify-worktree-sharing`
+- **GPU path allowlist** — `deps_check.py` validates `LD_LIBRARY_PATH` entries against a configurable allowlist (`gpu_acceleration.gpu_path_allowlist`) to prevent config-injected paths from reaching ONNX Runtime
+- **Model download robustness** — `local_onnx.py` uses `urlopen` with configurable timeout, retry with exponential backoff, and integrity checks (file size, basic format validation)
+- **Config locking** — `config_lock.py` provides cross-platform file locking (`fcntl`/`msvcrt`) for atomic `project-config.json` writes during parallel agent execution
+- **Search log security** — Search query logging is opt-in with `0o600` permissions and configurable `retention_days` auto-purge
+
+Related test files:
+- `tests/test_config_lock.py` — Config locking tests
+- `tests/test_local_onnx.py` — Model download and ONNX inference tests
+- `tests/test_search_log_security.py` — Search log permission and retention tests
+- `tests/test_worktree_memory.py` — Worktree memory sharing tests
 
 ## Ollama Integration Development
 

@@ -2,11 +2,12 @@
 title: Architecture
 description: System architecture, component interactions, data flow, and design decisions
 generated-by: claw-docs
-generated-at: 2026-03-19T00:00:00Z
+generated-at: 2026-03-20T00:25:00Z
 source-files:
   - scripts/task_manager.py
   - scripts/release_manager.py
   - scripts/skill_helper.py
+  - scripts/config_lock.py
   - scripts/docs_manager.py
   - scripts/agent_runner.py
   - scripts/app_manager.py
@@ -18,6 +19,7 @@ source-files:
   - scripts/mcp_server.py
   - scripts/memory_protocol.py
   - scripts/memory_lock.py
+  - scripts/deps_check.py
   - scripts/hooks/pre_tool_offload.py
   - scripts/analyzers/__init__.py
   - hooks/hooks.json
@@ -183,6 +185,7 @@ Consolidated helper that eliminates repeated logic across all skills.
 - Manage git worktrees for isolated task development
 - Parse project config for skill behavior
 - Branch strategy detection and enforcement
+- Worktree lifecycle management: load config (`_load_worktree_config`), enforce limits (`_enforce_worktree_limits` -- auto-prune by max_count and cleanup_after_days, skip dirty worktrees), verify shared memory (`_verify_worktree_memory_sharing`)
 - Status reports (task counts, in-progress tasks, recommended next tasks)
 
 **CLI subcommands:** `context`, `dispatch`, `check-project-state`, `create-project-files`, `detect-branch-strategy`, `setup-task-worktree`, `status-report`, `list-submodules`, `detect-release-config`, `detect-platform`, `refresh-branch-config`, `adapter-invoke`
@@ -223,6 +226,18 @@ Always-on semantic memory layer for the project codebase.
 - Garbage collection: prune stale entries, compact the index
 - Embedding providers: local `all-MiniLM-L6-v2` (default), or remote via API key
 - Versioned reads via LanceDB dataset versioning for point-in-time queries
+- `verify-worktree-sharing` subcommand: validates that the vector index resolves to the main repo's shared location from any worktree, lists all worktrees and their sharing status
+
+### config_lock.py
+
+Cross-platform file locking for `project-config.json` writes.
+
+**Key responsibilities:**
+- Atomic, locked writes to JSON configuration files to prevent race conditions when multiple processes (e.g. parallel agents) write config simultaneously
+- Uses `fcntl.flock` on Unix and `msvcrt.locking` on Windows
+- Retry logic for lock contention with exponential backoff
+- Atomic write-via-rename to prevent partial/corrupt writes
+- Zero external dependencies (stdlib only)
 
 ### mcp_server.py
 
@@ -337,6 +352,24 @@ flowchart LR
     end
 ```
 
+### Worktree Lifecycle Management
+
+Worktrees are enabled by default (v4.0.2+). The `skill_helper.py` manages the full worktree lifecycle with configurable limits.
+
+```mermaid
+flowchart TD
+    PICK["/task pick CODE"] --> LOAD["_load_worktree_config()<br>max_count, cleanup_after_days, base_dir"]
+    LOAD --> ENFORCE["_enforce_worktree_limits()<br>Prune stale/excess worktrees<br>(skip dirty worktrees)"]
+    ENFORCE --> CREATE["git worktree add<br>.worktrees/task/CODE/"]
+    CREATE --> VERIFY["_verify_worktree_memory_sharing()<br>Ensure vector index resolves<br>to main repo"]
+    VERIFY --> WORK["Agent works in worktree"]
+    WORK --> CLOSE["Task closed"]
+    CLOSE --> MERGE["Merge task branch → develop"]
+    MERGE --> REMOVE["git worktree remove"]
+```
+
+**Shared memory architecture:** When `vector_memory.worktree_shared` is `true` (default), all worktrees share the same vector index in the main repository at `.claude/memory/vectors/`. The `_verify_worktree_memory_sharing` function validates that git's `--git-common-dir` resolves to the main repo root, ensuring worktree-local indexes are never accidentally created.
+
 ### Release Pipeline
 
 ```mermaid
@@ -434,7 +467,7 @@ flowchart LR
 
 CodeClaw integrates with Claude Code via the plugin system:
 
-- **`plugin.json`** — Declares the plugin name (`claw`), version (`4.0.0`), skills directory, and MCP server configuration
+- **`plugin.json`** — Declares the plugin name (`claw`), version (`4.0.2`), skills directory, and MCP server configuration
 - **`marketplace.json`** — Marketplace listing for discovery and installation
 - **`hooks.json`** — Registers:
   - `PreToolUse` on `Bash|Read|Grep|Glob|Edit|Write` → `pre_tool_offload.py` (Ollama routing)

@@ -2,7 +2,7 @@
 title: MCP Vector Memory
 description: Semantic vector memory layer with MCP server integration — architecture, installation, configuration, and use cases
 generated-by: claw-docs
-generated-at: 2026-03-19T00:00:00Z
+generated-at: 2026-03-20T00:25:00Z
 source-files:
   - scripts/vector_memory.py
   - scripts/mcp_server.py
@@ -309,6 +309,7 @@ All configuration lives in `project-config.json` (searched at `.claude/project-c
     "batch_size": 64,
     "include_patterns": [],
     "exclude_patterns": [],
+    "worktree_shared": true,
     "backend": "lancedb",
     "lock_backend": {
       "type": "file",
@@ -320,7 +321,16 @@ All configuration lives in `project-config.json` (searched at `.claude/project-c
     },
     "gpu_acceleration": {
       "mode": "auto",
-      "log_provider": true
+      "log_provider": true,
+      "lib_paths": [],
+      "gpu_path_allowlist": []
+    },
+    "search_log": {
+      "enabled": false,
+      "path": ".claude/memory/search_log.jsonl",
+      "include_content": false,
+      "max_size_mb": 10,
+      "retention_days": 30
     }
   }
 }
@@ -338,6 +348,7 @@ All configuration lives in `project-config.json` (searched at `.claude/project-c
 | `batch_size` | `64` | Number of chunks per embedding batch |
 | `include_patterns` | `[]` | Whitelist file patterns (empty = all files) |
 | `exclude_patterns` | `[]` | Additional file patterns to skip |
+| `worktree_shared` | `true` | Share a single vector index across all git worktrees. When enabled, worktrees resolve the index path to the main repo root |
 | `backend` | `"lancedb"` | Primary storage backend (`"lancedb"`, `"sqlite"`, or `"rlm"`) |
 | `lock_backend.type` | `"file"` | Lock backend for multi-agent coordination: `"file"` (default, single-machine), `"sqlite"` (networked filesystems), `"redis"` (distributed) |
 | `lock_backend.timeout` | `30` | Lock acquisition timeout in seconds |
@@ -345,6 +356,10 @@ All configuration lives in `project-config.json` (searched at `.claude/project-c
 | `lock_backend.auto_renew_interval` | `10` | Auto-renewal interval in seconds for Redis locks |
 | `gpu_acceleration.mode` | `"auto"` | GPU mode for local ONNX embeddings: `"auto"` (try GPU, fall back to CPU), `"gpu"` (require GPU), `"cpu"` (force CPU) |
 | `gpu_acceleration.log_provider` | `true` | Log which ONNX execution provider is active on startup |
+| `gpu_acceleration.lib_paths` | `[]` | Auto-discovered GPU library directories injected into `LD_LIBRARY_PATH`/`PATH` at runtime |
+| `gpu_acceleration.gpu_path_allowlist` | `[]` | Restrict which directories may be added to `LD_LIBRARY_PATH`. Empty = built-in defaults (system lib dirs, CUDA, ROCm, pip site-packages) |
+| `search_log.enabled` | `false` | Opt-in search query logging for debugging |
+| `search_log.retention_days` | `30` | Auto-purge log entries older than N days. Logs created with `0o600` permissions |
 
 ### Memory Consistency Section
 
@@ -424,7 +439,7 @@ flowchart LR
 | `voyage` | `voyage-code-3` | 1024 | `VOYAGE_API_KEY` | Code-optimized searches |
 | `voyage` | `voyage-3-lite` | 512 | `VOYAGE_API_KEY` | Lightweight, fast |
 
-**GPU acceleration (local provider):** The local ONNX provider auto-detects GPU execution providers in preference order: CUDA (NVIDIA) > ROCm (AMD) > CoreML (macOS) > DirectML (Windows) > OpenVINO > CPU. Configure via `gpu_acceleration.mode` in `project-config.json`. Use `python3 scripts/deps_check.py` to check available GPU providers.
+**GPU acceleration (local provider):** The local ONNX provider auto-detects GPU execution providers in preference order: CUDA (NVIDIA) > ROCm (AMD) > CoreML (macOS) > DirectML (Windows) > OpenVINO > CPU. When `mode` is `"auto"`, the system auto-creates required GPU environment variables (e.g. `LD_LIBRARY_PATH`) and retries GPU initialization before falling back to CPU. Library paths loaded from config are validated against a `gpu_path_allowlist` for security. Configure via `gpu_acceleration.mode` in `project-config.json`. Use `python3 scripts/deps_check.py` to check available GPU providers.
 
 **To switch providers**, update `project-config.json`:
 
@@ -822,6 +837,19 @@ python3 vector_memory.py gc --deep       # Also clear embedding cache
 python3 vector_memory.py gc --ttl-days 7 # Custom TTL
 ```
 
+### Worktree Sharing Verification
+
+```bash
+# Verify memory sharing from main repo
+python3 vector_memory.py verify-worktree-sharing
+
+# Verify from a worktree directory
+python3 vector_memory.py verify-worktree-sharing --root .worktrees/task/AUTH-0001
+
+# JSON output for programmatic use
+python3 vector_memory.py verify-worktree-sharing --json
+```
+
 ### Multi-Agent Management
 
 ```bash
@@ -957,6 +985,10 @@ flowchart TD
 - **Agent ID sanitization:** All agent identifiers are stripped of special characters before use in file paths or environment variables
 - **API key handling:** API keys are read from environment variables, never stored in config files
 - **Advisory locking:** Prevents concurrent write corruption, with deadlock detection at 120 seconds. Pluggable backends: file (fcntl/msvcrt), SQLite (WAL-mode for networked FS), Redis (distributed with auto-renewal). Redis URLs are validated for scheme (redis:// or rediss:// only) and passwords are redacted in status output
+- **GPU path allowlist:** Library paths loaded from config into `LD_LIBRARY_PATH` are validated against a configurable allowlist (`gpu_acceleration.gpu_path_allowlist`). Overly broad patterns (`*`, `/*`) are rejected. Pip site-packages GPU directories are always permitted as a baseline
+- **Search log privacy:** Search query logging is opt-in only (`search_log.enabled`). Log files are created with `0o600` permissions (owner-only). Entries are auto-purged after `retention_days`. A privacy notice in the config warns about plaintext storage of queries and file paths
+- **Config file locking:** `config_lock.py` provides cross-platform atomic writes with advisory locking for `project-config.json` to prevent race conditions during parallel agent execution
+- **Model download integrity:** ONNX model downloads use `urlopen` with configurable timeout, retry with exponential backoff, and basic integrity checks (file size, format validation). SSRF checks prevent downloads from private/internal networks
 
 ## Troubleshooting
 
@@ -975,10 +1007,14 @@ Status: 3 core dependency(ies) missing.
 Failed to download model.onnx from https://huggingface.co/...
 ```
 
-**Fix:** Download manually to `~/.cache/claw/models/all-MiniLM-L6-v2/`:
-- `model.onnx`
-- `tokenizer.json`
-- `tokenizer_config.json`
+**Fix:** Downloads now include timeout (default: 60s, configurable via `vector_memory.download_timeout`), retry with exponential backoff (3 attempts), and integrity checks. If downloads still fail:
+
+1. Check network connectivity to `huggingface.co`
+2. Download manually to `~/.cache/claw/models/all-MiniLM-L6-v2/`:
+   - `model.onnx`
+   - `tokenizer.json`
+   - `tokenizer_config.json`
+3. Validate with: `python3 scripts/vector_memory.py validate-model`
 
 ### Lock timeout
 
@@ -1003,6 +1039,17 @@ For networked filesystems where `fcntl.flock` is unreliable, switch to the SQLit
   }
 }
 ```
+
+### Worktree memory not shared
+
+**Symptom:** Vector memory is empty or different when running from a worktree.
+
+**Fix:** Verify sharing is correctly configured:
+```bash
+python3 vector_memory.py verify-worktree-sharing --root .worktrees/task/CODE --json
+```
+
+Ensure `worktree_shared: true` in `project-config.json` (this is the default). If sharing reports `false`, the worktree may be detached -- recreate it with `/task continue CODE`.
 
 ### Index too large
 
