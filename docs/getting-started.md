@@ -2,7 +2,7 @@
 title: Getting Started
 description: Installation, prerequisites, first run, and initial project setup
 generated-by: claw-docs
-generated-at: 2026-03-19T00:00:00Z
+generated-at: 2026-03-20T00:25:00Z
 source-files:
   - README.md
   - .claude-plugin/plugin.json
@@ -23,7 +23,7 @@ This guide walks you through installing CodeClaw, setting up your first project,
 |-------------|---------|
 | [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) | The host AI coding assistant that runs CodeClaw skills |
 | Python 3.12+ | Runtime for all CodeClaw automation scripts (stdlib only, no pip packages needed for core features) |
-| Git | Version control; CodeClaw uses worktrees, branches, and tags |
+| Git | Version control; CodeClaw uses worktrees (enabled by default), branches, and tags |
 | `gh` CLI (optional) | GitHub Issues integration, PR management, and branch protection setup |
 | `glab` CLI (optional) | GitLab Issues integration |
 | [Ollama](https://ollama.ai) (optional) | Local model integration for tool call offloading |
@@ -68,7 +68,7 @@ This creates:
 - **Idea files** — `ideas.txt`, `idea-disapproved.txt`
 - **Branch strategy** — Configures `develop`, `staging`, `main` branches
 - **CLAUDE.md** — Adds framework guidance with project-specific variables
-- **`.claude/project-config.json`** — Project configuration including vector memory and social announce settings
+- **`.claude/project-config.json`** — Project configuration including worktrees (enabled by default with `max_count`, `cleanup_after_days`, `base_dir`), vector memory, and social announce settings
 
 The setup wizard guides you through:
 1. Project name and context
@@ -162,9 +162,13 @@ The idea is promoted to a full task in `to-do.txt` with technical details, file 
 ```
 
 This:
-1. Creates an isolated git worktree at `.worktrees/task/AUTH-0001/`
-2. Presents a technical briefing (description, approach, files to modify)
-3. Moves the task from `to-do.txt` to `progressing.txt`
+1. Enforces worktree limits (auto-prunes stale or excess worktrees based on `max_count` and `cleanup_after_days`)
+2. Creates an isolated git worktree at `.worktrees/task/AUTH-0001/`
+3. Verifies vector memory resolves to the shared main repo index
+4. Presents a technical briefing (description, approach, files to modify)
+5. Moves the task from `to-do.txt` to `progressing.txt`
+
+> **Note:** Worktrees are enabled by default since v4.0.2. Configure limits via `worktrees.max_count` (default: 10) and `worktrees.cleanup_after_days` (default: 7) in `project-config.json`.
 
 ### Step 6: Implement and Close
 

@@ -1,79 +1,72 @@
 {
   "version": "1.0",
-  "generated_at": "2026-03-19T01:58:38.277161Z",
+  "generated_at": "2026-03-20T00:33:58.666375Z",
+  "visual_richness": "tiny",
   "sections": [
     {
       "name": "index",
       "file": "index.md",
       "source_files": [
         {
-          "path": ".claude-plugin/plugin.json",
-          "hash": "4dc2961f136bb7ba9068347d28abd0080f4cac0f02cab19e76ec698ce5e302a1"
+          "path": "CLAUDE.md",
+          "hash": "f81b505de94c9853fa9641d42825a9a76f70923135da06ea03baacd49fc1a8d8"
         },
         {
           "path": "README.md",
           "hash": "5c05fa5b2ce1d3d6321a9b6456221d374c26f8e6f6ca9fa94f0f102a8d1f616e"
         }
       ],
-      "generated_at": "2026-03-19T01:58:38.275218Z"
+      "generated_at": "2026-03-20T00:33:58.664128Z"
     },
     {
       "name": "architecture",
       "file": "architecture.md",
       "source_files": [
         {
-          "path": "scripts/task_manager.py",
-          "hash": "2919bd4bb484151b955ad62e5726c7acf08b720ca5662b1badb1d1ae68832a63"
-        },
-        {
-          "path": "scripts/release_manager.py",
-          "hash": "8a7308d04b40ee86590f18baebbad8bd7b9d491260731fb972f82b817c551058"
-        },
-        {
           "path": "scripts/skill_helper.py",
-          "hash": "e5e7d3f557aa94275a3248d3c9473c3edbb5311399f4923c7d36fd14f77a8d62"
-        },
-        {
-          "path": "scripts/docs_manager.py",
-          "hash": "515b0340d74c924bf3b651ece6001f2dbe120b97de87b330d9df482121033a4e"
+          "hash": "b192681ec44dd0442864b69dafe3eb35e018484fe792b0c7bc3e450a29f848c8"
         },
         {
           "path": "scripts/vector_memory.py",
-          "hash": "0450d7e72f16cdaddcada113b07057e7f23945b4422610668712496649b1fffe"
+          "hash": "a9ab3a34e52f4f2895b3a6111f31508de9fe931fa13edb6a6a3c3cd1368d0d6c"
+        },
+        {
+          "path": "scripts/memory_protocol.py",
+          "hash": "bfd770a30e47a2da34d94809b2b19d58fa9f778d795ad8ccb3665fae650a19f4"
+        },
+        {
+          "path": "scripts/memory_lock.py",
+          "hash": "706696177bdfaeab21a21b1d835faafea22abd3d833e7515dc882b67c0b74525"
+        },
+        {
+          "path": "scripts/config_lock.py",
+          "hash": ""
+        },
+        {
+          "path": "scripts/deps_check.py",
+          "hash": "7787b49e205692621d3224930df7898d561fd3d1a308f75afecf86cb2483cf6c"
         },
         {
           "path": "scripts/mcp_server.py",
           "hash": "f55a2a42fa21abcc0c9648a0af33a0248753d568ba69214adc8de41a242eacb8"
-        },
-        {
-          "path": "scripts/memory_protocol.py",
-          "hash": "c235fb3bda6e50fd49abc47af37a04b879dc7f1bcc73f4575a9e1b134b52b325"
-        },
-        {
-          "path": "scripts/memory_lock.py",
-          "hash": "c83a5d8dfb5e1ff7c52d28b399f1d9a04baa6eae1e5e6d91dc18a7864ff19257"
         }
       ],
-      "generated_at": "2026-03-19T01:58:38.275755Z"
+      "generated_at": "2026-03-20T00:33:58.664493Z"
     },
     {
       "name": "getting-started",
       "file": "getting-started.md",
       "source_files": [
         {
+          "path": "CLAUDE.md",
+          "hash": "f81b505de94c9853fa9641d42825a9a76f70923135da06ea03baacd49fc1a8d8"
+        },
+        {
           "path": "README.md",
           "hash": "5c05fa5b2ce1d3d6321a9b6456221d374c26f8e6f6ca9fa94f0f102a8d1f616e"
-        },
-        {
-          "path": ".claude-plugin/plugin.json",
-          "hash": "4dc2961f136bb7ba9068347d28abd0080f4cac0f02cab19e76ec698ce5e302a1"
-        },
-        {
-          "path": "CLAUDE.md",
-          "hash": "4abde75f045b5936a3c7c7aa4bbc3992fab201679dc355e6e98cd9ddc3e901e5"
         }
       ],
-      "generated_at": "2026-03-19T01:58:38.275854Z"
+      "generated_at": "2026-03-20T00:33:58.664582Z"
     },
     {
       "name": "configuration",
@@ -81,19 +74,27 @@
       "source_files": [
         {
           "path": "config/project-config.example.json",
-          "hash": "54ce0bf09f59b16de1ee613ecb9e85cc280720787727316502d572626203968f"
+          "hash": "9a506b1c7f47d76caad81116515c9c8d242011f6e600076c92acc18052dccba6"
         },
         {
-          "path": "config/mcp-server.example.json",
-          "hash": "55a38c8c914fe7f79f39ff62ff1f5c2b498b59271e6dc934fc2c0c9725d5ea78"
+          "path": "CLAUDE.md",
+          "hash": "f81b505de94c9853fa9641d42825a9a76f70923135da06ea03baacd49fc1a8d8"
         }
       ],
-      "generated_at": "2026-03-19T01:58:38.275911Z"
+      "generated_at": "2026-03-20T00:33:58.664655Z"
     },
     {
       "name": "api-reference",
       "file": "api-reference.md",
       "source_files": [
+        {
+          "path": "scripts/skill_helper.py",
+          "hash": "b192681ec44dd0442864b69dafe3eb35e018484fe792b0c7bc3e450a29f848c8"
+        },
+        {
+          "path": "scripts/vector_memory.py",
+          "hash": "a9ab3a34e52f4f2895b3a6111f31508de9fe931fa13edb6a6a3c3cd1368d0d6c"
+        },
         {
           "path": "scripts/task_manager.py",
           "hash": "2919bd4bb484151b955ad62e5726c7acf08b720ca5662b1badb1d1ae68832a63"
@@ -101,25 +102,9 @@
         {
           "path": "scripts/release_manager.py",
           "hash": "8a7308d04b40ee86590f18baebbad8bd7b9d491260731fb972f82b817c551058"
-        },
-        {
-          "path": "scripts/skill_helper.py",
-          "hash": "e5e7d3f557aa94275a3248d3c9473c3edbb5311399f4923c7d36fd14f77a8d62"
-        },
-        {
-          "path": "scripts/docs_manager.py",
-          "hash": "515b0340d74c924bf3b651ece6001f2dbe120b97de87b330d9df482121033a4e"
-        },
-        {
-          "path": "scripts/vector_memory.py",
-          "hash": "0450d7e72f16cdaddcada113b07057e7f23945b4422610668712496649b1fffe"
-        },
-        {
-          "path": "scripts/mcp_server.py",
-          "hash": "f55a2a42fa21abcc0c9648a0af33a0248753d568ba69214adc8de41a242eacb8"
         }
       ],
-      "generated_at": "2026-03-19T01:58:38.276251Z"
+      "generated_at": "2026-03-20T00:33:58.664971Z"
     },
     {
       "name": "deployment",
@@ -132,13 +117,9 @@
         {
           "path": ".github/workflows/release.yml",
           "hash": "d4ff3366b9393a95bd21f9208ea6b57a06f126ec3e0f86354c9c0615d4895561"
-        },
-        {
-          "path": "README.md",
-          "hash": "5c05fa5b2ce1d3d6321a9b6456221d374c26f8e6f6ca9fa94f0f102a8d1f616e"
         }
       ],
-      "generated_at": "2026-03-19T01:58:38.276344Z"
+      "generated_at": "2026-03-20T00:33:58.665031Z"
     },
     {
       "name": "development",
@@ -146,18 +127,26 @@
       "source_files": [
         {
           "path": "CLAUDE.md",
-          "hash": "4abde75f045b5936a3c7c7aa4bbc3992fab201679dc355e6e98cd9ddc3e901e5"
+          "hash": "f81b505de94c9853fa9641d42825a9a76f70923135da06ea03baacd49fc1a8d8"
         },
         {
-          "path": "README.md",
-          "hash": "5c05fa5b2ce1d3d6321a9b6456221d374c26f8e6f6ca9fa94f0f102a8d1f616e"
+          "path": "tests/test_config_lock.py",
+          "hash": ""
         },
         {
-          "path": ".claude-plugin/plugin.json",
-          "hash": "4dc2961f136bb7ba9068347d28abd0080f4cac0f02cab19e76ec698ce5e302a1"
+          "path": "tests/test_local_onnx.py",
+          "hash": ""
+        },
+        {
+          "path": "tests/test_search_log_security.py",
+          "hash": ""
+        },
+        {
+          "path": "tests/test_worktree_memory.py",
+          "hash": ""
         }
       ],
-      "generated_at": "2026-03-19T01:58:38.276436Z"
+      "generated_at": "2026-03-20T00:33:58.665126Z"
     },
     {
       "name": "troubleshooting",
@@ -165,18 +154,18 @@
       "source_files": [
         {
           "path": "scripts/deps_check.py",
-          "hash": "10632ab08e688d72fb1c0e8d3a9a4d6c16d9379d345b53c6c62752bc97632ad2"
+          "hash": "7787b49e205692621d3224930df7898d561fd3d1a308f75afecf86cb2483cf6c"
         },
         {
           "path": "scripts/vector_memory.py",
-          "hash": "0450d7e72f16cdaddcada113b07057e7f23945b4422610668712496649b1fffe"
+          "hash": "a9ab3a34e52f4f2895b3a6111f31508de9fe931fa13edb6a6a3c3cd1368d0d6c"
         },
         {
-          "path": "scripts/mcp_server.py",
-          "hash": "f55a2a42fa21abcc0c9648a0af33a0248753d568ba69214adc8de41a242eacb8"
+          "path": "scripts/embeddings/local_onnx.py",
+          "hash": "89011f28729434ba163c3b51d348fcd959de57caf4659f851daae184c42eaebd"
         }
       ],
-      "generated_at": "2026-03-19T01:58:38.276553Z"
+      "generated_at": "2026-03-20T00:33:58.665254Z"
     },
     {
       "name": "mcp-vector-memory",
@@ -184,77 +173,57 @@
       "source_files": [
         {
           "path": "scripts/vector_memory.py",
-          "hash": "0450d7e72f16cdaddcada113b07057e7f23945b4422610668712496649b1fffe"
-        },
-        {
-          "path": "scripts/mcp_server.py",
-          "hash": "f55a2a42fa21abcc0c9648a0af33a0248753d568ba69214adc8de41a242eacb8"
+          "hash": "a9ab3a34e52f4f2895b3a6111f31508de9fe931fa13edb6a6a3c3cd1368d0d6c"
         },
         {
           "path": "scripts/mcp_tools/search.py",
-          "hash": "333a4be35378ddf218e8e7a88aa309ffabe67d33ccf9ede389e54396b900cc9d"
+          "hash": "31f707746c4fc14a3e79e5a4fec6c2dd207a0fc4fef6704d9a9a8f92409aacc8"
         },
         {
           "path": "scripts/mcp_tools/task_context.py",
-          "hash": "154ec8c080d8bd0877e336ffa420311ba8587fdb251f2e9789048158fb9660be"
-        },
-        {
-          "path": "scripts/embeddings/__init__.py",
-          "hash": "6298356eab761c974ec968c5c31cb1523dce7e01d212df411df1e7232143c851"
-        },
-        {
-          "path": "scripts/embeddings/local_onnx.py",
-          "hash": "89011f28729434ba163c3b51d348fcd959de57caf4659f851daae184c42eaebd"
+          "hash": "6b3adba30751d64330ed21113b1bb10271001f2595579fcb0101cee7959e8e54"
         },
         {
           "path": "scripts/memory_protocol.py",
-          "hash": "c235fb3bda6e50fd49abc47af37a04b879dc7f1bcc73f4575a9e1b134b52b325"
+          "hash": "bfd770a30e47a2da34d94809b2b19d58fa9f778d795ad8ccb3665fae650a19f4"
         },
         {
           "path": "scripts/memory_lock.py",
-          "hash": "c83a5d8dfb5e1ff7c52d28b399f1d9a04baa6eae1e5e6d91dc18a7864ff19257"
+          "hash": "706696177bdfaeab21a21b1d835faafea22abd3d833e7515dc882b67c0b74525"
         },
         {
           "path": "scripts/deps_check.py",
-          "hash": "10632ab08e688d72fb1c0e8d3a9a4d6c16d9379d345b53c6c62752bc97632ad2"
+          "hash": "7787b49e205692621d3224930df7898d561fd3d1a308f75afecf86cb2483cf6c"
         },
         {
           "path": "config/project-config.example.json",
-          "hash": "54ce0bf09f59b16de1ee613ecb9e85cc280720787727316502d572626203968f"
-        },
-        {
-          "path": "config/mcp-server.example.json",
-          "hash": "55a38c8c914fe7f79f39ff62ff1f5c2b498b59271e6dc934fc2c0c9725d5ea78"
+          "hash": "9a506b1c7f47d76caad81116515c9c8d242011f6e600076c92acc18052dccba6"
         }
       ],
-      "generated_at": "2026-03-19T01:58:38.276914Z"
+      "generated_at": "2026-03-20T00:33:58.665521Z"
     },
     {
       "name": "llm-context",
       "file": "llm-context.md",
       "source_files": [
         {
-          "path": "README.md",
-          "hash": "5c05fa5b2ce1d3d6321a9b6456221d374c26f8e6f6ca9fa94f0f102a8d1f616e"
-        },
-        {
           "path": "CLAUDE.md",
-          "hash": "4abde75f045b5936a3c7c7aa4bbc3992fab201679dc355e6e98cd9ddc3e901e5"
-        },
-        {
-          "path": "scripts/task_manager.py",
-          "hash": "2919bd4bb484151b955ad62e5726c7acf08b720ca5662b1badb1d1ae68832a63"
-        },
-        {
-          "path": "scripts/release_manager.py",
-          "hash": "8a7308d04b40ee86590f18baebbad8bd7b9d491260731fb972f82b817c551058"
+          "hash": "f81b505de94c9853fa9641d42825a9a76f70923135da06ea03baacd49fc1a8d8"
         },
         {
           "path": "config/project-config.example.json",
-          "hash": "54ce0bf09f59b16de1ee613ecb9e85cc280720787727316502d572626203968f"
+          "hash": "9a506b1c7f47d76caad81116515c9c8d242011f6e600076c92acc18052dccba6"
+        },
+        {
+          "path": "scripts/skill_helper.py",
+          "hash": "b192681ec44dd0442864b69dafe3eb35e018484fe792b0c7bc3e450a29f848c8"
+        },
+        {
+          "path": "scripts/vector_memory.py",
+          "hash": "a9ab3a34e52f4f2895b3a6111f31508de9fe931fa13edb6a6a3c3cd1368d0d6c"
         }
       ],
-      "generated_at": "2026-03-19T01:58:38.277157Z"
+      "generated_at": "2026-03-20T00:33:58.666198Z"
     }
   ]
 }

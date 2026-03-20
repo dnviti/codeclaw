@@ -2,7 +2,7 @@
 title: API Reference
 description: CLI commands, skill interfaces, script subcommands, and hook specifications
 generated-by: claw-docs
-generated-at: 2026-03-19T00:00:00Z
+generated-at: 2026-03-20T00:25:00Z
 source-files:
   - scripts/task_manager.py
   - scripts/release_manager.py
@@ -215,6 +215,14 @@ python3 scripts/skill_helper.py <subcommand> [options]
 | `refresh-branch-config` | -- | Refresh branch config cache |
 | `adapter-invoke` | `--platform PLATFORM`, `--tool TOOL`, `--tool-args ARGS` | Invoke a tool through the platform adapter |
 
+**Internal functions (used by `setup-task-worktree`):**
+
+| Function | Description |
+|----------|-------------|
+| `_load_worktree_config(root)` | Load the `worktrees` section from `project-config.json` with defaults applied. Validates `base_dir` is a safe relative path (rejects absolute paths and path traversal) |
+| `_enforce_worktree_limits(root, wt_config)` | Prune worktrees exceeding `max_count` or `cleanup_after_days`. Skips worktrees with uncommitted changes. Returns list of removed paths |
+| `_verify_worktree_memory_sharing(main_root, wt_dir)` | Verify that the vector index path from a worktree resolves to the main repo's shared location via `git rev-parse --git-common-dir` |
+
 ### ollama_manager.py
 
 ```bash
@@ -266,6 +274,8 @@ python3 scripts/vector_memory.py <subcommand> [options]
 | `gc` | `--root PATH`, `--ttl-days N`, `--deep`, `--json` | Garbage-collect stale entries; compact index |
 | `agents` | `--root PATH`, `--status STATUS`, `--type TYPE`, `--json` | List active/historical agent sessions |
 | `conflicts` | `--root PATH`, `--status STATUS`, `--resolve ID`, `--json` | Show flagged contradictions between agents |
+| `validate-model` | `--root PATH`, `--model MODEL` | Validate embedding model files are present and intact |
+| `verify-worktree-sharing` | `--root PATH`, `--json` | Verify vector memory resolves to a shared location across worktrees. Reports whether the current directory is a worktree, the resolved main root, and lists all worktrees with their sharing status |
 | `hook` | `FILE_PATH` | PostToolUse hook: auto-index an edited file |
 
 > **Prerequisites:** `pip install "lancedb>=0.5.0,<1.0" "sentence-transformers>=2.7.0,<3.0"` (or `onnxruntime`+`tokenizers` as an alternative to `sentence-transformers`)

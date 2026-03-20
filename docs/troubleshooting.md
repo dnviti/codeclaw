@@ -2,7 +2,7 @@
 title: Troubleshooting
 description: Common errors, debugging techniques, and frequently asked questions
 generated-by: claw-docs
-generated-at: 2026-03-19T00:00:00Z
+generated-at: 2026-03-20T00:25:00Z
 source-files:
   - scripts/task_manager.py
   - scripts/release_manager.py
@@ -56,8 +56,11 @@ git worktree remove .worktrees/task/CODE --force
 **Common causes:**
 - A previous task session crashed without cleanup
 - The worktree directory was manually deleted but git still tracks it
+- The number of worktrees exceeds `max_count` (default: 10) and auto-pruning cannot remove any because they all have uncommitted changes
 
 **Worktree teardown note (v3.5.1+):** When a task worktree is removed via `TM remove-worktree`, the task branch is first merged into local develop before the worktree is deleted. If the local develop branch has uncommitted changes, the merge may fail — commit or stash local changes first.
+
+**Worktree auto-management (v4.0.2+):** Worktrees are enabled by default. The system auto-prunes worktrees exceeding `max_count` or older than `cleanup_after_days`. Worktrees with dirty working trees are never auto-removed. Configure via `worktrees` section in `project-config.json`.
 
 ### Release Pipeline Stuck
 
@@ -185,6 +188,83 @@ The checker reports each dependency's status and also detects available GPU acce
 ```bash
 python3 scripts/vector_memory.py status
 python3 scripts/vector_memory.py gc --json
+```
+
+### GPU Path Allowlist Rejection
+
+**Symptom:** Warning messages like `Ignoring non-allowlisted GPU library path: /some/path` or ONNX Runtime falls back to CPU despite GPU libraries being installed.
+
+**Cause:** The `deps_check.py` GPU path allowlist rejects library paths not matching the built-in defaults or user-configured patterns. This is a security measure to prevent config-injected paths from reaching ONNX Runtime.
+
+**Fix:**
+
+1. Check which paths are being rejected:
+   ```bash
+   python3 scripts/deps_check.py
+   ```
+
+2. Add the rejected path to the allowlist in `project-config.json`:
+   ```json
+   {
+     "vector_memory": {
+       "gpu_acceleration": {
+         "gpu_path_allowlist": ["/usr/local/cuda-12/lib64", "/opt/rocm/lib"]
+       }
+     }
+   }
+   ```
+
+3. Overly broad patterns like `"*"` or `"/*"` are rejected with a warning. Use specific directory paths or glob patterns.
+
+**Built-in defaults:** System library directories (`/usr/lib*`, `/usr/local/lib*`), CUDA paths (`/usr/local/cuda*/lib*`), ROCm paths (`/opt/rocm*/lib*`), and pip site-packages GPU directories are always permitted.
+
+### Search Log Security
+
+**Symptom:** Unexpected search log files appearing or permission errors on search log.
+
+**Details:** Search query logging is opt-in only (`vector_memory.search_log.enabled`). When enabled:
+- Logs are created with `0o600` permissions (owner-only read/write)
+- Entries are auto-purged after `retention_days` (default: 30)
+- A privacy notice is included in the config as `_privacy_notice`
+
+**To disable logging:**
+```json
+{
+  "vector_memory": {
+    "search_log": { "enabled": false }
+  }
+}
+```
+
+**To check/clear existing logs:**
+```bash
+ls -la .claude/memory/search_log.jsonl
+# Delete if no longer needed
+rm .claude/memory/search_log.jsonl
+```
+
+### Worktree Memory Sharing Issues
+
+**Symptom:** Vector memory not available or returning empty results when working in a task worktree, or separate indexes being created per worktree.
+
+**Debugging:**
+```bash
+# Verify memory sharing from a worktree directory
+python3 scripts/vector_memory.py verify-worktree-sharing --root .worktrees/task/CODE --json
+
+# Check the worktree_shared config
+python3 scripts/vector_memory.py configure --root .
+```
+
+**Common causes:**
+1. **`worktree_shared` is `false`** — Set `vector_memory.worktree_shared: true` in `project-config.json` (this is the default)
+2. **Worktree detached from main repo** — The worktree's `--git-common-dir` does not resolve to the main repo. Recreate the worktree: `/task continue CODE`
+3. **Index path misconfigured** — Ensure `vector_memory.index_path` uses a relative path that resolves inside the main repo
+
+**Verification output example:**
+```bash
+python3 scripts/vector_memory.py verify-worktree-sharing --json
+# Returns: {"in_worktree": true, "main_root": "/path/to/repo", "shared": true, "worktrees": [...]}
 ```
 
 ### Agentic Fleet Pipeline Fails
