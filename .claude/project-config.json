@@ -19,6 +19,14 @@
   "release_branch": "develop",
   "show_generated_footer": true,
   "python_command": "python3",
+  "quality_gate": {
+    "enabled": true,
+    "fail_on": ["critical", "high"],
+    "auto_fix": true,
+    "max_fix_iterations": 3,
+    "skip_tools": [],
+    "extra_args": {}
+  },
   "memory_consistency": {
     "gc_ttl_days": 30,
     "max_index_size_mb": 500,

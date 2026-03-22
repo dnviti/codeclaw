@@ -273,6 +273,10 @@ Execute these steps IN ORDER:
 
 **Step 3 — Security Analysis:** Analyze for: injection vulnerabilities, authentication/authorization flaws, secret exposure, insecure dependencies, input validation gaps, OWASP Top 10. Produce a findings list.
 
+**Step 3.5 — Local Quality Gate:** Run the local quality gate on the PR's changed files:
+`python3 ${{CLAUDE_PLUGIN_ROOT}}/scripts/quality_gate.py --root <WORKTREE_DIR> --files <changed_files_from_diff> --verify-command '{VERIFY_COMMAND}' --json`
+Parse the JSON result. Merge any findings from the quality gate into the optimization and security findings lists. If `passed` is `false` and blocking findings remain after auto-fix iterations, include them in the Step 4 comment as a separate **Quality Gate** section.
+
 **Step 4 — Comment Findings on PR:** Post a structured comment on PR #{NUMBER} using `{PLATFORM_CLI} pr comment {NUMBER}` separating optimization findings from security findings with severity for each.
 
 **Step 5 — Apply Fixes:** Implement fixes for all identified issues. Push fix commits to the PR branch. For issues requiring human judgment, flag as UNRESOLVED.
