@@ -13,6 +13,11 @@ on:
     # Weekly scan every Monday at 06:00 UTC
     - cron: "0 6 * * 1"
   workflow_dispatch:
+    inputs:
+      codeql_languages:
+        description: "Comma-separated CodeQL languages (e.g. javascript,python)"
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -34,27 +39,32 @@ jobs:
           deny-licenses: GPL-3.0, AGPL-3.0
           comment-summary-in-pr: always
 
-  # ── CodeQL SAST (uncomment for public repos or GitHub Advanced Security) ──
-  # codeql:
-  #   name: CodeQL Analysis
-  #   runs-on: ubuntu-latest
-  #   permissions:
-  #     security-events: write
-  #     contents: read
-  #   steps:
-  #     - name: Checkout code
-  #       uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-  #
-  #     - name: Initialize CodeQL
-  #       uses: github/codeql-action/init@ff0a06e83cb2de871e5a09832bc6a81e7276941f # v3.28.18
-  #       with:
-  #         languages: [LANGUAGE]  # javascript, python, go, java, etc.
-  #
-  #     - name: Autobuild
-  #       uses: github/codeql-action/autobuild@ff0a06e83cb2de871e5a09832bc6a81e7276941f # v3.28.18
-  #
-  #     - name: Perform CodeQL Analysis
-  #       uses: github/codeql-action/analyze@ff0a06e83cb2de871e5a09832bc6a81e7276941f # v3.28.18
+  # ── CodeQL SAST ──────────────────────────────────────────────────
+  codeql:
+    name: CodeQL Analysis (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    if: github.event.inputs.codeql_languages != ''
+    permissions:
+      security-events: write
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        language: ${{ fromJson(format('["{0}"]', join(fromJson(format('["{0}"]', replace(github.event.inputs.codeql_languages || 'javascript', ',', '","'))), '","'))) }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@ff0a06e83cb2de871e5a09832bc6a81e7276941f # v3.28.18
+        with:
+          languages: ${{ matrix.language }}
+
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@ff0a06e83cb2de871e5a09832bc6a81e7276941f # v3.28.18
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@ff0a06e83cb2de871e5a09832bc6a81e7276941f # v3.28.18
 
   # ── Secret scanning with TruffleHog ──────────────────────────────
   secret-scan:

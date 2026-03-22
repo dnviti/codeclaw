@@ -229,6 +229,26 @@ python3 ${CLAUDE_PLUGIN_ROOT}/scripts/vector_memory.py hook <changed_file>
 
 Run this for each file that was created or modified during implementation. This is non-blocking and silent on failure.
 
+**6-review. Run quality gate:**
+
+Run the local quality gate on changed files:
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/quality_gate.py --root <PROJECT_ROOT> --files <changed_files> --verify-command "<CTX.config.verify_command>" --json
+```
+
+Parse the JSON result. If `passed` is `false`:
+
+1. Present the dashboard from `result.dashboard`.
+2. Attempt iterative auto-fix: the quality gate runs up to `max_fix_iterations` (default 3) internally, applying auto-fixes between iterations.
+3. After the loop, if blocking findings remain (critical/high severity), present them grouped by tool.
+
+**GATE (blocking findings remain):** "Fix remaining issues manually and re-run" / "Proceed despite findings (not recommended)" / "Cancel task closure"
+
+If `passed` is `true`, or user chooses to proceed: continue to 6a.
+
+This step is non-blocking and silent on failure (e.g., if the quality gate script is unavailable or errors out, log a warning and proceed).
+
 **6a. Generate the Testing Guide (do NOT present yet):**
 
 Derive from TECHNICAL DETAILS and Files involved. Format:
