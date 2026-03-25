@@ -19,6 +19,12 @@ import subprocess
 import sys
 from pathlib import Path
 
+_SCRIPT_DIR = Path(__file__).resolve().parent
+if str(_SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPT_DIR))
+
+from common import find_project_root
+
 # ── Color mappings ────────────────────────────────────────────────────────
 
 PRIORITY_COLORS = {
@@ -42,18 +48,6 @@ DEFAULT_COLOR = "ededed"
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────
-
-def find_project_root() -> Path:
-    """Find project root via git."""
-    try:
-        result = subprocess.run(
-            ["git", "rev-parse", "--show-toplevel"],
-            capture_output=True, text=True, check=True,
-        )
-        return Path(result.stdout.strip())
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        return Path.cwd()
-
 
 def load_config(root: Path) -> tuple[dict, str]:
     """Load issues tracker config. Returns (data, config_path)."""

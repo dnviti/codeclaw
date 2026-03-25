@@ -35,6 +35,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+_SCRIPT_DIR = Path(__file__).resolve().parent
+if str(_SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPT_DIR))
+
+from common import parse_skill_md
+
 
 # ── Constants ───────────────────────────────────────────────────────────────
 
@@ -48,16 +54,6 @@ MARKER_START = "<!-- CodeClaw-EXPORT:START -->"
 MARKER_END = "<!-- CodeClaw-EXPORT:END -->"
 MARKER_HASH_PREFIX = "<!-- CodeClaw-EXPORT-HASH:"
 JSON_MARKER_KEY = "__claw_export_hash"
-
-# Frontmatter regex: YAML between --- delimiters
-FRONTMATTER_RE = re.compile(
-    r"^---\s*\n(.*?)\n---\s*\n",
-    re.DOTALL,
-)
-
-# Simple YAML key: value parser (avoids PyYAML dependency).
-# NOTE: Only handles flat key: value pairs; multi-line/nested YAML is not supported.
-YAML_KV_RE = re.compile(r'^(\w[\w-]*):\s*"?([^"]*?)"?\s*$', re.MULTILINE)
 
 # Pre-compiled regex for replacing idempotency marker blocks
 MARKER_BLOCK_RE = re.compile(
@@ -90,45 +86,6 @@ def _read_plugin_version() -> str:
 
 
 # ── Skill Parsing ──────────────────────────────────────────────────────────
-
-
-def parse_skill_md(skill_path: Path) -> dict[str, Any] | None:
-    """Parse a SKILL.md file into structured data.
-
-    Returns a dict with:
-        name          -- skill name from frontmatter
-        description   -- skill description from frontmatter
-        frontmatter   -- dict of all frontmatter key/value pairs
-        body          -- markdown body (everything after the frontmatter)
-        path          -- absolute path to the SKILL.md
-        directory     -- skill directory name
-    """
-    if not skill_path.exists():
-        return None
-
-    try:
-        content = skill_path.read_text(encoding="utf-8")
-    except OSError:
-        return None
-
-    frontmatter: dict[str, str] = {}
-    body = content
-
-    fm_match = FRONTMATTER_RE.match(content)
-    if fm_match:
-        fm_text = fm_match.group(1)
-        for kv_match in YAML_KV_RE.finditer(fm_text):
-            frontmatter[kv_match.group(1)] = kv_match.group(2).strip()
-        body = content[fm_match.end():]
-
-    return {
-        "name": frontmatter.get("name", skill_path.parent.name),
-        "description": frontmatter.get("description", ""),
-        "frontmatter": frontmatter,
-        "body": body.strip(),
-        "path": str(skill_path),
-        "directory": skill_path.parent.name,
-    }
 
 
 def discover_skills(skills_dir: Path | None = None) -> list[dict[str, Any]]:

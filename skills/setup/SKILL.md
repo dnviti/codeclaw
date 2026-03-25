@@ -13,14 +13,6 @@ Always respond and work in English.
 
 **CRITICAL:** At every `AskUserQuestion`: STOP completely, wait for the user's response, never assume an answer, never batch questions. This applies to ALL flows in this skill.
 
-## Shorthand
-
-| Alias | Expands to |
-|-------|------------|
-| `TM`  | `TM` |
-| `SH`  | `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/skill_helper.py` |
-| `PM`  | `TM platform-cmd` |
-
 ### Submodule Awareness
 
 When `SH context` returns `worktree.submodules` with entries, the project uses git submodules. The setup skill should:
@@ -560,9 +552,10 @@ Then return here for Step 10.
 Based on all answers collected:
 
 1. Create task/idea files: `SH create-project-files --project-name "<NAME>"`
-2. Create/update CLAUDE.md (see Step 11 for template)
-3. Create branches (from Step 4)
-4. Create `.worktrees/` in `.gitignore` if not present
+2. Create/update CLAUDE.md (see Step 11)
+3. Create AGENTS.md with project memory (see Step 11b — always, no prompt)
+4. Create branches (from Step 4)
+5. Create `.worktrees/` in `.gitignore` if not present
 
 ### Step 11: Create/Update CLAUDE.md
 
@@ -578,9 +571,25 @@ Then apply any detected values (branch strategy, release config, etc.) to the ne
 
 **If CLAUDE.md exists and already contains `<!-- CodeClaw:START -->`**, skip.
 
+**Ensure CLAUDE.md contains `@AGENTS.md`**: If the file does not already contain the line `@AGENTS.md`, add it after the first heading/description line.
+
+### Step 11b: Create AGENTS.md (Always)
+
+**Always create AGENTS.md** — do NOT ask the user. This file stores project memory for all agents.
+
+**If AGENTS.md does not exist**, create it by copying the template:
+
+```bash
+cp ${CLAUDE_PLUGIN_ROOT}/templates/AGENTS.md ./AGENTS.md
+```
+
+Then populate the **Project Overview** section with a brief description based on the project scan (`SCAN`) results — project name, detected tech stack, and purpose (if derivable from README or manifest).
+
+**If AGENTS.md already exists**, skip — do not overwrite existing project memory.
+
 ### Step 12: Final Report
 
-Present a summary covering: project name, platform (tracking mode, repository, labels), branch strategy table (name + status per branch), CI/CD (pipelines, protection, files), task files created, CLAUDE.md status, release workflow, agentic fleet status.
+Present a summary covering: project name, platform (tracking mode, repository, labels), branch strategy table (name + status per branch), CI/CD (pipelines, protection, files), task files created, CLAUDE.md status, AGENTS.md status, release workflow, agentic fleet status.
 
 **Next Steps** (include only applicable items): fill CLAUDE.md sections, review pipeline files, replace CI placeholders, verify platform labels, customize `to-do.txt`, use `/task create` and `/idea create`, add API key secret.
 
@@ -946,7 +955,7 @@ Create `.claude/agentic-provider.json`:
 
 For openai/openclaw, adjust `provider`, `model`, and `budget` fields per the example configs in `${CLAUDE_PLUGIN_ROOT}/config/agentic-provider.example.json`.
 
-If provider is `openai`, also create `AGENTS.md` by copying content from `CLAUDE.md` (skip if `AGENTS.md` already exists).
+AGENTS.md is already created in Step 11b. If the provider is `openai` or `openclaw`, ensure AGENTS.md contains the same key sections as CLAUDE.md (the template already handles this).
 
 ### Step A6: Verify Files
 

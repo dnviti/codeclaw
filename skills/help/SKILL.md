@@ -11,12 +11,6 @@ You are a help assistant for the CodeClaw plugin. Your job is to explain how the
 
 Always respond and work in English.
 
-## Shorthand
-
-| Alias | Expands to |
-|-------|------------|
-| `SH`  | `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/skill_helper.py` |
-
 ## Arguments
 
 `SH dispatch --skill help --args "$ARGUMENTS"`

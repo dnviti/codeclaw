@@ -15,15 +15,6 @@ Always respond and work in English.
 
 **State is saved automatically before each GATE** via `RM release-state-set --version X.X.X --stage N --stage-name "name"`.
 
-## Shorthand
-
-| Alias | Expands to |
-|-------|------------|
-| `RM`  | `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/release_manager.py` |
-| `TM`  | `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/task_manager.py` |
-| `SH`  | `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/skill_helper.py` |
-| `PM`  | `TM platform-cmd` |
-
 ## Release Context
 
 Run both and parse JSON:
@@ -57,17 +48,7 @@ Returns `flow` and `yolo`:
 - **Bare version** (e.g. `"1.2.0"`): Treated as `continue 1.2.0` for backward compat.
 - **`"auto"`**: Use `CTX.release_plan.next_version` or ask.
 
-Also returns `yolo: true/false`. See [Yolo Mode](#yolo-mode).
-
----
-
-## Yolo Mode
-
-When `yolo` is `true` in the dispatch result, **auto-select the recommended (first) option at every GATE** without waiting for user input. Log each auto-selected choice.
-
-**Yolo never auto-selects "Abort release".** If yolo encounters a situation where abort is the only safe option (e.g. loop counter >= 5), it pauses and asks the user.
-
-Apply yolo to all flows: Create, Generate, Continue (all stages), and Close.
+Also returns `yolo: true/false` (see **Yolo Mode** in CLAUDE.md). Apply yolo to all flows: Create, Generate, Continue (all stages), and Close.
 
 ---
 
@@ -260,6 +241,55 @@ Present before spawning: "Spawning N sub-agents (one per PR). Each will: analyze
 
 GATE: "Proceed with N agents" / "Abort release".
 
+**Execution mode:** If `$CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` = `"1"`, use Agent Teams mode. Otherwise skip to standard subagent mode.
+
+**── Agent Teams mode ──**
+
+Create team `"claw-pr-analysis-{VERSION}"` via `TeamCreate` with `description: "PR analysis for release {VERSION}"`. Create `TaskCreate` entries for each PR, plus `"Cross-PR security audit"`. Spawn teammates (`team_name: "claw-pr-analysis-{VERSION}"`):
+
+| Teammate | Count | Config |
+|----------|-------|--------|
+| `pr-analyst-{NUMBER}` | 1 per PR | `isolation: "worktree"`, `mode: "bypassPermissions"` |
+| `security-auditor` | 1 | `mode: "bypassPermissions"` |
+
+PR analyst prompt (`name: "pr-analyst-{NUMBER}"`):
+
+```
+"You are pr-analyst-{NUMBER} on team claw-pr-analysis-{VERSION}. Analyze PR #{NUMBER} ({TITLE}).
+1. Claim task via TaskUpdate
+2. Read the PR diff, understand changes and intent
+3. Analyze: performance bottlenecks, unnecessary complexity, dead code, redundant ops, dependency bloat, project standards
+4. Security scan: injection, auth flaws, secret exposure, insecure deps, input validation, OWASP Top 10
+5. Run quality gate: `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/quality_gate.py --root <WORKTREE_DIR> --files <changed_files> --verify-command '{VERIFY_COMMAND}' --json`
+6. Post structured comment on PR via `{PLATFORM_CLI} pr comment {NUMBER}` (optimization + security findings by severity)
+7. Apply fixes for all identified issues. Push fix commits
+8. Post follow-up comment documenting fixes and unresolved issues
+9. SendMessage to security-auditor: 'PR #{NUMBER} analyzed. Findings: [summary]'
+10. Wait for security-auditor cross-check approval
+11. Merge: `{PLATFORM_CLI} pr merge {NUMBER} --squash --delete-branch`
+12. `TM remove-worktree --task-code {TASK_CODE}`
+13. TaskUpdate completed. SendMessage to team lead: {{ pr_number, findings_count, fixes_applied, unresolved[], merged: bool }}"
+```
+
+Security auditor prompt (`name: "security-auditor"`):
+
+```
+"You are security-auditor on team claw-pr-analysis-{VERSION}. Cross-validate security findings across all PRs.
+1. Claim 'Cross-PR security audit' task via TaskUpdate
+2. Wait for pr-analyst SendMessage notifications with findings
+3. For each PR's findings:
+   a. Validate reported vulnerabilities are real (no false positives)
+   b. Check for cross-PR security implications (e.g., one PR opens a vector that another doesn't close)
+   c. Check for systemic patterns (same vulnerability type across multiple PRs)
+   d. If critical issues missed by analyst → SendMessage to analyst: 'Additional finding for PR #{NUMBER}: [details]'
+4. After all PRs reviewed: SendMessage approval to each analyst
+5. TaskUpdate completed. SendMessage to team lead: {{ total_findings_validated, false_positives_caught, cross_pr_issues[], systemic_patterns[] }}"
+```
+
+After all teammates complete → `SendMessage {type: "shutdown_request"}` to all → `TeamDelete`. Continue to step 4a (collect results).
+
+**── Standard subagent mode (default) ──**
+
 For each PR, spawn Agent with `isolation: "worktree"` and `mode: "bypassPermissions"`:
 
 ```
@@ -272,6 +302,10 @@ Execute these steps IN ORDER:
 **Step 2 — Code Optimize:** Analyze for: performance bottlenecks, unnecessary complexity, dead code, redundant operations, dependency bloat, adherence to project standards. Produce a findings list.
 
 **Step 3 — Security Analysis:** Analyze for: injection vulnerabilities, authentication/authorization flaws, secret exposure, insecure dependencies, input validation gaps, OWASP Top 10. Produce a findings list.
+
+**Step 3.5 — Local Quality Gate:** Run the local quality gate on the PR's changed files:
+`python3 ${{CLAUDE_PLUGIN_ROOT}}/scripts/quality_gate.py --root <WORKTREE_DIR> --files <changed_files_from_diff> --verify-command '{VERIFY_COMMAND}' --json`
+Parse the JSON result. Merge any findings from the quality gate into the optimization and security findings lists. If `passed` is `false` and blocking findings remain after auto-fix iterations, include them in the Step 4 comment as a separate **Quality Gate** section.
 
 **Step 4 — Comment Findings on PR:** Post a structured comment on PR #{NUMBER} using `{PLATFORM_CLI} pr comment {NUMBER}` separating optimization findings from security findings with severity for each.
 
@@ -404,6 +438,34 @@ Present: "Found N workflows triggered by tag push."
 If no workflows are found, skip to `7g` with: "No CI workflows triggered — proceeding."
 
 **7f-ter.** Spawn one monitoring agent per workflow (all in parallel):
+
+**Execution mode:** If `$CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` = `"1"`, use Agent Teams mode. Otherwise skip to standard subagent mode.
+
+**── Agent Teams mode ──**
+
+Create team `"claw-ci-monitor-{VERSION}"` via `TeamCreate` with `description: "CI monitoring for release {VERSION}"`. Create `TaskCreate` entries for each workflow. Spawn teammates (`team_name: "claw-ci-monitor-{VERSION}"`):
+
+| Teammate | Count | Config |
+|----------|-------|--------|
+| `ci-monitor-{RUN_ID}` | 1 per workflow | `mode: "bypassPermissions"` |
+
+CI monitor prompt (`name: "ci-monitor-{RUN_ID}"`):
+
+```
+"You are ci-monitor-{RUN_ID} on team claw-ci-monitor-{VERSION}. Monitor CI run {RUN_ID} ('{WORKFLOW_NAME}').
+1. Claim task via TaskUpdate
+2. Poll `{PLATFORM_CLI} run view {RUN_ID} --repo {REPO} --json status,conclusion` every 30s until completed
+3. If success: TaskUpdate completed. SendMessage to team lead: {{ workflow: '{WORKFLOW_NAME}', conclusion: 'success' }}
+4. If failure:
+   a. Get logs: `{PLATFORM_CLI} run view {RUN_ID} --repo {REPO} --log-failed`
+   b. Identify root cause and fix relevant files
+   c. Commit to {DEVELOPMENT_BRANCH}, push, open PR to {PRODUCTION_BRANCH}, merge
+   d. TaskUpdate completed. SendMessage to team lead: {{ workflow: '{WORKFLOW_NAME}', conclusion: 'fixed', root_cause, fix_description, pr_url }}"
+```
+
+After all teammates complete → `SendMessage {type: "shutdown_request"}` to all → `TeamDelete`. Continue to step 7f-quater (collect results).
+
+**── Standard subagent mode (default) ──**
 
 For each workflow run, spawn Agent with `mode: "bypassPermissions"`:
 ```

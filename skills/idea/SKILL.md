@@ -11,15 +11,6 @@ You are an idea manager for this project. You handle the full lifecycle of ideas
 
 Always respond and work in English. All idea and task content MUST be written in **English**.
 
-## Shorthand
-
-| Alias | Expands to |
-|-------|------------|
-| `TM`  | `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/task_manager.py` |
-| `SH`  | `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/skill_helper.py` |
-| `RM`  | `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/release_manager.py` |
-| `PM`  | `TM platform-cmd` |
-
 ## Skill Context
 
 `SH context` → platform config (mode, cli, repo, labels), worktree state, branch config as JSON. Use throughout.
@@ -42,7 +33,7 @@ Always respond and work in English. All idea and task content MUST be written in
 
 Routes to: `create`, `approve`, `disapprove`, `edit`, `refactor`, `scout`, or `list` flow.
 
-Also returns `yolo: true/false`. When `yolo` is `true`, **auto-select the recommended (first) option at every GATE** without waiting for user input. Log each auto-selected choice. Yolo never auto-selects destructive or cancel options.
+Also returns `yolo: true/false` (see **Yolo Mode** in CLAUDE.md).
 
 If `list`: show all ideas (from `ideas.txt` in local/dual mode, or platform issues in platform-only mode) and ask which action to perform. STOP.
 

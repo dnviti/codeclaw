@@ -58,53 +58,7 @@ SECTION_HEADER_RE = re.compile(r"^\s+SECTION\s+([A-Z])\s+—\s+(.+)$")
 
 # ── Project Root Detection ──────────────────────────────────────────────────
 
-def find_project_root() -> Path:
-    """Find project root via git or by walking up to find to-do.txt."""
-    try:
-        result = subprocess.run(
-            ["git", "rev-parse", "--show-toplevel"],
-            capture_output=True, text=True, check=True,
-        )
-        root = Path(result.stdout.strip())
-        if (root / "to-do.txt").exists():
-            return root
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        pass
-
-    d = Path.cwd()
-    while d != d.parent:
-        if (d / "to-do.txt").exists():
-            return d
-        d = d.parent
-
-    # Last resort: current directory
-    return Path.cwd()
-
-def get_main_repo_root() -> Path:
-    """Return main repo root, even from inside a git worktree.
-
-    In a worktree, git rev-parse --show-toplevel returns the *worktree* root,
-    not the main repository root.  This function detects that case and returns
-    the actual main repo root so that task files (to-do.txt, progressing.txt,
-    etc.) and config files (.claude/) are always found correctly.
-    """
-    try:
-        common = subprocess.run(
-            ["git", "rev-parse", "--git-common-dir"],
-            capture_output=True, text=True, check=True,
-        ).stdout.strip()
-        git_dir = subprocess.run(
-            ["git", "rev-parse", "--git-dir"],
-            capture_output=True, text=True, check=True,
-        ).stdout.strip()
-        common_path = Path(common).resolve()
-        git_dir_path = Path(git_dir).resolve()
-        if common_path != git_dir_path:
-            # Inside a worktree: common_dir is /path/to/main/.git
-            return common_path.parent
-        return find_project_root()
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        return find_project_root()
+from common import find_project_root, get_main_repo_root, load_project_config
 
 def is_in_worktree() -> bool:
     """Return True if CWD is inside a git worktree (not the main repo)."""
@@ -1573,18 +1527,6 @@ def _load_platform_config():
             }
     return {"platform": "github", "repo": "", "cli": "gh", "labels": {}}
 
-def _load_project_config() -> dict:
-    """Load project config from .claude/project-config.json."""
-    root = get_main_repo_root()
-    fp = root / ".claude" / "project-config.json"
-    if fp.exists():
-        try:
-            with open(fp, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except (json.JSONDecodeError, OSError):
-            pass
-    return {}
-
 def _get_cached_merge_strategy(target_branch: str) -> str:
     """Read the cached merge strategy for a target branch from issues-tracker.json.
 
@@ -2059,7 +2001,7 @@ def cmd_pr_body(args):
         issue_ref += "\n"
 
     # Check if footer is enabled in project config
-    project_cfg = _load_project_config()
+    project_cfg = load_project_config()
     show_footer = project_cfg.get("show_generated_footer", True)
     footer_text = ""
     if show_footer:
@@ -2324,7 +2266,12 @@ def _is_worktree_enabled_tm(root: Path) -> bool:
 
 
 def _is_shared_release_branch(branch_name: str) -> bool:
-    """Return True if the branch follows the shared release/<version> pattern."""
+    """Return True if the branch follows the shared release/<version> pattern.
+
+    Note: Since v4.0.3, worktree-disabled mode uses dedicated task/<code>
+    branches instead of shared release branches.  This helper is kept for
+    backward compatibility with older release branches that may still exist.
+    """
     return bool(re.match(r"^release/\d+\.\d+\.\d+$", branch_name))
 
 
@@ -2344,8 +2291,10 @@ def cmd_remove_worktree(args):
     # Must run from main_root (can't be inside the worktree being removed)
     cwd = str(main_root)
 
-    # When worktrees are disabled, tasks share a release/<version> branch.
-    # Detect the current branch to check if it's a shared release branch.
+    # When worktrees are disabled, tasks use dedicated task/<code> branches
+    # (same naming as worktree mode). No worktree directory to remove, but
+    # the branch merge and PR preservation logic still applies.
+    # Legacy: if a shared release/<version> branch is detected, preserve it.
     if not _is_worktree_enabled_tm(main_root):
         try:
             current_branch_result = subprocess.run(
@@ -2361,8 +2310,7 @@ def cmd_remove_worktree(args):
             pass
 
         if shared_release_branch:
-            # Skip merge and branch deletion — the shared release branch
-            # must persist until the release pipeline merges it.
+            # Legacy: shared release branch — preserve it.
             result = {
                 "success": True,
                 "worktree_removed": False,
@@ -2379,7 +2327,7 @@ def cmd_remove_worktree(args):
     no_merge = getattr(args, "no_merge_to_develop", False)
     if not no_merge:
         # Detect development branch: project config release_branch → fallback "develop"
-        proj_cfg = _load_project_config()
+        proj_cfg = load_project_config()
         dev_branch = proj_cfg.get("release_branch", "").strip() or "develop"
 
         # Guard: reject branch names that look like flags (e.g. "--something")
