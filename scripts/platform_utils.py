@@ -96,32 +96,6 @@ def get_shell_info() -> dict:
     }
 
 
-# -- File Copy ----------------------------------------------------------------
-
-def safe_copy_tree(src: str | Path, dst: str | Path) -> None:
-    """Recursively copy a directory tree, cross-platform.
-
-    Replaces Unix-specific ``cp -r`` calls with ``shutil.copytree``.
-    If the destination already exists, files are merged (existing files
-    are overwritten).
-
-    Parameters
-    ----------
-    src : str | Path
-        Source directory.
-    dst : str | Path
-        Destination directory.
-    """
-    src = Path(src)
-    dst = Path(dst)
-
-    if not src.is_dir():
-        raise FileNotFoundError(f"Source directory does not exist: {src}")
-
-    # Python 3.8+: dirs_exist_ok=True handles merging
-    shutil.copytree(str(src), str(dst), dirs_exist_ok=True)
-
-
 # -- Shell Command Helpers ----------------------------------------------------
 
 def read_file_for_prompt(file_path: str | Path) -> str:
@@ -142,23 +116,6 @@ def read_file_for_prompt(file_path: str | Path) -> str:
         The file contents.
     """
     return Path(file_path).read_text(encoding="utf-8")
-
-
-def build_shell_invocation(cmd_parts: list[str], *, shell: bool = False) -> dict:
-    """Prepare a subprocess invocation dict that works cross-platform.
-
-    When *shell* is False (the default), returns list-format args which
-    bypass the shell entirely and work on all OSes.  When *shell* is True,
-    returns a single string suitable for the native shell.
-
-    Returns
-    -------
-    dict
-        Keys: ``args`` (list | str), ``shell`` (bool).
-    """
-    if shell:
-        return {"args": " ".join(cmd_parts), "shell": True}
-    return {"args": cmd_parts, "shell": False}
 
 
 # -- Subprocess Audit Helpers -------------------------------------------------

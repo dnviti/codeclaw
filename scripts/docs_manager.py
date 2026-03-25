@@ -32,29 +32,10 @@ from analyzers import (  # noqa: E402
     load_gitignore_patterns,
     walk_source_files,
 )
+from common import get_main_repo_root  # noqa: E402
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────
-
-def get_main_repo_root() -> Path:
-    """Return the main git repo root (not a worktree)."""
-    try:
-        result = subprocess.run(
-            ["git", "rev-parse", "--show-toplevel"],
-            capture_output=True, text=True, check=True,
-        )
-        top = Path(result.stdout.strip())
-        common = subprocess.run(
-            ["git", "rev-parse", "--git-common-dir"],
-            capture_output=True, text=True, check=True, cwd=top,
-        )
-        common_dir = Path(common.stdout.strip())
-        if common_dir.is_absolute():
-            return common_dir.parent
-        return (top / common_dir).resolve().parent
-    except (subprocess.CalledProcessError, OSError):
-        return Path.cwd()
-
 
 DOCS_DIR_NAME = "docs"
 MANIFEST_NAME = ".docs-manifest.json"

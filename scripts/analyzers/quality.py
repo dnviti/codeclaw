@@ -468,8 +468,19 @@ def analyze_security(root: Path, gitignore_patterns: list[str]) -> dict:
 
 # ── Report Generator ────────────────────────────────────────────────────────
 
-def generate_report(root: Path, gitignore_patterns: list[str] | None = None) -> str:
-    """Generate the full code quality report."""
+def generate_report(
+    root: Path,
+    gitignore_patterns: list[str] | None = None,
+    external_findings: list[dict] | None = None,
+) -> str:
+    """Generate the full code quality report.
+
+    Args:
+        root: Project root directory.
+        gitignore_patterns: Patterns to exclude from analysis.
+        external_findings: Optional findings from external tools (e.g., local_analyzers).
+            Each dict should have keys: tool, severity, category, file, message.
+    """
     root = root.resolve()
     if gitignore_patterns is None:
         gitignore_patterns = load_gitignore_patterns(root)
@@ -584,6 +595,23 @@ def generate_report(root: Path, gitignore_patterns: list[str] | None = None) -> 
     else:
         sections.append("- **No hardcoded secrets or injection patterns detected**")
     sections.append("")
+
+    # External Tool Findings
+    if external_findings:
+        sections.append("## External Tool Findings\n")
+        by_tool: dict[str, list[dict]] = {}
+        for ef in external_findings:
+            tool_name = ef.get("tool", "unknown")
+            by_tool.setdefault(tool_name, []).append(ef)
+        for tool_name, tool_findings in sorted(by_tool.items()):
+            sections.append(f"### {tool_name} ({len(tool_findings)} finding(s))\n")
+            for ef in tool_findings:
+                sev = ef.get("severity", "unknown")
+                msg = ef.get("message", "")
+                fpath = ef.get("file", "")
+                line_info = f":{ef['line']}" if ef.get("line") else ""
+                sections.append(f"- **[{sev}]** `{fpath}{line_info}` — {msg}")
+            sections.append("")
 
     # Technical Debt Summary
     sections.append("## Technical Debt Summary\n")

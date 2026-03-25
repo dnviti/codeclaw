@@ -11,14 +11,6 @@ You are a test management assistant for this project. Your job is to analyze tes
 
 **CRITICAL:** At every `GATE`: STOP completely, wait for the user's response, never assume an answer, never batch questions.
 
-## Shorthand
-
-| Alias | Expands to |
-|-------|------------|
-| `TM`  | `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/task_manager.py` |
-| `SH`  | `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/skill_helper.py` |
-| `TESTS` | `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/test_manager.py` |
-
 ## Skill Context
 
 `SH context` -> platform config, worktree state, branch config, release config as JSON. Use throughout.
