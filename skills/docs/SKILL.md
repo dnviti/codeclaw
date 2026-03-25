@@ -13,15 +13,6 @@ Always respond and work in English.
 
 **Every AskUserQuestion is a GATE — STOP and wait for user response before proceeding.**
 
-## Shorthand
-
-| Alias | Expands to |
-|-------|------------|
-| `DM`  | `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/docs_manager.py` |
-| `SH`  | `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/skill_helper.py` |
-| `TM`  | `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/task_manager.py` |
-| `RM`  | `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/release_manager.py` |
-
 ## Context
 
 `SH context` → platform config, worktree state, branch config as JSON. Use throughout.
@@ -36,7 +27,7 @@ Returns `flow` and `yolo`:
 - **`"reset"`**: Remove all generated documentation.
 - **`"publish"`**: Build and publish docs as a website.
 
-Also returns `yolo: true/false`. When `yolo` is `true`, auto-select the recommended option at every GATE without waiting. Yolo never auto-selects destructive options (reset confirmation).
+Also returns `yolo: true/false` (see **Yolo Mode** in CLAUDE.md).
 
 ---
 

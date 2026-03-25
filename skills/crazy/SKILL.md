@@ -16,17 +16,6 @@ Always respond and work in English.
 
 **Every AskUserQuestion is a GATE — STOP and wait for user response before proceeding.**
 
-## Shorthand
-
-| Alias | Expands to |
-|-------|------------|
-| `TM`  | `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/task_manager.py` |
-| `SH`  | `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/skill_helper.py` |
-| `RM`  | `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/release_manager.py` |
-| `PM`  | `TM platform-cmd` |
-| `DM`  | `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/docs_manager.py` |
-| `SA`  | `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/social_announcer.py` |
-
 ## Skill Context
 
 `SH context` -> platform config, worktree state, branch config, release config as JSON. Use throughout.
@@ -223,24 +212,11 @@ For each idea from Phase 1, evaluate:
 
 ### Step 2.2: Auto-Approve Relevant Ideas
 
-For each idea that passes evaluation, execute the `/idea approve` logic:
-
-1. Read the full idea details.
-2. Strip the `IDEA-` prefix to derive the task code.
-3. Explore codebase for implementation context.
-4. Draft a full task block with Priority, Dependencies, Description, Technical Details, Files Involved.
-5. Create the task:
-   - **Platform-only:** `PM create-issue` with task labels, priority label, `status:todo`, section label, `assignee="@me"`.
-   - **Local/dual:** Insert task block into `to-do.txt` via `Edit`, remove idea from `ideas.txt` via `TM remove`.
-6. Close/remove the idea from the ideas backlog.
+For each idea that passes evaluation, execute the standard `/idea approve` flow: derive task code from idea code, draft task block (Priority, Dependencies, Description, Technical Details, Files Involved), create the task via platform or local files, and close/remove the idea.
 
 ### Step 2.3: Auto-Disapprove Irrelevant Ideas
 
-For ideas that do not fit the project scope or are duplicates:
-
-1. Mark as disapproved with reason.
-   - **Platform-only:** Close issue with comment: "Idea disapproved. Reason: {reason}"
-   - **Local/dual:** Move to `idea-disapproved.txt` with rejection reason, remove from `ideas.txt`.
+For ideas that do not fit the project scope or are duplicates, execute the standard `/idea disapprove` flow with rejection reason.
 
 ### Step 2.4: Log Triage Results
 
@@ -345,32 +321,107 @@ Parse `Dependencies:` fields from each task in this release. Group independent t
 
 #### Step 5.1.3: Implement Batches
 
+**Execution mode:** If `$CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` = `"1"`, use Agent Teams mode. Otherwise skip to standard subagent mode.
+
+**── Agent Teams mode ──**
+
+Create team `"claw-crazy-{VERSION}"` via `TeamCreate` with `description: "Crazy builder batch implementation for release {VERSION}"`. Create `TaskCreate` entries for each task in the batch, plus `"QA review: batch {BATCH_NUM}"`, `"Documentation: batch {BATCH_NUM}"`, and `"Security scan: batch {BATCH_NUM}"`. Spawn teammates (all in parallel, `team_name: "claw-crazy-{VERSION}"`), scaled by project size:
+
+| Teammate | Count | Config |
+|----------|-------|--------|
+| `backend-dev-{CODE}` | 1 per task in batch | `isolation: "worktree"`, `mode: "bypassPermissions"` |
+| `frontend-dev-{CODE}` | 1 per task in batch | `isolation: "worktree"`, `mode: "bypassPermissions"` |
+| `qa-agent` | 1 | `mode: "bypassPermissions"` |
+| `documenter` | 1 | `mode: "bypassPermissions"` |
+| `security-scanner` | 1 | `mode: "bypassPermissions"` |
+
+Backend dev prompt (`name: "backend-dev-{CODE}"`):
+
+```
+"You are backend-dev-{CODE} on team claw-crazy-{VERSION}. Implement server-side logic for task {CODE}.
+1. Claim task via TaskUpdate
+2. `TM move {CODE} --to progressing` + `PM edit-issue number=ISSUE_NUM add-assignee="@me"`
+3. `SH setup-task-worktree --task-code {CODE} --base-branch {DEVELOPMENT_BRANCH}`
+4. `TM parse {CODE}` — read full task details
+5. Implement server-side logic, APIs, data layer per DESCRIPTION and TECHNICAL DETAILS
+6. Run {VERIFY_COMMAND} — fix and retry (max 3)
+7. Commit and push: `git add <files> && git commit -m 'feat(backend): {description} ({CODE})'` + `git push -u origin task/{CODE}`
+8. SendMessage to frontend-dev-{CODE}: 'Backend complete. API contracts: [details]'
+9. SendMessage to security-scanner: 'Backend changes ready. Files: [list]'
+10. Wait for security-scanner approval
+11. TaskUpdate completed. SendMessage to team lead: {{ code, success, summary, files_changed[] }}"
+```
+
+Frontend dev prompt (`name: "frontend-dev-{CODE}"`):
+
+```
+"You are frontend-dev-{CODE} on team claw-crazy-{VERSION}. Implement UI/client-side for task {CODE}.
+1. Wait for backend-dev-{CODE} SendMessage with API contracts
+2. If no frontend work needed: SendMessage to team lead 'No frontend for {CODE}', TaskUpdate completed, exit
+3. Reuse worktree, implement UI per DESCRIPTION and TECHNICAL DETAILS using backend APIs
+4. Run {VERIFY_COMMAND} — fix and retry (max 3)
+5. Commit and push
+6. SendMessage to security-scanner and qa-agent: 'Implementation complete for {CODE}'
+7. Wait for security + QA approval. Fix bugs if reported (max 3 iterations)
+8. Create PR via `PM create-pr` targeting {DEVELOPMENT_BRANCH} with milestone
+9. `TM move {CODE} --to done` + `TM remove-worktree --task-code {CODE}`
+10. TaskUpdate completed. SendMessage to team lead: {{ code, success, pr_url, files_changed[], error_if_any, failed_at_step }}"
+```
+
+QA agent prompt (`name: "qa-agent"`):
+
+```
+"You are qa-agent on team claw-crazy-{VERSION}. Test and review all implementations.
+1. Claim 'QA review' task via TaskUpdate
+2. Wait for frontend-dev SendMessage notifications
+3. For each task: read changed files, review for correctness, edge cases, error handling, code style, test coverage, run {VERIFY_COMMAND}
+4. Bugs found → SendMessage to responsible dev with specific issues. Wait for fix (max 3 iterations)
+5. Approved → SendMessage to frontend-dev: 'QA approved for {CODE}'
+6. Post QA comment on PR via `{PLATFORM_CLI} pr comment {NUMBER}`
+7. TaskUpdate completed. SendMessage to team lead: {{ reviewed_count, bugs_found, approved_count }}"
+```
+
+Documenter prompt (`name: "documenter"`):
+
+```
+"You are documenter on team claw-crazy-{VERSION}. Update docs as tasks are implemented.
+1. Claim 'Documentation' task via TaskUpdate
+2. Monitor teammate progress via SendMessage
+3. For each completed task: read changes, update/create docs in docs/, update README if needed
+4. Commit docs changes
+5. TaskUpdate completed. SendMessage to team lead: {{ docs_updated[], files_changed[] }}"
+```
+
+Security scanner prompt (`name: "security-scanner"`):
+
+```
+"You are security-scanner on team claw-crazy-{VERSION}.
+1. Claim 'Security scan' task via TaskUpdate
+2. Wait for backend-dev and frontend-dev SendMessage notifications
+3. For each PR: read diff + files, analyze for OWASP Top 10 (injection, broken auth, data exposure, XXE, broken access control, misconfiguration, XSS, insecure deserialization, vulnerable components, insufficient logging), hardcoded secrets, path traversal, race conditions, ReDoS, CSRF
+4. Run quality gate: `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/quality_gate.py --files <files> --json`
+5. Post security comment on PR (by severity + OWASP category)
+6. Critical → SendMessage to implementer AND team lead, block until fixed
+7. Approved → SendMessage approval to implementer
+8. TaskUpdate completed. SendMessage to team lead: {{ scanned_count, critical[], high[], medium[], low[] }}"
+```
+
+After all teammates complete → `SendMessage {type: "shutdown_request"}` to all → `TeamDelete`. Continue to Step 5.1.4.
+
+**── Standard subagent mode (default) ──**
+
 For each batch, spawn Agent subagents with `isolation: "worktree"` and `mode: "bypassPermissions"`, scaled by project size:
 
 ```
-prompt: "You are a task implementation agent. Implement task {CODE} for release {VERSION}.
-
-1. Mark task as in-progress: `TM move {CODE} --to progressing`
-2. Auto-assign: `PM edit-issue number=ISSUE_NUM add-assignee="@me"`
-3. Create worktree: `SH setup-task-worktree --task-code {CODE} --base-branch {DEVELOPMENT_BRANCH}`
-4. Read full task details: `TM parse {CODE}` or `PM view-issue`
-5. Explore the codebase: read all files listed in Files Involved and related code
-6. Implement the task according to DESCRIPTION and TECHNICAL DETAILS
-7. Create/modify files as specified in Files Involved
-8. Run verify command -- on failure, fix and retry (max 3 attempts)
-9. Commit: `git add <changed files> && git commit -m 'feat: {description} ({CODE})'`
-10. Push branch: `git push -u origin task/{code-lowercase}`
-11. Create PR: `PM create-pr title='feat: {description} ({CODE})' head='task/{code-lowercase}' base='{DEVELOPMENT_BRANCH}' body='Implements {CODE} for release {VERSION}' milestone='{VERSION}' assignee='@me'`
-12. Mark task as done: `TM move {CODE} --to done --completed-summary 'Implemented: {title}'`
-    Platform: `PM edit-issue number=ISSUE_NUM remove-labels='status:in-progress' add-labels='status:done'`
-    Platform: `PM close-issue number=ISSUE_NUM comment='Task completed and verified.'`
-13. Remove worktree: `TM remove-worktree --task-code {CODE}`
-
-On failure at any step, perform rollback:
-- If worktree was created but task not completed: `TM remove-worktree --task-code {CODE}`
-- If task was moved to progressing but not completed: `TM move {CODE} --to todo`
-- Always report the failure step number so the retry handler knows where to resume.
-
+prompt: "Implement task {CODE} for release {VERSION}. Follow the standard /task pick flow:
+1. `TM move {CODE} --to progressing` + `PM edit-issue` to assign
+2. `SH setup-task-worktree --task-code {CODE} --base-branch {DEVELOPMENT_BRANCH}`
+3. Read task details (`TM parse {CODE}`), explore codebase, implement changes
+4. Run verify command, fix failures (max 3 retries)
+5. Commit, push, create PR via `PM create-pr` targeting {DEVELOPMENT_BRANCH}
+6. `TM move {CODE} --to done` + `PM close-issue`
+7. `TM remove-worktree --task-code {CODE}`
+On failure: rollback worktree + task status, report failed step.
 Report: { code, success, summary, files_changed[], pr_url, error_if_any, failed_at_step }"
 ```
 

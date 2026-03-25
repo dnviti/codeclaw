@@ -19,6 +19,12 @@ import sys
 from datetime import date, datetime, timezone
 from pathlib import Path
 
+_SCRIPT_DIR = Path(__file__).resolve().parent
+if str(_SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPT_DIR))
+
+from common import find_project_root, get_main_repo_root, get_latest_tag  # noqa: E402
+
 # ── Constants ───────────────────────────────────────────────────────────────
 
 TASK_CODE_RE = re.compile(r"\(([A-Z]{3,5}-\d{4})\)\s*$")
@@ -58,44 +64,6 @@ CHANGELOG_ORDER = ["Added", "Changed", "Fixed", "Removed", "Security"]
 SECURITY_KEYWORDS = {"security", "cve", "vulnerability", "auth hardening", "xss", "injection"}
 
 VERSION_RE = re.compile(r"(\d+)\.(\d+)\.(\d+)(?:-beta)?")
-
-# ── Project Root Detection ──────────────────────────────────────────────────
-
-def find_project_root() -> Path:
-    """Find project root via git."""
-    try:
-        result = subprocess.run(
-            ["git", "rev-parse", "--show-toplevel"],
-            capture_output=True, text=True, check=True,
-        )
-        return Path(result.stdout.strip())
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        return Path.cwd()
-
-
-def get_main_repo_root() -> Path:
-    """Return main repo root, even from inside a git worktree.
-
-    In a worktree, git rev-parse --show-toplevel returns the *worktree* root.
-    This function detects that case and returns the actual main repo root so
-    that releases.json and task files are always found correctly.
-    """
-    try:
-        common = subprocess.run(
-            ["git", "rev-parse", "--git-common-dir"],
-            capture_output=True, text=True, check=True,
-        ).stdout.strip()
-        git_dir = subprocess.run(
-            ["git", "rev-parse", "--git-dir"],
-            capture_output=True, text=True, check=True,
-        ).stdout.strip()
-        common_path = Path(common).resolve()
-        git_dir_path = Path(git_dir).resolve()
-        if common_path != git_dir_path:
-            return common_path.parent
-        return find_project_root()
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        return find_project_root()
 
 
 # ── Version Detection ───────────────────────────────────────────────────────
@@ -330,24 +298,6 @@ AUTO_DISCOVER_MANIFESTS = [
     "package.json", "pyproject.toml", "setup.py", "setup.cfg",
     "Cargo.toml", "pom.xml", "build.gradle",
 ]
-
-
-def get_latest_tag(tag_prefix: str) -> str | None:
-    """Get the latest git tag matching the prefix.
-
-    Excludes environment-suffixed tags (e.g. -staging) so that only
-    production tags are considered when determining the latest version.
-    """
-    try:
-        result = subprocess.run(
-            ["git", "tag", "-l", f"{tag_prefix}*", "--sort=-v:refname"],
-            capture_output=True, text=True, check=True,
-        )
-        tags = [t for t in result.stdout.strip().splitlines()
-                if not t.endswith("-staging")]
-        return tags[0] if tags else None
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        return None
 
 
 # ── Commit Parsing ──────────────────────────────────────────────────────────

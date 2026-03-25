@@ -21,7 +21,10 @@
   "python_command": "python3",
   "quality_gate": {
     "enabled": true,
-    "fail_on": ["critical", "high"],
+    "fail_on": [
+      "critical",
+      "high"
+    ],
     "auto_fix": true,
     "max_fix_iterations": 3,
     "skip_tools": [],
@@ -34,7 +37,7 @@
     "enable_versioned_reads": false
   },
   "vector_memory": {
-    "enabled": true,
+    "enabled": false,
     "auto_index": true,
     "embedding_provider": "local",
     "embedding_model": "all-MiniLM-L6-v2",
@@ -55,7 +58,7 @@
     }
   },
   "mcp_server": {
-    "enabled": true,
+    "enabled": false,
     "transport": "stdio",
     "auto_start": true,
     "_comment": "Vector memory MCP is opt-in. Enable via /setup. Requires: pip install \"mcp>=1.0\" \"lancedb>=0.5.0,<1.0\" \"sentence-transformers>=2.7.0,<3.0\""
@@ -103,14 +106,14 @@
     ]
   },
   "worktrees": {
-    "enabled": true,
+    "enabled": false,
     "max_count": 10,
     "cleanup_after_days": 7,
     "base_dir": ".worktrees",
     "_comment": "When true, /task pick creates isolated git worktrees per task. max_count auto-prunes oldest idle worktrees when exceeded. cleanup_after_days removes worktrees older than N days."
   },
   "ollama": {
-    "enabled": true,
+    "enabled": false,
     "model": "qwen3.5:latest",
     "offloading_level": 5
   }

@@ -2,6 +2,8 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+@AGENTS.md
+
 ## Language
 
 Always respond and work in English, even if the user's prompt is written in another language.
@@ -92,6 +94,84 @@ This is a **Claude Code plugin** (CodeClaw) providing project-agnostic task and 
 - `scripts/mcp_server.py` — Vector memory MCP server
 - `scripts/vector_memory.py` — Semantic indexing and search
 
+## Skill Shorthand Aliases
+
+All skills share these command aliases. Each skill uses the subset it needs.
+
+| Alias | Expands to |
+|-------|------------|
+| `TM`  | `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/task_manager.py` |
+| `SH`  | `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/skill_helper.py` |
+| `RM`  | `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/release_manager.py` |
+| `PM`  | `TM platform-cmd` |
+| `DM`  | `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/docs_manager.py` |
+| `SA`  | `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/social_announcer.py` |
+| `TESTS` | `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/test_manager.py` |
+
+## Yolo Mode
+
+When `yolo` is `true` in the `SH dispatch` result, **auto-select the recommended (first) option at every GATE** without waiting for user input. Log each auto-selected choice. Yolo never auto-selects destructive or cancel options. At loop counter >= 5, yolo pauses and asks the user.
+
+## Agent Teams Mode (Experimental)
+
+When `$CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` is `"1"`, skills that spawn parallel subagents use **Agent Teams** instead, providing coordinated multi-agent execution with dedicated quality and security reviewers.
+
+### Detection
+
+At each parallel execution point, check `$CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS`:
+- `"1"` → **Agent Teams mode** (team composition specified per skill)
+- Otherwise → **Standard subagent mode** (default)
+
+### Team Lifecycle
+
+1. `TeamCreate` with descriptive `team_name` and `description`
+2. `TaskCreate` for each unit of work (implementation, review, security scan)
+3. `Agent` with `team_name` and `name` — spawn teammates
+4. Teammates claim tasks via `TaskUpdate`, communicate via `SendMessage`, complete via `TaskUpdate`
+5. `SendMessage` with `{type: "shutdown_request"}` to all teammates
+6. `TeamDelete` to clean up
+
+### Standard Team Roles — Implementation
+
+Used by `/task pick all`, `/task continue all`, and `/crazy` for task implementation batches:
+
+| Role | Purpose | Config |
+|------|---------|--------|
+| `backend-dev-{CODE}` | Server-side logic, API, data layer. Messages `frontend-dev` when done | `isolation: "worktree"`, `mode: "bypassPermissions"` |
+| `frontend-dev-{CODE}` | UI, client-side, animations. Waits for `backend-dev` message before finalizing | `isolation: "worktree"`, `mode: "bypassPermissions"` |
+| `qa-agent` | Reviews implementation, tests functionality, sends bugs back to devs for another pass | `mode: "bypassPermissions"` |
+| `documenter` | Updates documentation while implementation is in progress | `mode: "bypassPermissions"` |
+| `security-scanner` | Strict security testing, forces devs to fix critical issues before continuing | `mode: "bypassPermissions"` |
+
+### Standard Team Roles — Other Flows
+
+| Role | Purpose | Config |
+|------|---------|--------|
+| `pr-analyst-{N}` | Analyzes a PR in release pipeline | `isolation: "worktree"`, `mode: "bypassPermissions"` |
+| `security-auditor` | Cross-PR security validation | `mode: "bypassPermissions"` |
+| `ci-monitor-{N}` | Monitors a CI workflow run | `mode: "bypassPermissions"` |
+| `task-creator-{N}` | Converts an idea into a task spec | `isolation: "worktree"`, `mode: "bypassPermissions"` |
+| `consistency-reviewer` | Reviews task specs for consistency | `mode: "bypassPermissions"` |
+
+### Implementation Coordination Flow
+
+1. **Backend dev** implements server-side logic for the task
+2. When done → `SendMessage` to frontend dev with API contracts and integration points
+3. **Frontend dev** implements UI/client-side using backend APIs
+4. **Documenter** works in parallel throughout, updating docs as code lands
+5. **Security scanner** reviews changes from both devs; critical issues → devs must fix before continuing
+6. **QA agent** reviews final implementation from both devs, tests functionality; bugs → sent back to responsible dev
+7. QA + security approve → task marked done
+
+### Quality & Security Guarantees
+
+Every implementation batch in Agent Teams mode includes:
+- **QA agent** — validates correctness, tests functionality, catches regressions, sends bugs back
+- **Security scanner** — validates OWASP Top 10, secrets, injection, auth, input validation, quality gate; blocks on critical
+- **Documenter** — ensures docs stay current with implementation
+- QA + security must both approve before tasks complete
+- Critical findings block completion and escalate to team lead
+
 <!-- CodeClaw:START -->
 ## Key Patterns
 
@@ -132,21 +212,27 @@ Tasks and ideas support three operating modes, controlled by `.claude/issues-tra
 
 The `platform` field (`"github"` or `"gitlab"`) determines which CLI tool (`gh` or `glab`) is used. If omitted, defaults to `"github"`.
 
-### Worktree-Based Task Isolation
+### Task Branch Isolation
 
-Tasks are developed in isolated git worktrees instead of branch switching, enabling parallel task work:
+Every task gets a dedicated `task/<code-lowercase>` branch created from `DEVELOPMENT_BRANCH`. Two modes control how this branch is managed:
+
+| Mode | Branch | Working directory | Parallel work |
+|------|--------|-------------------|---------------|
+| **Worktrees enabled** (`worktrees.enabled: true`) | `task/<code>` from develop | `.worktrees/task/<code>/` | Yes |
+| **Worktrees disabled** (`worktrees.enabled: false`) | `task/<code>` from develop | Main repo (checkout) | Sequential only |
 
 | Concept | Location |
 |---------|----------|
-| Worktree directory | `.worktrees/task/<code-lowercase>/` (mirrors branch name) |
-| Branch naming | `task/<code-lowercase>` |
+| Worktree directory | `.worktrees/task/<code-lowercase>/` (worktrees enabled only) |
+| Branch naming | `task/<code-lowercase>` (both modes) |
+| Base branch | `DEVELOPMENT_BRANCH` (both modes) |
 | Task files | Always in main repository root |
-| Source code | In the worktree directory |
+| PR target | `DEVELOPMENT_BRANCH` (or `PRODUCTION_BRANCH` for simplified pipeline) |
 
 **Lifecycle:**
-- `/task pick` creates a worktree when a task is picked up
-- When a task is closed (marked done), the worktree is **automatically removed**
-- `/task continue` creates a **fresh worktree** from the existing branch (since the old one was dismissed at close)
+- `/task pick` creates a `task/<code>` branch from develop (+ worktree if enabled)
+- When a task is closed (marked done), the worktree is **automatically removed** (branch preserved for PR)
+- `/task continue` creates a **fresh worktree** from the existing branch (or checks it out if worktrees disabled)
 - `task_manager.py` always reads/writes task files from the main repo root via `get_main_repo_root()`
 - `/release` and `/setup env` should be run from the main repository
 - `.worktrees/` must be in `.gitignore`
@@ -224,12 +310,13 @@ Vectors are stored in `.claude/memory/vectors/` (auto-added to `.gitignore`).
 - Use plan mode for verification steps, not just building
 - Write detailed specs upfront to reduce ambiguity
 
-### 2. Subagent Strategy
+### 2. Subagent / Agent Teams Strategy
 
 - Use subagents liberally to keep main context window clean
 - Offload research, exploration, and parallel analysis to subagents
 - For complex problems, throw more compute at it via subagents
 - One task per subagent for focused execution
+- When `$CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` = `"1"`: use Agent Teams with dedicated QA, security, and documentation roles (see [Agent Teams Mode](#agent-teams-mode-experimental))
 
 ### 3. Self-Improvement Loop
 

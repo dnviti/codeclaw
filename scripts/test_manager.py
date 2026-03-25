@@ -55,6 +55,7 @@ from analyzers.coverage import (
     load_snapshot,
     read_manifest as read_coverage_manifest,
 )
+from common import parse_claude_md, output_json
 
 # ── Constants ───────────────────────────────────────────────────────────────
 
@@ -85,30 +86,7 @@ FUNC_RE = re.compile("|".join(FUNCTION_PATTERNS), re.MULTILINE)
 #   Absolute path: mitigated by path traversal containment check
 #   (is_relative_to) added in S-1 fix
 
-# CLAUDE.md variable parsing
-CLAUDE_MD_VAR_RE = re.compile(r'^([A-Z_]+)\s*=\s*"?([^"#]*)"?\s*(?:#.*)?$')
-
-
 # ── Helpers ─────────────────────────────────────────────────────────────────
-
-def parse_claude_md(root: Path) -> dict[str, str]:
-    """Extract key=value pairs from the bash code block in CLAUDE.md."""
-    claude_md = root / "CLAUDE.md"
-    if not claude_md.exists():
-        return {}
-    content = claude_md.read_text(encoding="utf-8")
-    m = re.search(r"```bash\n(.*?)```", content, re.DOTALL)
-    if not m:
-        return {}
-    pairs: dict[str, str] = {}
-    for line in m.group(1).splitlines():
-        vm = CLAUDE_MD_VAR_RE.match(line)
-        if vm:
-            val = vm.group(2).strip().strip('"')
-            if val:
-                pairs[vm.group(1)] = val
-    return pairs
-
 
 def get_test_config(root: Path) -> dict:
     """Read test configuration from CLAUDE.md."""
@@ -948,12 +926,6 @@ def cmd_reindex_test(args) -> dict:
 
 
 # ── CLI Entrypoint ──────────────────────────────────────────────────────────
-
-def output_json(data: dict) -> None:
-    """Print JSON to stdout."""
-    json.dump(data, sys.stdout, indent=2, default=str)
-    print()
-
 
 def main():
     parser = argparse.ArgumentParser(
