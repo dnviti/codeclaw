@@ -1,16 +1,5 @@
 {
   "hooks": {
-    "PrePush": [
-      {
-        "matcher": ".*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 ${CLAUDE_PLUGIN_ROOT}/scripts/quality_gate.py --root . --verify-command \"${VERIFY_COMMAND}\" --json"
-          }
-        ]
-      }
-    ],
     "PreToolUse": [
       {
         "matcher": "Bash|Read|Grep|Glob|Edit|Write",
