@@ -40,6 +40,11 @@ from typing import Any
 # ── Constants ───────────────────────────────────────────────────────────────
 
 SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+from common import parse_skill_md  # noqa: E402
+
 REPO_ROOT = SCRIPT_DIR.parent
 
 PLUGIN_JSON = REPO_ROOT / ".claude-plugin" / "plugin.json"
@@ -84,10 +89,6 @@ ARCHIVE_NAME_TEMPLATE = "claw-{version}{ext}"
 
 # Default output directory
 DEFAULT_OUTPUT_DIR = REPO_ROOT / "dist"
-
-# Frontmatter regex for SKILL.md parsing
-FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)
-YAML_KV_RE = re.compile(r'^(\w[\w-]*):\s*"?([^"]*?)"?\s*$', re.MULTILINE)
 
 # Supported installation targets (mirrors platform_exporter.py targets)
 INSTALL_TARGETS = [
@@ -174,39 +175,6 @@ def is_excluded(rel_path: str) -> bool:
 
 # ── Skill Discovery ────────────────────────────────────────────────────────
 # Reuses the same parsing approach as platform_exporter.py
-
-
-def parse_skill_md(skill_path: Path) -> dict[str, Any] | None:
-    """Parse a SKILL.md file into structured component data.
-
-    Mirrors the parsing logic from platform_exporter.py for consistency
-    across the CodeClaw toolchain.
-    """
-    if not skill_path.exists():
-        return None
-    try:
-        content = skill_path.read_text(encoding="utf-8")
-    except OSError:
-        return None
-
-    frontmatter: dict[str, str] = {}
-    body = content
-
-    fm_match = FRONTMATTER_RE.match(content)
-    if fm_match:
-        fm_text = fm_match.group(1)
-        for kv_match in YAML_KV_RE.finditer(fm_text):
-            frontmatter[kv_match.group(1)] = kv_match.group(2).strip()
-        body = content[fm_match.end() :]
-
-    return {
-        "name": frontmatter.get("name", skill_path.parent.name),
-        "description": frontmatter.get("description", ""),
-        "frontmatter": frontmatter,
-        "body": body.strip(),
-        "path": str(skill_path),
-        "directory": skill_path.parent.name,
-    }
 
 
 def discover_skills() -> list[dict[str, Any]]:

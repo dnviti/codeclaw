@@ -9,15 +9,6 @@ argument-hint: "[pick [CODE | all [sequential]]] [create [description | all [seq
 
 You are a task manager for this project. Manage the full task lifecycle: picking up tasks, creating new ones, continuing in-progress work, and reporting status. Always respond and work in English.
 
-## Shorthand
-
-| Alias | Expands to |
-|-------|------------|
-| `TM`  | `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/task_manager.py` |
-| `SH`  | `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/skill_helper.py` |
-| `RM`  | `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/release_manager.py` |
-| `PM`  | `TM platform-cmd` |
-
 ## Skill Context
 
 `SH context` → platform config, worktree state (including `submodules` list), branch config, release config as JSON. Use throughout.
@@ -41,7 +32,7 @@ Submodules are automatically initialized (`git submodule update --init --recursi
 
 `SH dispatch --skill task --args "$ARGUMENTS"` → routes to: `pick`, `pick-all`, `create`, `create-all`, `continue`, `continue-all`, `edit`, `schedule`, or `status` flow.
 
-Also returns `yolo: true/false`. When `yolo` is `true`, **auto-select the recommended (first) option at every GATE** without waiting for user input. Log each auto-selected choice. Yolo never auto-selects destructive or cancel options.
+Also returns `yolo: true/false` (see **Yolo Mode** in CLAUDE.md).
 
 ---
 
@@ -125,10 +116,12 @@ SH setup-task-worktree --task-code <CODE> --base-branch <DEVELOPMENT_BRANCH>
 
 **Branching behavior depends on worktree config:**
 
-- **Worktrees enabled (`worktrees.enabled: true`):** Creates an isolated git worktree at `.worktrees/task/<code>/` with a dedicated `task/<code>` branch. Each task gets its own branch.
-- **Worktrees disabled (default):** All tasks for the current release share a single `release/<version>` branch (e.g., `release/4.0.2`). The command queries the active release from `release-state.json` and checks out (or creates) the shared release branch. **If no active release exists, the setup aborts** with: "No active release. Run /release create X.X.X first." — inform the user and stop.
+- **Worktrees enabled (`worktrees.enabled: true`):** Creates an isolated git worktree at `.worktrees/task/<code>/` with a dedicated `task/<code>` branch from `{DEVELOPMENT_BRANCH}`. Each task gets its own worktree directory and branch.
+- **Worktrees disabled:** Creates a dedicated `task/<code>` branch from `{DEVELOPMENT_BRANCH}` and checks it out directly in the main repo (no worktree directory). Each task still gets its own branch.
 
-If `reused_existing`, inform user. Change working directory to `worktree_dir`. Inform: worktree path, branch, base branch, main repo root. All subsequent steps operate within the worktree (or the shared release branch when worktrees are disabled).
+In both modes, the branch naming is `task/<code>` and the base is `{DEVELOPMENT_BRANCH}`. The only difference is whether a worktree directory is used for isolation.
+
+If `reused_existing`, inform user. Change working directory to `worktree_dir`. Inform: worktree path (or main repo), branch, base branch, main repo root. All subsequent steps operate within the worktree (or the checked-out task branch when worktrees are disabled).
 
 #### Step 3: Read the full task details
 
@@ -229,6 +222,26 @@ python3 ${CLAUDE_PLUGIN_ROOT}/scripts/vector_memory.py hook <changed_file>
 
 Run this for each file that was created or modified during implementation. This is non-blocking and silent on failure.
 
+**6-review. Run quality gate:**
+
+Run the local quality gate on changed files:
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/quality_gate.py --root <PROJECT_ROOT> --files <changed_files> --verify-command "<CTX.config.verify_command>" --json
+```
+
+Parse the JSON result. If `passed` is `false`:
+
+1. Present the dashboard from `result.dashboard`.
+2. Attempt iterative auto-fix: the quality gate runs up to `max_fix_iterations` (default 3) internally, applying auto-fixes between iterations.
+3. After the loop, if blocking findings remain (critical/high severity), present them grouped by tool.
+
+**GATE (blocking findings remain):** "Fix remaining issues manually and re-run" / "Proceed despite findings (not recommended)" / "Cancel task closure"
+
+If `passed` is `true`, or user chooses to proceed: continue to 6a.
+
+This step is non-blocking and silent on failure (e.g., if the quality gate script is unavailable or errors out, log a warning and proceed).
+
 **6a. Generate the Testing Guide (do NOT present yet):**
 
 Derive from TECHNICAL DETAILS and Files involved. Format:
@@ -274,7 +287,7 @@ Inform: "Task [TASK-CODE] has been closed."
 `TM remove-worktree --task-code <CODE>`
 
 - **Worktrees enabled:** Removes the worktree directory. Branch preserved for PR. Inform: "Worktree removed. Branch preserved for PR. Use `/task continue [TASK-CODE]` to re-enter."
-- **Worktrees disabled:** The shared `release/<version>` branch is **not deleted** (it is shared across all tasks in the release and must persist until the release pipeline merges it). Inform: "Task closed. Shared release branch preserved for remaining tasks."
+- **Worktrees disabled:** No worktree to remove. Task branch `task/<code>` is preserved for PR. Inform: "Task closed. Branch preserved for PR."
 
 **6d. Ask to commit:**
 
@@ -343,7 +356,113 @@ Present: "Found **N pending tasks** for release X.X.X. **M can run in parallel**
 
 #### Step 3a: Parallel execution (default)
 
-**Worktree guard:** Before spawning parallel agents, check `SH context` → `worktree` data. If `worktrees.enabled` is `false` in the project config (the default), **skip this step entirely** and fall through to **Step 3b** (sequential execution). Log: "Worktrees are disabled — using sequential execution on the shared release branch." This is required because `isolation: "worktree"` creates `.claude/worktrees/agent-*/` directories, violating the user's worktree-disabled configuration. Without isolation, parallel agents would conflict on the shared branch.
+**Worktree guard:** Before spawning parallel agents, check `SH context` → `worktree` data. If `worktrees.enabled` is `false` in the project config, **skip this step entirely** and fall through to **Step 3b** (sequential execution). Log: "Worktrees are disabled — using sequential execution." This is required because `isolation: "worktree"` creates `.claude/worktrees/agent-*/` directories, violating the user's worktree-disabled configuration. Without isolation, parallel agents would conflict on the checked-out task branch.
+
+**Execution mode:** If `$CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` = `"1"`, use Agent Teams mode. Otherwise skip to standard subagent mode.
+
+**── Agent Teams mode ──**
+
+Create team `"claw-pick-{VERSION}"` via `TeamCreate` with `description: "Task implementation for release {VERSION}"`. Create `TaskCreate` entries for each task in the batch, plus `"QA review: batch {BATCH_NUM}"`, `"Documentation: batch {BATCH_NUM}"`, and `"Security scan: batch {BATCH_NUM}"`. Spawn teammates (all in parallel, `team_name: "claw-pick-{VERSION}"`):
+
+| Teammate | Count | Config |
+|----------|-------|--------|
+| `backend-dev-{CODE}` | 1 per task in batch | `isolation: "worktree"`, `mode: "bypassPermissions"` |
+| `frontend-dev-{CODE}` | 1 per task in batch | `isolation: "worktree"`, `mode: "bypassPermissions"` |
+| `qa-agent` | 1 | `mode: "bypassPermissions"` |
+| `documenter` | 1 | `mode: "bypassPermissions"` |
+| `security-scanner` | 1 | `mode: "bypassPermissions"` |
+
+Backend dev prompt (`name: "backend-dev-{CODE}"`):
+
+```
+"You are backend-dev-{CODE} on team claw-pick-{VERSION}. Implement server-side logic for task {CODE}.
+1. Claim task 'Implement {CODE}' via TaskUpdate (owner: your name)
+2. `TM move {CODE} --to progressing` + `PM edit-issue number=ISSUE_NUM add-assignee="@me"`
+3. `SH setup-task-worktree --task-code {CODE} --base-branch {DEVELOPMENT_BRANCH}`
+4. `TM parse {CODE}` — read full task details
+5. Explore codebase: read Files involved + related server-side code
+6. Implement server-side logic, APIs, data layer per DESCRIPTION and TECHNICAL DETAILS
+7. Run {VERIFY_COMMAND} — fix and retry (max 3)
+8. `git add <files> && git commit -m 'feat(backend): {description} ({CODE})'`
+9. `git push -u origin task/{CODE}`
+10. SendMessage to frontend-dev-{CODE}: 'Backend complete. API contracts: [endpoints/interfaces]. Integration points: [details]'
+11. SendMessage to security-scanner: 'Backend changes ready for review. PR branch: task/{CODE}, files: [list]'
+12. Wait for security-scanner approval before proceeding
+13. TaskUpdate mark completed. SendMessage to team lead: {{ code, success, summary, files_changed[] }}"
+```
+
+Frontend dev prompt (`name: "frontend-dev-{CODE}"`):
+
+```
+"You are frontend-dev-{CODE} on team claw-pick-{VERSION}. Implement UI/client-side for task {CODE}.
+1. Wait for SendMessage from backend-dev-{CODE} with API contracts and integration points
+2. If task has no frontend component: SendMessage to team lead 'No frontend work for {CODE}', TaskUpdate completed, exit
+3. `SH setup-task-worktree --task-code {CODE} --base-branch {DEVELOPMENT_BRANCH}` (reuse existing worktree)
+4. `TM parse {CODE}` — read full task details
+5. Implement UI, client-side logic, animations per DESCRIPTION and TECHNICAL DETAILS, using backend API contracts
+6. Run {VERIFY_COMMAND} — fix and retry (max 3)
+7. `git add <files> && git commit -m 'feat(frontend): {description} ({CODE})'`
+8. `git push origin task/{CODE}`
+9. SendMessage to security-scanner: 'Frontend changes ready for review. Files: [list]'
+10. SendMessage to qa-agent: 'Implementation complete for {CODE}. Ready for QA.'
+11. Wait for security-scanner and qa-agent approval. If bugs reported, fix and re-push (max 3 iterations)
+12. Create PR: `PM create-pr title='feat: {description} ({CODE})' head='task/{CODE}' base='{DEVELOPMENT_BRANCH}' body='Implements {CODE} for release {VERSION}' milestone='{VERSION}' assignee='@me'`
+13. `TM move {CODE} --to done --completed-summary 'Implemented: {title}'`
+14. `TM remove-worktree --task-code {CODE}`
+15. TaskUpdate completed. SendMessage to team lead: {{ code, success, pr_url, files_changed[] }}"
+```
+
+QA agent prompt (`name: "qa-agent"`):
+
+```
+"You are qa-agent on team claw-pick-{VERSION}. Test and review all task implementations.
+1. Claim 'QA review' task via TaskUpdate
+2. Wait for frontend-dev SendMessage notifications that implementation is complete
+3. For each task:
+   a. Read all changed files and the PR diff
+   b. Review for: correctness, edge cases, error handling, code style, test coverage, DRY, performance, project conventions
+   c. Run {VERIFY_COMMAND} to validate tests pass
+   d. If bugs found: SendMessage to responsible dev (backend-dev or frontend-dev) with specific issues and required fixes. Wait for fix notification, then re-review (max 3 iterations)
+   e. If approved: SendMessage to frontend-dev: 'QA approved for {CODE}'
+   f. Post QA comment on PR via `{PLATFORM_CLI} pr comment {NUMBER}` with findings summary
+4. TaskUpdate completed. SendMessage to team lead: {{ reviewed_count, bugs_found, bugs_fixed, approved_count }}"
+```
+
+Documenter prompt (`name: "documenter"`):
+
+```
+"You are documenter on team claw-pick-{VERSION}. Update documentation as tasks are implemented.
+1. Claim 'Documentation' task via TaskUpdate
+2. Monitor teammate SendMessage notifications for implementation progress
+3. For each completed task:
+   a. Read changed files and understand what was implemented
+   b. Update or create relevant documentation in docs/ (API docs, architecture, usage guides)
+   c. Update README.md if new features affect setup or usage
+   d. Commit docs: `git add docs/ && git commit -m 'docs: update documentation for {CODE}'`
+4. TaskUpdate completed. SendMessage to team lead: {{ docs_updated[], files_changed[] }}"
+```
+
+Security scanner prompt (`name: "security-scanner"`):
+
+```
+"You are security-scanner on team claw-pick-{VERSION}. Perform strict security testing on all implementations.
+1. Claim 'Security scan' task via TaskUpdate
+2. Wait for dev SendMessage notifications with changes ready for review
+3. For each set of changes:
+   a. Read all changed files thoroughly
+   b. Analyze for OWASP Top 10: injection (SQL, command, XSS, LDAP), broken auth, sensitive data exposure, XXE, broken access control, security misconfiguration, insecure deserialization, vulnerable components, insufficient logging
+   c. Check for: hardcoded secrets (API keys, passwords, tokens), path traversal, race conditions, ReDoS, CSRF, unvalidated redirects, insecure direct object references
+   d. Run quality gate if available: `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/quality_gate.py --files <files> --json`
+   e. CRITICAL vulnerabilities → SendMessage to responsible dev AND team lead: 'BLOCKING: [vulnerability]. Must fix before continuing.' Wait for fix, re-scan
+   f. Non-critical findings → SendMessage to dev as warnings, do not block
+   g. Approved → SendMessage to dev: 'Security approved for changes in [files]'
+4. Post security summary on PR via `{PLATFORM_CLI} pr comment {NUMBER}`
+5. TaskUpdate completed. SendMessage to team lead: {{ scanned_count, critical[], high[], medium[], low[] }}"
+```
+
+After all teammates complete → `SendMessage {type: "shutdown_request"}` to all → `TeamDelete`. Continue to Step 4 (batch results).
+
+**── Standard subagent mode (default) ──**
 
 For each batch, spawn Agent subagents with `isolation: "worktree"` and `mode: "bypassPermissions"`:
 
@@ -536,7 +655,53 @@ GATE: "Create tasks from all ideas" / "Cancel"
 
 #### Step 2a: Parallel execution (default)
 
-**Worktree guard:** Before spawning parallel agents, check `SH context` → `worktree` data. If `worktrees.enabled` is `false` in the project config (the default), **skip this step entirely** and fall through to **Step 2b** (sequential execution). Log: "Worktrees are disabled — using sequential execution on the shared release branch." This prevents `isolation: "worktree"` from creating `.claude/worktrees/agent-*/` directories when the user has disabled worktrees.
+**Worktree guard:** Before spawning parallel agents, check `SH context` → `worktree` data. If `worktrees.enabled` is `false` in the project config, **skip this step entirely** and fall through to sequential execution. Log: "Worktrees are disabled — using sequential execution." This prevents `isolation: "worktree"` from creating `.claude/worktrees/agent-*/` directories when the user has disabled worktrees.
+
+**Execution mode:** If `$CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` = `"1"`, use Agent Teams mode. Otherwise skip to standard subagent mode.
+
+**── Agent Teams mode ──**
+
+Create team `"claw-create-all"` via `TeamCreate` with `description: "Batch idea-to-task conversion"`. Create `TaskCreate` entries for each idea, plus `"Consistency review"`. Spawn teammates (`team_name: "claw-create-all"`):
+
+| Teammate | Count | Config |
+|----------|-------|--------|
+| `task-creator-{IDEA_CODE}` | 1 per idea | `isolation: "worktree"`, `mode: "bypassPermissions"` |
+| `consistency-reviewer` | 1 | `mode: "bypassPermissions"` |
+
+Task creator prompt (`name: "task-creator-{IDEA_CODE}"`):
+
+```
+"You are task-creator-{IDEA_CODE} on team claw-create-all. Convert idea {IDEA_CODE} into a task spec.
+1. Claim task via TaskUpdate
+2. `TM parse {IDEA_CODE}` — read idea details
+3. Explore codebase: understand scope, patterns, relevant files
+4. `TM next-id --type task` — get next task code
+5. Draft task block: Priority, Dependencies, DESCRIPTION (4-10 lines), TECHNICAL DETAILS, Files involved
+6. Insert task into to-do.txt via Edit
+7. Move idea: `TM move {IDEA_CODE} --to approved`
+8. SendMessage to consistency-reviewer: 'Task created: {TASK_CODE} from {IDEA_CODE}'
+9. TaskUpdate completed. SendMessage to team lead: {{ idea_code, task_code, title, priority }}"
+```
+
+Consistency reviewer prompt (`name: "consistency-reviewer"`):
+
+```
+"You are consistency-reviewer on team claw-create-all. Review all created task specs.
+1. Claim 'Consistency review' task via TaskUpdate
+2. Wait for task-creator SendMessage notifications
+3. After all tasks created, review to-do.txt for:
+   a. Consistent formatting across all new tasks
+   b. No duplicate or overlapping scope between tasks
+   c. Proper dependency chains (no circular deps)
+   d. Correct priority assignments
+   e. Complete Technical Details and Files involved sections
+4. If issues found: SendMessage to relevant task-creator with fixes needed
+5. TaskUpdate completed. SendMessage to team lead: {{ reviewed_count, issues_found, fixes_applied }}"
+```
+
+After all teammates complete → `SendMessage {type: "shutdown_request"}` to all → `TeamDelete`. Continue to Step 3 (results).
+
+**── Standard subagent mode (default) ──**
 
 For each idea, spawn Agent subagents with `isolation: "worktree"` and `mode: "bypassPermissions"`:
 
@@ -661,7 +826,30 @@ GATE: "Spawn agents to continue all tasks" / "Cancel"
 
 #### Step 2a: Parallel execution (default)
 
-**Worktree guard:** Before spawning parallel agents, check `SH context` → `worktree` data. If `worktrees.enabled` is `false` in the project config (the default), **skip this step entirely** and fall through to **Step 2b** (sequential execution). Log: "Worktrees are disabled — using sequential execution on the shared release branch." This prevents `isolation: "worktree"` from creating `.claude/worktrees/agent-*/` directories when the user has disabled worktrees.
+**Worktree guard:** Before spawning parallel agents, check `SH context` → `worktree` data. If `worktrees.enabled` is `false` in the project config, **skip this step entirely** and fall through to sequential execution. Log: "Worktrees are disabled — using sequential execution." This prevents `isolation: "worktree"` from creating `.claude/worktrees/agent-*/` directories when the user has disabled worktrees.
+
+**Execution mode:** If `$CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` = `"1"`, use Agent Teams mode. Otherwise skip to standard subagent mode.
+
+**── Agent Teams mode ──**
+
+Create team `"claw-continue-all"` via `TeamCreate` with `description: "Continue all in-progress tasks"`. Create `TaskCreate` entries for each task, plus `"QA review"`, `"Documentation"`, and `"Security scan"`. Spawn teammates (`team_name: "claw-continue-all"`):
+
+| Teammate | Count | Config |
+|----------|-------|--------|
+| `backend-dev-{CODE}` | 1 per task | `isolation: "worktree"`, `mode: "bypassPermissions"` |
+| `frontend-dev-{CODE}` | 1 per task | `isolation: "worktree"`, `mode: "bypassPermissions"` |
+| `qa-agent` | 1 | `mode: "bypassPermissions"` |
+| `documenter` | 1 | `mode: "bypassPermissions"` |
+| `security-scanner` | 1 | `mode: "bypassPermissions"` |
+
+Use the same agent prompts as Pick All Agent Teams mode, adapted for continuation:
+- Backend dev: assess current state first (`TM parse`, check existing files), then implement remaining server-side work
+- Frontend dev: wait for backend dev, then implement remaining UI work
+- QA, documenter, security-scanner: same review/docs/security prompts as Pick All
+
+After all teammates complete → `SendMessage {type: "shutdown_request"}` to all → `TeamDelete`. Continue to Step 3 (results).
+
+**── Standard subagent mode (default) ──**
 
 For each in-progress task, spawn Agent subagents with `isolation: "worktree"` and `mode: "bypassPermissions"`:
 

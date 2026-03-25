@@ -27,51 +27,18 @@ from typing import Any
 
 # ── Imports from sibling modules ─────────────────────────────────────────
 
-SCRIPT_DIR = Path(__file__).resolve().parent
-sys.path.insert(0, str(SCRIPT_DIR))
+_SCRIPT_DIR = Path(__file__).resolve().parent
+if str(_SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPT_DIR))
 
+from common import get_main_repo_root, load_project_config  # noqa: E402
 from social_platforms import get_platform, list_platforms  # noqa: E402
 
-
-# ── Helpers ──────────────────────────────────────────────────────────────
-
-def get_main_repo_root() -> Path:
-    """Return the main git repo root (not a worktree)."""
-    try:
-        result = subprocess.run(
-            ["git", "rev-parse", "--show-toplevel"],
-            capture_output=True, text=True, check=True,
-        )
-        top = Path(result.stdout.strip())
-        common = subprocess.run(
-            ["git", "rev-parse", "--git-common-dir"],
-            capture_output=True, text=True, check=True, cwd=top,
-        )
-        common_dir = Path(common.stdout.strip())
-        if common_dir.is_absolute():
-            return common_dir.parent
-        return (top / common_dir).resolve().parent
-    except (subprocess.CalledProcessError, OSError):
-        return Path.cwd()
-
-
-def _load_project_config() -> dict[str, Any]:
-    """Load project-config.json from the repository root."""
-    root = get_main_repo_root()
-    config_path = root / "config" / "project-config.json"
-    if not config_path.exists():
-        config_path = root / "project-config.json"
-    if config_path.exists():
-        try:
-            return json.loads(config_path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
-            pass
-    return {}
 
 
 def _get_social_config() -> dict[str, Any]:
     """Extract the social_announce section from project config."""
-    config = _load_project_config()
+    config = load_project_config()
     return config.get("social_announce", {})
 
 
@@ -79,7 +46,7 @@ def _load_project_description() -> str:
     """Load project description from CLAUDE.md or project-config.json."""
     root = get_main_repo_root()
     # Try project_context from config
-    config = _load_project_config()
+    config = load_project_config()
     desc = config.get("project_context", "")
     if desc:
         return desc
@@ -301,7 +268,7 @@ def cmd_post(args: argparse.Namespace) -> None:
 
 def cmd_preview(args: argparse.Namespace) -> None:
     """Handle the 'preview' subcommand."""
-    config = _load_project_config()
+    config = load_project_config()
     social_config = config.get("social_announce", {})
     enabled_platforms = social_config.get("platforms", {})
 

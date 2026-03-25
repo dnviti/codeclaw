@@ -29,6 +29,8 @@ _SCRIPT_DIR = Path(__file__).resolve().parent
 if str(_SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPT_DIR))
 
+from common import find_project_root, get_main_repo_root, parse_claude_md, output_json, get_latest_tag
+
 # ── Optional locked config support ─────────────────────────────────────────
 try:
     from config_lock import locked_config_write as _locked_config_write
@@ -49,51 +51,8 @@ IDEA_HEADER_RE = re.compile(r"^(IDEA-[A-Z]{3,5}-\d{4})\s+—\s+(.+)$")
 TASK_CODE_RE = re.compile(r"^[A-Z]{3,5}-\d{4}$")
 VERSION_RE = re.compile(r"(\d+)\.(\d+)\.(\d+)(?:-beta)?")
 
-CLAUDE_MD_VAR_RE = re.compile(r'^([A-Z_]+)\s*=\s*"?([^"#]*)"?\s*(?:#.*)?$')
 
-
-# ── Project Root Detection ──────────────────────────────────────────────────
-
-def find_project_root() -> Path:
-    """Find project root via git or by walking up to find to-do.txt."""
-    try:
-        result = subprocess.run(
-            ["git", "rev-parse", "--show-toplevel"],
-            capture_output=True, text=True, check=True,
-        )
-        root = Path(result.stdout.strip())
-        if (root / "to-do.txt").exists():
-            return root
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        pass
-
-    d = Path.cwd()
-    while d != d.parent:
-        if (d / "to-do.txt").exists():
-            return d
-        d = d.parent
-    return Path.cwd()
-
-
-def get_main_repo_root() -> Path:
-    """Return main repo root, even from inside a git worktree."""
-    try:
-        common = subprocess.run(
-            ["git", "rev-parse", "--git-common-dir"],
-            capture_output=True, text=True, check=True,
-        ).stdout.strip()
-        git_dir = subprocess.run(
-            ["git", "rev-parse", "--git-dir"],
-            capture_output=True, text=True, check=True,
-        ).stdout.strip()
-        common_path = Path(common).resolve()
-        git_dir_path = Path(git_dir).resolve()
-        if common_path != git_dir_path:
-            return common_path.parent
-        return find_project_root()
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        return find_project_root()
-
+# ── Worktree Detection ─────────────────────────────────────────────────────
 
 def is_in_worktree() -> bool:
     """Return True if CWD is inside a git worktree (not the main repo)."""
@@ -280,26 +239,6 @@ def parse_blocks(filepath: Path) -> list[dict]:
 
 
 # ── CLAUDE.md Parser ───────────────────────────────────────────────────────
-
-def parse_claude_md(root: Path) -> dict[str, str]:
-    """Extract key=value pairs from the bash code block in CLAUDE.md."""
-    claude_md = root / "CLAUDE.md"
-    if not claude_md.exists():
-        return {}
-    content = claude_md.read_text(encoding="utf-8")
-    # Find the first ```bash ... ``` block
-    m = re.search(r"```bash\n(.*?)```", content, re.DOTALL)
-    if not m:
-        return {}
-    pairs: dict[str, str] = {}
-    for line in m.group(1).splitlines():
-        vm = CLAUDE_MD_VAR_RE.match(line)
-        if vm:
-            val = vm.group(2).strip().strip('"')
-            if val:
-                pairs[vm.group(1)] = val
-    return pairs
-
 
 def claude_md_info(root: Path) -> dict:
     """Return metadata about CLAUDE.md."""
@@ -563,15 +502,6 @@ def scan_manifests(root: Path) -> list[dict]:
             if v:
                 results.append({"file": name, "version": v})
     return results
-
-
-def get_latest_tag(tag_prefix: str) -> str | None:
-    """Get the latest git tag matching the prefix."""
-    raw = git_run("tag", "-l", f"{tag_prefix}*", "--sort=-v:refname")
-    if raw:
-        tags = raw.splitlines()
-        return tags[0] if tags else None
-    return None
 
 
 def detect_tag_prefix() -> str:
@@ -1474,16 +1404,9 @@ def cmd_setup_task_worktree(args) -> dict:
 
     # Check if worktree isolation is enabled in project config
     if not wt_config.get("enabled", True):
-        # Fallback: use shared release/<version> branch for all tasks
-        # Query active release to determine the release branch name
-        release_version = _get_active_release_version(root)
-        if not release_version:
-            return {
-                "success": False,
-                "error": "No active release. Run /release create X.X.X first.",
-            }
-
-        branch_name = f"release/{release_version}"
+        # Simplified pipeline: dedicated task/<code> branch without worktree
+        code_lower = task_code.lower()
+        branch_name = f"task/{code_lower}"
 
         # Fetch latest base branch
         git_run("fetch", "origin", base_branch, cwd=str(root))
@@ -1519,7 +1442,6 @@ def cmd_setup_task_worktree(args) -> dict:
             "created": not branch_exists,
             "reused_existing": branch_exists,
             "worktree_mode": False,
-            "release_version": release_version,
         }
     code_lower = task_code.lower()
     branch_name = f"task/{code_lower}"
@@ -1869,12 +1791,6 @@ def cmd_refresh_branch_config(_args) -> dict:
 # ════════════════════════════════════════════════════════════════════════════
 # CLI Entrypoint
 # ════════════════════════════════════════════════════════════════════════════
-
-def output_json(data: dict) -> None:
-    """Print JSON to stdout."""
-    json.dump(data, sys.stdout, indent=2, default=str)
-    print()
-
 
 def main():
     parser = argparse.ArgumentParser(

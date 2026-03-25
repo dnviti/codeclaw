@@ -1,5 +1,5 @@
 {
-  "enabled": true,
+  "enabled": false,
   "model": "qwen3.5:latest",
   "api_base": "http://localhost:11434",
   "hardware": {
