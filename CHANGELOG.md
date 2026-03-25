@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.0.3] - 2026-03-25
+
+### Added
+- Comprehensive local code quality gate with auto stack detection (QLTY-0001)
+
+### Changed
+- Refactor project structure and enhance agent memory management
+- Consolidate shared utilities into `scripts/common.py`
+- Condense skill shorthand tables and yolo definition into CLAUDE.md
+
 ## [4.0.2] - 2026-03-20
 
 ### Added
