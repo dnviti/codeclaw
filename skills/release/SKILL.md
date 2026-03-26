@@ -19,11 +19,13 @@ argument-hint: "[create X.X.X] [generate] [continue X.X.X] [close X.X.X] [edit X
 
 | Role | Purpose | Config |
 |------|---------|--------|
-| `pr-analyst-{N}` | Analyzes a PR in the release pipeline | `isolation: "worktree"`, `mode: "bypassPermissions"` |
+| `pr-analyst-{N}` | Analyzes a PR in the release pipeline | `mode: "bypassPermissions"` |
 | `security-auditor` | Cross-PR security validation | `mode: "bypassPermissions"` |
 | `ci-monitor-{N}` | Monitors a CI workflow run | `mode: "bypassPermissions"` |
 | `qa-agent` | Validates release quality, runs integration tests | `mode: "bypassPermissions"` |
 | `documenter` | Updates changelog and release notes in parallel | `mode: "bypassPermissions"` |
+
+**Worktree guard:** Before spawning agents, check `SH context` → `worktree.enabled`. Only add `isolation: "worktree"` to agent config when worktrees are enabled. When disabled, spawn agents without isolation and use sequential execution if parallel work would conflict.
 
 ### Team Lifecycle
 

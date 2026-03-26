@@ -24,8 +24,8 @@ This skill combines ALL team roles for end-to-end autonomous execution.
 
 | Role | Purpose | Config |
 |------|---------|--------|
-| `backend-dev-{CODE}` | Server-side logic, API, data layer. Messages `frontend-dev` when done | `isolation: "worktree"`, `mode: "bypassPermissions"` |
-| `frontend-dev-{CODE}` | UI, client-side, animations. Waits for `backend-dev` message before finalizing | `isolation: "worktree"`, `mode: "bypassPermissions"` |
+| `backend-dev-{CODE}` | Server-side logic, API, data layer. Messages `frontend-dev` when done | `mode: "bypassPermissions"` |
+| `frontend-dev-{CODE}` | UI, client-side, animations. Waits for `backend-dev` message before finalizing | `mode: "bypassPermissions"` |
 | `qa-agent` | Reviews implementation, tests functionality, sends bugs back to devs for another pass | `mode: "bypassPermissions"` |
 | `documenter` | Updates documentation while implementation is in progress | `mode: "bypassPermissions"` |
 | `security-scanner` | Strict security testing, forces devs to fix critical issues before continuing | `mode: "bypassPermissions"` |
@@ -34,16 +34,18 @@ This skill combines ALL team roles for end-to-end autonomous execution.
 
 | Role | Purpose | Config |
 |------|---------|--------|
-| `task-creator-{N}` | Converts an idea into a task spec | `isolation: "worktree"`, `mode: "bypassPermissions"` |
+| `task-creator-{N}` | Converts an idea into a task spec | `mode: "bypassPermissions"` |
 | `consistency-reviewer` | Reviews task specs for consistency | `mode: "bypassPermissions"` |
 
 #### Release Roles
 
 | Role | Purpose | Config |
 |------|---------|--------|
-| `pr-analyst-{N}` | Analyzes a PR in the release pipeline | `isolation: "worktree"`, `mode: "bypassPermissions"` |
+| `pr-analyst-{N}` | Analyzes a PR in the release pipeline | `mode: "bypassPermissions"` |
 | `security-auditor` | Cross-PR security validation | `mode: "bypassPermissions"` |
 | `ci-monitor-{N}` | Monitors a CI workflow run | `mode: "bypassPermissions"` |
+
+**Worktree guard:** Before spawning agents, check `SH context` → `worktree.enabled`. Only add `isolation: "worktree"` to agent config when worktrees are enabled. When disabled, spawn agents without isolation and use sequential execution if parallel work would conflict.
 
 ### Team Lifecycle
 
