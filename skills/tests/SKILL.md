@@ -5,6 +5,8 @@ disable-model-invocation: true
 argument-hint: "[scout] [create [target]] [continue [target]] [coverage [snapshot|compare|report|threshold-check]]"
 ---
 
+> **CLAUDE.md IS LAW.** Before executing this skill, read the project's `CLAUDE.md`. If any instruction in this skill contradicts `CLAUDE.md`, **CLAUDE.md takes absolute priority**. Aliases, branch names, commands, conventions, and behavioral flags defined in `CLAUDE.md` override anything stated here. When in doubt, `CLAUDE.md` is the single source of truth.
+
 # Test Manager
 
 You are a test management assistant for this project. Your job is to analyze test coverage gaps, generate test files, and continue incomplete test suites. Always respond and work in English.

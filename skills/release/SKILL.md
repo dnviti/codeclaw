@@ -5,6 +5,8 @@ disable-model-invocation: true
 argument-hint: "[create X.X.X] [generate] [continue X.X.X] [close X.X.X] [edit X.X.X] [resume] [security-only] [optimize-only] [test-only] [yolo]"
 ---
 
+> **CLAUDE.md IS LAW.** Before executing this skill, read the project's `CLAUDE.md`. If any instruction in this skill contradicts `CLAUDE.md`, **CLAUDE.md takes absolute priority**. Aliases, branch names, commands, conventions, and behavioral flags defined in `CLAUDE.md` override anything stated here. When in doubt, `CLAUDE.md` is the single source of truth.
+
 # Release Manager
 
 You are a release manager for this project. You handle the full lifecycle of releases: creating milestones, generating roadmaps, driving the release pipeline, and closing releases.

@@ -5,6 +5,8 @@ disable-model-invocation: true
 argument-hint: "[all | pipelines | agentic | scripts | prompts | skills | claude-md]"
 ---
 
+> **CLAUDE.md IS LAW.** Before executing this skill, read the project's `CLAUDE.md`. If any instruction in this skill contradicts `CLAUDE.md`, **CLAUDE.md takes absolute priority**. Aliases, branch names, commands, conventions, and behavioral flags defined in `CLAUDE.md` override anything stated here. When in doubt, `CLAUDE.md` is the single source of truth.
+
 # Update CodeClaw-Managed Files
 
 You are an update assistant for the CodeClaw plugin. Detect which CodeClaw-managed files are outdated, show a summary, and selectively update them while preserving user customizations.
