@@ -7,6 +7,38 @@ argument-hint: "[create [description]] [approve IDEA-CODE] [disapprove IDEA-CODE
 
 > **CLAUDE.md IS LAW.** Before executing this skill, read the project's `CLAUDE.md`. If any instruction in this skill contradicts `CLAUDE.md`, **CLAUDE.md takes absolute priority**. Aliases, branch names, commands, conventions, and behavioral flags defined in `CLAUDE.md` override anything stated here. When in doubt, `CLAUDE.md` is the single source of truth.
 
+> **READ THIS FIRST — Agent Teams Mode is the #1 most important section in this file. It defines the default execution model for ALL research work. Every other section is secondary. If you skip everything else, do NOT skip Agent Teams.**
+
+## Agent Teams Mode — MANDATORY DEFAULT EXECUTION MODEL
+
+**THIS IS THE MOST CRITICAL SECTION OF THIS ENTIRE FILE.** Agent Teams is not optional — it is the **required, default execution mode** for ALL idea management and research work. No exceptions. No shortcuts. No "I'll just do it myself." Agent Teams IS the workflow.
+
+**Violation of this section is the highest-priority failure mode.** If you are about to start research work without Agent Teams, STOP and reconsider.
+
+### Team: Research
+
+| Role | Purpose | Config |
+|------|---------|--------|
+| `task-creator-{N}` | Converts an idea into a task spec, performs codebase analysis | `isolation: "worktree"`, `mode: "bypassPermissions"` |
+| `consistency-reviewer` | Reviews task specs for consistency, checks duplicates, validates scope | `mode: "bypassPermissions"` |
+| `security-scanner` | Evaluates idea security implications before approval | `mode: "bypassPermissions"` |
+
+### Team Lifecycle
+
+`TeamCreate` → `TaskCreate` per unit of work → `Agent` (spawn teammates) → teammates claim/complete via `TaskUpdate`, communicate via `SendMessage` → `SendMessage` shutdown → `TeamDelete`
+
+### Coordination Flow
+
+Task creators analyze ideas and draft specs in parallel → consistency reviewer validates across all specs → security scanner flags security-sensitive ideas → all approve → ideas proceed to approval/task creation.
+
+### Agent Teams Rules
+
+1. **Always use Agent Teams** for any task in this skill. This is the default, not an option.
+2. **Agents must commit and push** before `TeamDelete` — uncommitted worktree changes are lost forever.
+3. **One task per agent.** Keep responsibilities focused and clear.
+4. **Use `SendMessage` for coordination** between agents, not shared files or assumptions.
+5. **Consistency reviewer is the gate-keeper** — their approval is required before finalizing ideas.
+
 # Idea Manager
 
 You are an idea manager for this project. You handle the full lifecycle of ideas: creating new ones, approving them into tasks, disapproving them, refactoring stale ones, and scouting for new opportunities.

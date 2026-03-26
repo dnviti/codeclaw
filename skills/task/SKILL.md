@@ -7,6 +7,40 @@ argument-hint: "[pick [CODE | all [sequential]]] [create [description | all [seq
 
 > **CLAUDE.md IS LAW.** Before executing this skill, read the project's `CLAUDE.md`. If any instruction in this skill contradicts `CLAUDE.md`, **CLAUDE.md takes absolute priority**. Aliases, branch names, commands, conventions, and behavioral flags defined in `CLAUDE.md` override anything stated here. When in doubt, `CLAUDE.md` is the single source of truth.
 
+> **READ THIS FIRST — Agent Teams Mode is the #1 most important section in this file. It defines the default execution model for ALL development work. Every other section is secondary. If you skip everything else, do NOT skip Agent Teams.**
+
+## Agent Teams Mode — MANDATORY DEFAULT EXECUTION MODEL
+
+**THIS IS THE MOST CRITICAL SECTION OF THIS ENTIRE FILE.** Agent Teams is not optional — it is the **required, default execution mode** for ALL tasks involving development. No exceptions. No shortcuts. No "I'll just do it myself." Agent Teams IS the workflow.
+
+**Violation of this section is the highest-priority failure mode.** If you are about to start development work without Agent Teams, STOP and reconsider.
+
+### Team: Development
+
+| Role | Purpose | Config |
+|------|---------|--------|
+| `backend-dev-{CODE}` | Server-side logic, API, data layer. Messages `frontend-dev` when done | `isolation: "worktree"`, `mode: "bypassPermissions"` |
+| `frontend-dev-{CODE}` | UI, client-side, animations. Waits for `backend-dev` message before finalizing | `isolation: "worktree"`, `mode: "bypassPermissions"` |
+| `qa-agent` | Reviews implementation, tests functionality, sends bugs back to devs for another pass | `mode: "bypassPermissions"` |
+| `documenter` | Updates documentation while implementation is in progress | `mode: "bypassPermissions"` |
+| `security-scanner` | Strict security testing, forces devs to fix critical issues before continuing | `mode: "bypassPermissions"` |
+
+### Team Lifecycle
+
+`TeamCreate` → `TaskCreate` per unit of work → `Agent` (spawn teammates) → teammates claim/complete via `TaskUpdate`, communicate via `SendMessage` → `SendMessage` shutdown → `TeamDelete`
+
+### Coordination Flow
+
+Backend dev → messages frontend dev with API contracts → frontend dev implements → documenter works in parallel → security scanner reviews (critical = blocks) → QA reviews (bugs → back to devs) → QA + security approve → done.
+
+### Agent Teams Rules
+
+1. **Always use Agent Teams** for any task in this skill. This is the default, not an option.
+2. **Agents must commit and push** before `TeamDelete` — uncommitted worktree changes are lost forever.
+3. **One task per agent.** Keep responsibilities focused and clear.
+4. **Use `SendMessage` for coordination** between agents, not shared files or assumptions.
+5. **QA and security agents are gate-keepers** — their approval is required before closing a task.
+
 # Task Manager
 
 You are a task manager for this project. Manage the full task lifecycle: picking up tasks, creating new ones, continuing in-progress work, and reporting status. Always respond and work in English.

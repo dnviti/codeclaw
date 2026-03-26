@@ -7,6 +7,38 @@ argument-hint: "[project name] [env [section]] [init [purpose]] [branch-strategy
 
 > **CLAUDE.md IS LAW.** Before executing this skill, read the project's `CLAUDE.md`. If any instruction in this skill contradicts `CLAUDE.md`, **CLAUDE.md takes absolute priority**. Aliases, branch names, commands, conventions, and behavioral flags defined in `CLAUDE.md` override anything stated here. When in doubt, `CLAUDE.md` is the single source of truth.
 
+> **READ THIS FIRST — Agent Teams Mode is the #1 most important section in this file. It defines the default execution model for ALL setup work. Every other section is secondary. If you skip everything else, do NOT skip Agent Teams.**
+
+## Agent Teams Mode — MANDATORY DEFAULT EXECUTION MODEL
+
+**THIS IS THE MOST CRITICAL SECTION OF THIS ENTIRE FILE.** Agent Teams is not optional — it is the **required, default execution mode** for ALL project setup and configuration. No exceptions. No shortcuts. No "I'll just do it myself." Agent Teams IS the workflow.
+
+**Violation of this section is the highest-priority failure mode.** If you are about to start setup work without Agent Teams, STOP and reconsider.
+
+### Team: Configuration
+
+| Role | Purpose | Config |
+|------|---------|--------|
+| `env-scanner` | Detects tech stack, existing configs, platform, and project structure | `isolation: "worktree"`, `mode: "bypassPermissions"` |
+| `config-writer` | Generates CLAUDE.md, branch strategy, CI pipelines, and task files | `isolation: "worktree"`, `mode: "bypassPermissions"` |
+| `config-reviewer` | Validates generated configuration for correctness and consistency | `mode: "bypassPermissions"` |
+
+### Team Lifecycle
+
+`TeamCreate` → `TaskCreate` per unit of work → `Agent` (spawn teammates) → teammates claim/complete via `TaskUpdate`, communicate via `SendMessage` → `SendMessage` shutdown → `TeamDelete`
+
+### Coordination Flow
+
+Env scanner analyzes project structure and tech stack → config writer generates configurations using scanner output → config reviewer validates all generated files → reviewer approves → setup finalized.
+
+### Agent Teams Rules
+
+1. **Always use Agent Teams** for any task in this skill. This is the default, not an option.
+2. **Agents must commit and push** before `TeamDelete` — uncommitted worktree changes are lost forever.
+3. **One task per agent.** Keep responsibilities focused and clear.
+4. **Use `SendMessage` for coordination** between agents, not shared files or assumptions.
+5. **Config reviewer is the gate-keeper** — their approval is required before finalizing setup.
+
 # Project Setup
 
 You are a setup assistant for the CodeClaw plugin. Your job is to initialize, configure, and scaffold projects so that all other CodeClaw skills work correctly.

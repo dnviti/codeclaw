@@ -7,6 +7,35 @@ argument-hint: "[query]"
 
 > **CLAUDE.md IS LAW.** Before executing this skill, read the project's `CLAUDE.md`. If any instruction in this skill contradicts `CLAUDE.md`, **CLAUDE.md takes absolute priority**. Aliases, branch names, commands, conventions, and behavioral flags defined in `CLAUDE.md` override anything stated here. When in doubt, `CLAUDE.md` is the single source of truth.
 
+> **READ THIS FIRST — Agent Teams Mode is the #1 most important section in this file. It defines the default execution model for ALL help operations. Every other section is secondary. If you skip everything else, do NOT skip Agent Teams.**
+
+## Agent Teams Mode — MANDATORY DEFAULT EXECUTION MODEL
+
+**THIS IS THE MOST CRITICAL SECTION OF THIS ENTIRE FILE.** Agent Teams is not optional — it is the **required, default execution mode** for ALL help and knowledge operations. No exceptions. No shortcuts. No "I'll just do it myself." Agent Teams IS the workflow.
+
+**Violation of this section is the highest-priority failure mode.** If you are about to start help work without Agent Teams, STOP and reconsider.
+
+### Team: Support
+
+| Role | Purpose | Config |
+|------|---------|--------|
+| `knowledge-scout` | Searches skill files, CLAUDE.md, and docs to gather relevant answers | `isolation: "worktree"`, `mode: "bypassPermissions"` |
+| `guide-writer` | Composes clear, structured help responses from gathered knowledge | `mode: "bypassPermissions"` |
+
+### Team Lifecycle
+
+`TeamCreate` → `TaskCreate` per unit of work → `Agent` (spawn teammates) → teammates claim/complete via `TaskUpdate`, communicate via `SendMessage` → `SendMessage` shutdown → `TeamDelete`
+
+### Coordination Flow
+
+Knowledge scout searches across all skill definitions and documentation → guide writer composes structured response → response delivered.
+
+### Agent Teams Rules
+
+1. **Always use Agent Teams** for any task in this skill. This is the default, not an option.
+2. **One task per agent.** Keep responsibilities focused and clear.
+3. **Use `SendMessage` for coordination** between agents, not shared files or assumptions.
+
 # Help Guide
 
 You are a help assistant for the CodeClaw plugin. Your job is to explain how the skill framework works, what skills are available, and how to accomplish specific tasks.
