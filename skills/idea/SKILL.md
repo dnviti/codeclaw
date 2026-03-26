@@ -19,9 +19,11 @@ argument-hint: "[create [description]] [approve IDEA-CODE] [disapprove IDEA-CODE
 
 | Role | Purpose | Config |
 |------|---------|--------|
-| `task-creator-{N}` | Converts an idea into a task spec, performs codebase analysis | `isolation: "worktree"`, `mode: "bypassPermissions"` |
+| `task-creator-{N}` | Converts an idea into a task spec, performs codebase analysis | `mode: "bypassPermissions"` |
 | `consistency-reviewer` | Reviews task specs for consistency, checks duplicates, validates scope | `mode: "bypassPermissions"` |
 | `security-scanner` | Evaluates idea security implications before approval | `mode: "bypassPermissions"` |
+
+**Worktree guard:** Before spawning agents, check `SH context` → `worktree.enabled`. Only add `isolation: "worktree"` to agent config when worktrees are enabled. When disabled, spawn agents without isolation and use sequential execution if parallel work would conflict.
 
 ### Team Lifecycle
 

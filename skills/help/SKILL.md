@@ -19,8 +19,10 @@ argument-hint: "[query]"
 
 | Role | Purpose | Config |
 |------|---------|--------|
-| `knowledge-scout` | Searches skill files, CLAUDE.md, and docs to gather relevant answers | `isolation: "worktree"`, `mode: "bypassPermissions"` |
+| `knowledge-scout` | Searches skill files, CLAUDE.md, and docs to gather relevant answers | `mode: "bypassPermissions"` |
 | `guide-writer` | Composes clear, structured help responses from gathered knowledge | `mode: "bypassPermissions"` |
+
+**Worktree guard:** Before spawning agents, check `SH context` → `worktree.enabled`. Only add `isolation: "worktree"` to agent config when worktrees are enabled. When disabled, spawn agents without isolation and use sequential execution if parallel work would conflict.
 
 ### Team Lifecycle
 

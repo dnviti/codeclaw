@@ -19,9 +19,11 @@ argument-hint: "[all | pipelines | agentic | scripts | prompts | skills | claude
 
 | Role | Purpose | Config |
 |------|---------|--------|
-| `update-scanner` | Compares installed vs plugin versions, detects outdated files | `isolation: "worktree"`, `mode: "bypassPermissions"` |
-| `update-applier-{N}` | Applies updates to specific file categories in parallel | `isolation: "worktree"`, `mode: "bypassPermissions"` |
+| `update-scanner` | Compares installed vs plugin versions, detects outdated files | `mode: "bypassPermissions"` |
+| `update-applier-{N}` | Applies updates to specific file categories in parallel | `mode: "bypassPermissions"` |
 | `update-reviewer` | Validates applied updates preserve user customizations | `mode: "bypassPermissions"` |
+
+**Worktree guard:** Before spawning agents, check `SH context` → `worktree.enabled`. Only add `isolation: "worktree"` to agent config when worktrees are enabled. When disabled, spawn agents without isolation and use sequential execution if parallel work would conflict.
 
 ### Team Lifecycle
 

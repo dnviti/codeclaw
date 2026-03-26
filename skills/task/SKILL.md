@@ -19,11 +19,13 @@ argument-hint: "[pick [CODE | all [sequential]]] [create [description | all [seq
 
 | Role | Purpose | Config |
 |------|---------|--------|
-| `backend-dev-{CODE}` | Server-side logic, API, data layer. Messages `frontend-dev` when done | `isolation: "worktree"`, `mode: "bypassPermissions"` |
-| `frontend-dev-{CODE}` | UI, client-side, animations. Waits for `backend-dev` message before finalizing | `isolation: "worktree"`, `mode: "bypassPermissions"` |
+| `backend-dev-{CODE}` | Server-side logic, API, data layer. Messages `frontend-dev` when done | `mode: "bypassPermissions"` |
+| `frontend-dev-{CODE}` | UI, client-side, animations. Waits for `backend-dev` message before finalizing | `mode: "bypassPermissions"` |
 | `qa-agent` | Reviews implementation, tests functionality, sends bugs back to devs for another pass | `mode: "bypassPermissions"` |
 | `documenter` | Updates documentation while implementation is in progress | `mode: "bypassPermissions"` |
 | `security-scanner` | Strict security testing, forces devs to fix critical issues before continuing | `mode: "bypassPermissions"` |
+
+**Worktree guard:** Before spawning agents, check `SH context` → `worktree.enabled`. Only add `isolation: "worktree"` to agent config when worktrees are enabled. When disabled, spawn agents without isolation and use sequential execution if parallel work would conflict.
 
 ### Team Lifecycle
 

@@ -19,9 +19,11 @@ argument-hint: "[project name] [env [section]] [init [purpose]] [branch-strategy
 
 | Role | Purpose | Config |
 |------|---------|--------|
-| `env-scanner` | Detects tech stack, existing configs, platform, and project structure | `isolation: "worktree"`, `mode: "bypassPermissions"` |
-| `config-writer` | Generates CLAUDE.md, branch strategy, CI pipelines, and task files | `isolation: "worktree"`, `mode: "bypassPermissions"` |
+| `env-scanner` | Detects tech stack, existing configs, platform, and project structure | `mode: "bypassPermissions"` |
+| `config-writer` | Generates CLAUDE.md, branch strategy, CI pipelines, and task files | `mode: "bypassPermissions"` |
 | `config-reviewer` | Validates generated configuration for correctness and consistency | `mode: "bypassPermissions"` |
+
+**Worktree guard:** Before spawning agents, check `SH context` → `worktree.enabled`. Only add `isolation: "worktree"` to agent config when worktrees are enabled. When disabled, spawn agents without isolation and use sequential execution if parallel work would conflict.
 
 ### Team Lifecycle
 

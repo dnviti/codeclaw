@@ -19,9 +19,11 @@ argument-hint: "[generate] [sync] [reset] [publish] [yolo]"
 
 | Role | Purpose | Config |
 |------|---------|--------|
-| `docs-analyst` | Analyzes codebase structure, extracts API signatures, maps architecture | `isolation: "worktree"`, `mode: "bypassPermissions"` |
-| `docs-writer-{N}` | Writes documentation sections in parallel (architecture, API, guides) | `isolation: "worktree"`, `mode: "bypassPermissions"` |
+| `docs-analyst` | Analyzes codebase structure, extracts API signatures, maps architecture | `mode: "bypassPermissions"` |
+| `docs-writer-{N}` | Writes documentation sections in parallel (architecture, API, guides) | `mode: "bypassPermissions"` |
 | `docs-reviewer` | Reviews all generated docs for accuracy, consistency, and completeness | `mode: "bypassPermissions"` |
+
+**Worktree guard:** Before spawning agents, check `SH context` → `worktree.enabled`. Only add `isolation: "worktree"` to agent config when worktrees are enabled. When disabled, spawn agents without isolation and use sequential execution if parallel work would conflict.
 
 ### Team Lifecycle
 

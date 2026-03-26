@@ -19,10 +19,12 @@ argument-hint: "[scout] [create [target]] [continue [target]] [coverage [snapsho
 
 | Role | Purpose | Config |
 |------|---------|--------|
-| `test-scout` | Analyzes codebase for coverage gaps, identifies untested critical paths | `isolation: "worktree"`, `mode: "bypassPermissions"` |
-| `test-writer-{N}` | Writes test files in parallel, targeting specific modules or coverage gaps | `isolation: "worktree"`, `mode: "bypassPermissions"` |
+| `test-scout` | Analyzes codebase for coverage gaps, identifies untested critical paths | `mode: "bypassPermissions"` |
+| `test-writer-{N}` | Writes test files in parallel, targeting specific modules or coverage gaps | `mode: "bypassPermissions"` |
 | `qa-reviewer` | Reviews all generated tests for correctness, coverage, and best practices | `mode: "bypassPermissions"` |
 | `security-scanner` | Validates tests cover security-sensitive code paths | `mode: "bypassPermissions"` |
+
+**Worktree guard:** Before spawning agents, check `SH context` → `worktree.enabled`. Only add `isolation: "worktree"` to agent config when worktrees are enabled. When disabled, spawn agents without isolation and use sequential execution if parallel work would conflict.
 
 ### Team Lifecycle
 
