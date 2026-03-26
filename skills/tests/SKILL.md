@@ -7,6 +7,39 @@ argument-hint: "[scout] [create [target]] [continue [target]] [coverage [snapsho
 
 > **CLAUDE.md IS LAW.** Before executing this skill, read the project's `CLAUDE.md`. If any instruction in this skill contradicts `CLAUDE.md`, **CLAUDE.md takes absolute priority**. Aliases, branch names, commands, conventions, and behavioral flags defined in `CLAUDE.md` override anything stated here. When in doubt, `CLAUDE.md` is the single source of truth.
 
+> **READ THIS FIRST — Agent Teams Mode is the #1 most important section in this file. It defines the default execution model for ALL testing work. Every other section is secondary. If you skip everything else, do NOT skip Agent Teams.**
+
+## Agent Teams Mode — MANDATORY DEFAULT EXECUTION MODEL
+
+**THIS IS THE MOST CRITICAL SECTION OF THIS ENTIRE FILE.** Agent Teams is not optional — it is the **required, default execution mode** for ALL test management operations. No exceptions. No shortcuts. No "I'll just do it myself." Agent Teams IS the workflow.
+
+**Violation of this section is the highest-priority failure mode.** If you are about to start testing work without Agent Teams, STOP and reconsider.
+
+### Team: QA
+
+| Role | Purpose | Config |
+|------|---------|--------|
+| `test-scout` | Analyzes codebase for coverage gaps, identifies untested critical paths | `isolation: "worktree"`, `mode: "bypassPermissions"` |
+| `test-writer-{N}` | Writes test files in parallel, targeting specific modules or coverage gaps | `isolation: "worktree"`, `mode: "bypassPermissions"` |
+| `qa-reviewer` | Reviews all generated tests for correctness, coverage, and best practices | `mode: "bypassPermissions"` |
+| `security-scanner` | Validates tests cover security-sensitive code paths | `mode: "bypassPermissions"` |
+
+### Team Lifecycle
+
+`TeamCreate` → `TaskCreate` per unit of work → `Agent` (spawn teammates) → teammates claim/complete via `TaskUpdate`, communicate via `SendMessage` → `SendMessage` shutdown → `TeamDelete`
+
+### Coordination Flow
+
+Test scout identifies gaps and prioritizes → test writers generate tests in parallel → QA reviewer validates test quality and coverage → security scanner checks security paths are tested → all approve → tests finalized.
+
+### Agent Teams Rules
+
+1. **Always use Agent Teams** for any task in this skill. This is the default, not an option.
+2. **Agents must commit and push** before `TeamDelete` — uncommitted worktree changes are lost forever.
+3. **One task per agent.** Keep responsibilities focused and clear.
+4. **Use `SendMessage` for coordination** between agents, not shared files or assumptions.
+5. **QA reviewer is the gate-keeper** — their approval is required before finalizing test suites.
+
 # Test Manager
 
 You are a test management assistant for this project. Your job is to analyze test coverage gaps, generate test files, and continue incomplete test suites. Always respond and work in English.

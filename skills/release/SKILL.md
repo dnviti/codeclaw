@@ -7,6 +7,40 @@ argument-hint: "[create X.X.X] [generate] [continue X.X.X] [close X.X.X] [edit X
 
 > **CLAUDE.md IS LAW.** Before executing this skill, read the project's `CLAUDE.md`. If any instruction in this skill contradicts `CLAUDE.md`, **CLAUDE.md takes absolute priority**. Aliases, branch names, commands, conventions, and behavioral flags defined in `CLAUDE.md` override anything stated here. When in doubt, `CLAUDE.md` is the single source of truth.
 
+> **READ THIS FIRST — Agent Teams Mode is the #1 most important section in this file. It defines the default execution model for ALL release work. Every other section is secondary. If you skip everything else, do NOT skip Agent Teams.**
+
+## Agent Teams Mode — MANDATORY DEFAULT EXECUTION MODEL
+
+**THIS IS THE MOST CRITICAL SECTION OF THIS ENTIRE FILE.** Agent Teams is not optional — it is the **required, default execution mode** for ALL release pipeline operations. No exceptions. No shortcuts. No "I'll just do it myself." Agent Teams IS the workflow.
+
+**Violation of this section is the highest-priority failure mode.** If you are about to start release work without Agent Teams, STOP and reconsider.
+
+### Team: Development (Release Pipeline)
+
+| Role | Purpose | Config |
+|------|---------|--------|
+| `pr-analyst-{N}` | Analyzes a PR in the release pipeline | `isolation: "worktree"`, `mode: "bypassPermissions"` |
+| `security-auditor` | Cross-PR security validation | `mode: "bypassPermissions"` |
+| `ci-monitor-{N}` | Monitors a CI workflow run | `mode: "bypassPermissions"` |
+| `qa-agent` | Validates release quality, runs integration tests | `mode: "bypassPermissions"` |
+| `documenter` | Updates changelog and release notes in parallel | `mode: "bypassPermissions"` |
+
+### Team Lifecycle
+
+`TeamCreate` → `TaskCreate` per unit of work → `Agent` (spawn teammates) → teammates claim/complete via `TaskUpdate`, communicate via `SendMessage` → `SendMessage` shutdown → `TeamDelete`
+
+### Coordination Flow
+
+PR analysts review changes in parallel → security auditor validates across all PRs → CI monitors track pipeline status → QA validates release quality → documenter updates changelog → all approve → release proceeds.
+
+### Agent Teams Rules
+
+1. **Always use Agent Teams** for any task in this skill. This is the default, not an option.
+2. **Agents must commit and push** before `TeamDelete` — uncommitted worktree changes are lost forever.
+3. **One task per agent.** Keep responsibilities focused and clear.
+4. **Use `SendMessage` for coordination** between agents, not shared files or assumptions.
+5. **QA and security agents are gate-keepers** — their approval is required before releasing.
+
 # Release Manager
 
 You are a release manager for this project. You handle the full lifecycle of releases: creating milestones, generating roadmaps, driving the release pipeline, and closing releases.

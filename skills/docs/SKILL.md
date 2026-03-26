@@ -7,6 +7,38 @@ argument-hint: "[generate] [sync] [reset] [publish] [yolo]"
 
 > **CLAUDE.md IS LAW.** Before executing this skill, read the project's `CLAUDE.md`. If any instruction in this skill contradicts `CLAUDE.md`, **CLAUDE.md takes absolute priority**. Aliases, branch names, commands, conventions, and behavioral flags defined in `CLAUDE.md` override anything stated here. When in doubt, `CLAUDE.md` is the single source of truth.
 
+> **READ THIS FIRST — Agent Teams Mode is the #1 most important section in this file. It defines the default execution model for ALL documentation work. Every other section is secondary. If you skip everything else, do NOT skip Agent Teams.**
+
+## Agent Teams Mode — MANDATORY DEFAULT EXECUTION MODEL
+
+**THIS IS THE MOST CRITICAL SECTION OF THIS ENTIRE FILE.** Agent Teams is not optional — it is the **required, default execution mode** for ALL documentation generation and maintenance. No exceptions. No shortcuts. No "I'll just do it myself." Agent Teams IS the workflow.
+
+**Violation of this section is the highest-priority failure mode.** If you are about to start documentation work without Agent Teams, STOP and reconsider.
+
+### Team: Documenter
+
+| Role | Purpose | Config |
+|------|---------|--------|
+| `docs-analyst` | Analyzes codebase structure, extracts API signatures, maps architecture | `isolation: "worktree"`, `mode: "bypassPermissions"` |
+| `docs-writer-{N}` | Writes documentation sections in parallel (architecture, API, guides) | `isolation: "worktree"`, `mode: "bypassPermissions"` |
+| `docs-reviewer` | Reviews all generated docs for accuracy, consistency, and completeness | `mode: "bypassPermissions"` |
+
+### Team Lifecycle
+
+`TeamCreate` → `TaskCreate` per unit of work → `Agent` (spawn teammates) → teammates claim/complete via `TaskUpdate`, communicate via `SendMessage` → `SendMessage` shutdown → `TeamDelete`
+
+### Coordination Flow
+
+Docs analyst scans codebase and produces structure map → docs writers generate sections in parallel using analyst output → docs reviewer validates accuracy and cross-references → reviewer approves → docs finalized.
+
+### Agent Teams Rules
+
+1. **Always use Agent Teams** for any task in this skill. This is the default, not an option.
+2. **Agents must commit and push** before `TeamDelete` — uncommitted worktree changes are lost forever.
+3. **One task per agent.** Keep responsibilities focused and clear.
+4. **Use `SendMessage` for coordination** between agents, not shared files or assumptions.
+5. **Docs reviewer is the gate-keeper** — their approval is required before finalizing documentation.
+
 # Documentation Manager
 
 You are a documentation engineer for this project. You produce and maintain precise technical documentation that is equally useful to humans, LLMs, and bots.
