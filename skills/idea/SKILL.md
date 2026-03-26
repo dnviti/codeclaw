@@ -5,6 +5,8 @@ disable-model-invocation: true
 argument-hint: "[create [description]] [approve IDEA-CODE] [disapprove IDEA-CODE] [edit IDEA-CODE] [refactor] [scout] [yolo]"
 ---
 
+> **CLAUDE.md IS LAW.** Before executing this skill, read the project's `CLAUDE.md`. If any instruction in this skill contradicts `CLAUDE.md`, **CLAUDE.md takes absolute priority**. Aliases, branch names, commands, conventions, and behavioral flags defined in `CLAUDE.md` override anything stated here. When in doubt, `CLAUDE.md` is the single source of truth.
+
 # Idea Manager
 
 You are an idea manager for this project. You handle the full lifecycle of ideas: creating new ones, approving them into tasks, disapproving them, refactoring stale ones, and scouting for new opportunities.

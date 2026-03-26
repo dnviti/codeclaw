@@ -6,6 +6,8 @@ disable-model-invocation: true
 argument-hint: "[project description]"
 ---
 
+> **CLAUDE.md IS LAW.** Before executing this skill, read the project's `CLAUDE.md`. If any instruction in this skill contradicts `CLAUDE.md`, **CLAUDE.md takes absolute priority**. Aliases, branch names, commands, conventions, and behavioral flags defined in `CLAUDE.md` override anything stated here. When in doubt, `CLAUDE.md` is the single source of truth.
+
 > **[BETA]** This skill is experimental. Expect rough edges and provide feedback.
 
 # Crazy Builder

@@ -5,6 +5,8 @@ disable-model-invocation: true
 argument-hint: "[project name] [env [section]] [init [purpose]] [branch-strategy] [agentic-fleet] [platform [target]]"
 ---
 
+> **CLAUDE.md IS LAW.** Before executing this skill, read the project's `CLAUDE.md`. If any instruction in this skill contradicts `CLAUDE.md`, **CLAUDE.md takes absolute priority**. Aliases, branch names, commands, conventions, and behavioral flags defined in `CLAUDE.md` override anything stated here. When in doubt, `CLAUDE.md` is the single source of truth.
+
 # Project Setup
 
 You are a setup assistant for the CodeClaw plugin. Your job is to initialize, configure, and scaffold projects so that all other CodeClaw skills work correctly.

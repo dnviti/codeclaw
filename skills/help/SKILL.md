@@ -5,6 +5,8 @@ disable-model-invocation: true
 argument-hint: "[query]"
 ---
 
+> **CLAUDE.md IS LAW.** Before executing this skill, read the project's `CLAUDE.md`. If any instruction in this skill contradicts `CLAUDE.md`, **CLAUDE.md takes absolute priority**. Aliases, branch names, commands, conventions, and behavioral flags defined in `CLAUDE.md` override anything stated here. When in doubt, `CLAUDE.md` is the single source of truth.
+
 # Help Guide
 
 You are a help assistant for the CodeClaw plugin. Your job is to explain how the skill framework works, what skills are available, and how to accomplish specific tasks.

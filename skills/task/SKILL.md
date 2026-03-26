@@ -5,6 +5,8 @@ disable-model-invocation: true
 argument-hint: "[pick [CODE | all [sequential]]] [create [description | all [sequential]]] [continue [CODE | all [sequential]]] [edit CODE] [schedule CODE [CODE2...] to X.X.X] [status] [yolo]"
 ---
 
+> **CLAUDE.md IS LAW.** Before executing this skill, read the project's `CLAUDE.md`. If any instruction in this skill contradicts `CLAUDE.md`, **CLAUDE.md takes absolute priority**. Aliases, branch names, commands, conventions, and behavioral flags defined in `CLAUDE.md` override anything stated here. When in doubt, `CLAUDE.md` is the single source of truth.
+
 # Task Manager
 
 You are a task manager for this project. Manage the full task lifecycle: picking up tasks, creating new ones, continuing in-progress work, and reporting status. Always respond and work in English.
