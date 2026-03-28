@@ -309,7 +309,6 @@ All configuration lives in `project-config.json` (searched at `.claude/project-c
     "batch_size": 64,
     "include_patterns": [],
     "exclude_patterns": [],
-    "worktree_shared": true,
     "backend": "lancedb",
     "lock_backend": {
       "type": "file",
@@ -348,7 +347,6 @@ All configuration lives in `project-config.json` (searched at `.claude/project-c
 | `batch_size` | `64` | Number of chunks per embedding batch |
 | `include_patterns` | `[]` | Whitelist file patterns (empty = all files) |
 | `exclude_patterns` | `[]` | Additional file patterns to skip |
-| `worktree_shared` | `true` | Share a single vector index across all git worktrees. When enabled, worktrees resolve the index path to the main repo root |
 | `backend` | `"lancedb"` | Primary storage backend (`"lancedb"`, `"sqlite"`, or `"rlm"`) |
 | `lock_backend.type` | `"file"` | Lock backend for multi-agent coordination: `"file"` (default, single-machine), `"sqlite"` (networked filesystems), `"redis"` (distributed) |
 | `lock_backend.timeout` | `30` | Lock acquisition timeout in seconds |
@@ -486,7 +484,7 @@ flowchart TD
      "matcher": "Edit|Write",
      "hooks": [{
        "type": "command",
-       "command": "python3 ${CLAUDE_PLUGIN_ROOT}/scripts/vector_memory.py hook \"$CLAUDE_FILE_PATH\""
+       "command": "python3 ${CLAW_ROOT}/scripts/vector_memory.py hook \"$CLAUDE_FILE_PATH\""
      }]
    }
    ```
@@ -837,19 +835,6 @@ python3 vector_memory.py gc --deep       # Also clear embedding cache
 python3 vector_memory.py gc --ttl-days 7 # Custom TTL
 ```
 
-### Worktree Sharing Verification
-
-```bash
-# Verify memory sharing from main repo
-python3 vector_memory.py verify-worktree-sharing
-
-# Verify from a worktree directory
-python3 vector_memory.py verify-worktree-sharing --root .worktrees/task/AUTH-0001
-
-# JSON output for programmatic use
-python3 vector_memory.py verify-worktree-sharing --json
-```
-
 ### Multi-Agent Management
 
 ```bash
@@ -1039,17 +1024,6 @@ For networked filesystems where `fcntl.flock` is unreliable, switch to the SQLit
   }
 }
 ```
-
-### Worktree memory not shared
-
-**Symptom:** Vector memory is empty or different when running from a worktree.
-
-**Fix:** Verify sharing is correctly configured:
-```bash
-python3 vector_memory.py verify-worktree-sharing --root .worktrees/task/CODE --json
-```
-
-Ensure `worktree_shared: true` in `project-config.json` (this is the default). If sharing reports `false`, the worktree may be detached -- recreate it with `/task continue CODE`.
 
 ### Index too large
 

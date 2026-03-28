@@ -5,43 +5,7 @@ disable-model-invocation: true
 argument-hint: "[create X.X.X] [generate] [continue X.X.X] [close X.X.X] [edit X.X.X] [resume] [security-only] [optimize-only] [test-only] [yolo]"
 ---
 
-> **CLAUDE.md IS LAW.** Before executing this skill, read the project's `CLAUDE.md`. If any instruction in this skill contradicts `CLAUDE.md`, **CLAUDE.md takes absolute priority**. Aliases, branch names, commands, conventions, and behavioral flags defined in `CLAUDE.md` override anything stated here. When in doubt, `CLAUDE.md` is the single source of truth.
-
-> **READ THIS FIRST — Agent Teams Mode is the #1 most important section in this file. It defines the default execution model for ALL release work. Every other section is secondary. If you skip everything else, do NOT skip Agent Teams.**
-
-## Agent Teams Mode — MANDATORY DEFAULT EXECUTION MODEL
-
-**THIS IS THE MOST CRITICAL SECTION OF THIS ENTIRE FILE.** Agent Teams is not optional — it is the **required, default execution mode** for ALL release pipeline operations. No exceptions. No shortcuts. No "I'll just do it myself." Agent Teams IS the workflow.
-
-**Violation of this section is the highest-priority failure mode.** If you are about to start release work without Agent Teams, STOP and reconsider.
-
-### Team: Development (Release Pipeline)
-
-| Role | Purpose | Config |
-|------|---------|--------|
-| `pr-analyst-{N}` | Analyzes a PR in the release pipeline | `mode: "bypassPermissions"` |
-| `security-auditor` | Cross-PR security validation | `mode: "bypassPermissions"` |
-| `ci-monitor-{N}` | Monitors a CI workflow run | `mode: "bypassPermissions"` |
-| `qa-agent` | Validates release quality, runs integration tests | `mode: "bypassPermissions"` |
-| `documenter` | Updates changelog and release notes in parallel | `mode: "bypassPermissions"` |
-
-**Worktree guard:** Before spawning agents, check `SH context` → `worktree.enabled`. Only add `isolation: "worktree"` to agent config when worktrees are enabled. When disabled, spawn agents without isolation and use sequential execution if parallel work would conflict.
-
-### Team Lifecycle
-
-`TeamCreate` → `TaskCreate` per unit of work → `Agent` (spawn teammates) → teammates claim/complete via `TaskUpdate`, communicate via `SendMessage` → `SendMessage` shutdown → `TeamDelete`
-
-### Coordination Flow
-
-PR analysts review changes in parallel → security auditor validates across all PRs → CI monitors track pipeline status → QA validates release quality → documenter updates changelog → all approve → release proceeds.
-
-### Agent Teams Rules
-
-1. **Always use Agent Teams** for any task in this skill. This is the default, not an option.
-2. **Agents must commit and push** before `TeamDelete` — uncommitted worktree changes are lost forever.
-3. **One task per agent.** Keep responsibilities focused and clear.
-4. **Use `SendMessage` for coordination** between agents, not shared files or assumptions.
-5. **QA and security agents are gate-keepers** — their approval is required before releasing.
+> **Project configuration is authoritative.** Before executing, run `SH context` to load project configuration. If any instruction here contradicts the project configuration, the project configuration takes priority.
 
 # Release Manager
 
@@ -58,13 +22,13 @@ Always respond and work in English.
 Run both and parse JSON:
 
 - `RM full-context` → **CTX**: `version`, `tags`, `git`, `config` (development_branch, staging_branch, production_branch, changelog_file, repo_url, verify_command, package_paths), `platform` (enabled, platform, repo), `release_plan`, `release_state`.
-- `SH context` → `platform`, `worktree`, `branches`, `release_config`.
+- `SH context` → `platform`, `branches`, `release_config`.
 
-Use `CTX.config.*` for branch names, tag prefix, verify command — never re-read CLAUDE.md manually.
+Use `CTX.config.*` for branch names, tag prefix, verify command — never re-read config files manually; use CTX.
 
 ### Submodule Awareness
 
-When `SH context` returns `worktree.submodules` with entries, the project uses git submodules. During the release pipeline:
+When the project uses git submodules, during the release pipeline:
 - **Stage 5 (Merge to Staging)** and **Stage 7 (Merge to Main)**: After merge, run `git submodule update --init --recursive` to ensure submodules are at the correct commits
 - **Stage 7d (Version Bump)**: Check for version-bearing files in submodule paths as well
 - Submodule pointers are part of the commit tree — merges automatically carry the correct submodule references
@@ -86,7 +50,7 @@ Returns `flow` and `yolo`:
 - **Bare version** (e.g. `"1.2.0"`): Treated as `continue 1.2.0` for backward compat.
 - **`"auto"`**: Use `CTX.release_plan.next_version` or ask.
 
-Also returns `yolo: true/false` (see **Yolo Mode** in CLAUDE.md). Apply yolo to all flows: Create, Generate, Continue (all stages), and Close.
+Also returns `yolo: true/false` (see **Yolo Mode** in project configuration). Apply yolo to all flows: Create, Generate, Continue (all stages), and Close.
 
 ---
 
@@ -287,7 +251,7 @@ Create team `"claw-pr-analysis-{VERSION}"` via `TeamCreate` with `description: "
 
 | Teammate | Count | Config |
 |----------|-------|--------|
-| `pr-analyst-{NUMBER}` | 1 per PR | `isolation: "worktree"`, `mode: "bypassPermissions"` |
+| `pr-analyst-{NUMBER}` | 1 per PR | `mode: "bypassPermissions"` |
 | `security-auditor` | 1 | `mode: "bypassPermissions"` |
 
 PR analyst prompt (`name: "pr-analyst-{NUMBER}"`):
@@ -298,15 +262,14 @@ PR analyst prompt (`name: "pr-analyst-{NUMBER}"`):
 2. Read the PR diff, understand changes and intent
 3. Analyze: performance bottlenecks, unnecessary complexity, dead code, redundant ops, dependency bloat, project standards
 4. Security scan: injection, auth flaws, secret exposure, insecure deps, input validation, OWASP Top 10
-5. Run quality gate: `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/quality_gate.py --root <WORKTREE_DIR> --files <changed_files> --verify-command '{VERIFY_COMMAND}' --json`
+5. Run quality gate: `python3 ${CLAW_ROOT}/scripts/quality_gate.py --root <PROJECT_ROOT> --files <changed_files> --verify-command '{VERIFY_COMMAND}' --json`
 6. Post structured comment on PR via `{PLATFORM_CLI} pr comment {NUMBER}` (optimization + security findings by severity)
 7. Apply fixes for all identified issues. Push fix commits
 8. Post follow-up comment documenting fixes and unresolved issues
 9. SendMessage to security-auditor: 'PR #{NUMBER} analyzed. Findings: [summary]'
 10. Wait for security-auditor cross-check approval
 11. Merge: `{PLATFORM_CLI} pr merge {NUMBER} --squash --delete-branch`
-12. `TM remove-worktree --task-code {TASK_CODE}`
-13. TaskUpdate completed. SendMessage to team lead: {{ pr_number, findings_count, fixes_applied, unresolved[], merged: bool }}"
+12. TaskUpdate completed. SendMessage to team lead: {{ pr_number, findings_count, fixes_applied, unresolved[], merged: bool }}"
 ```
 
 Security auditor prompt (`name: "security-auditor"`):
@@ -328,7 +291,7 @@ After all teammates complete → `SendMessage {type: "shutdown_request"}` to all
 
 **── Standard subagent mode (default) ──**
 
-For each PR, spawn Agent with `isolation: "worktree"` and `mode: "bypassPermissions"`:
+For each PR, spawn Agent with `mode: "bypassPermissions"`:
 
 ```
 prompt: "You are a PR analysis agent for release {VERSION}. Process PR #{NUMBER} ({TITLE}) on branch {HEAD_BRANCH}.
@@ -342,7 +305,7 @@ Execute these steps IN ORDER:
 **Step 3 — Security Analysis:** Analyze for: injection vulnerabilities, authentication/authorization flaws, secret exposure, insecure dependencies, input validation gaps, OWASP Top 10. Produce a findings list.
 
 **Step 3.5 — Local Quality Gate:** Run the local quality gate on the PR's changed files:
-`python3 ${{CLAUDE_PLUGIN_ROOT}}/scripts/quality_gate.py --root <WORKTREE_DIR> --files <changed_files_from_diff> --verify-command '{VERIFY_COMMAND}' --json`
+`python3 ${{CLAW_ROOT}}/scripts/quality_gate.py --root <PROJECT_ROOT> --files <changed_files_from_diff> --verify-command '{VERIFY_COMMAND}' --json`
 Parse the JSON result. Merge any findings from the quality gate into the optimization and security findings lists. If `passed` is `false` and blocking findings remain after auto-fix iterations, include them in the Step 4 comment as a separate **Quality Gate** section.
 
 **Step 4 — Comment Findings on PR:** Post a structured comment on PR #{NUMBER} using `{PLATFORM_CLI} pr comment {NUMBER}` separating optimization findings from security findings with severity for each.
@@ -352,8 +315,6 @@ Parse the JSON result. Merge any findings from the quality gate into the optimiz
 **Step 6 — Comment Fixes on PR:** Post a follow-up comment documenting what was fixed and listing unresolved issues.
 
 **Step 7 — Close PR + Merge:** Merge PR into {DEVELOPMENT_BRANCH} using: `{PLATFORM_CLI} pr merge {NUMBER} --squash --delete-branch`
-
-**Step 8 — Delete Worktree:** Clean up via `TM remove-worktree --task-code {TASK_CODE}`
 
 Report: {{findings_count, fixes_applied, unresolved_issues[], merged: bool}}"
 ```
@@ -370,7 +331,7 @@ Report: {{findings_count, fixes_applied, unresolved_issues[], merged: bool}}"
 
 **4f. GATE (all resolved):** "All PRs processed. Proceed to Merge to Staging" / "Abort release".
 
-**Exit condition:** All sub-agents completed, all PRs merged, all worktrees deleted → "ALL PRs DONE".
+**Exit condition:** All sub-agents completed, all PRs merged → "ALL PRs DONE".
 
 ---
 
@@ -572,19 +533,19 @@ Social media announcement step. Skippable. Only runs if `social_announce` is con
 
 **8.5a.** Check if social announcements are configured:
 ```bash
-python3 ${CLAUDE_PLUGIN_ROOT}/scripts/social_announcer.py platforms
+python3 ${CLAW_ROOT}/scripts/social_announcer.py platforms
 ```
 
 If no platforms are configured or all are disabled → skip with: "No social platforms configured — skipping announcement step."
 
 **8.5b.** Generate announcements:
 ```bash
-python3 ${CLAUDE_PLUGIN_ROOT}/scripts/social_announcer.py generate --version X.X.X --changelog-file <CTX.config.changelog_file> --repo-url <CTX.config.repo_url>
+python3 ${CLAW_ROOT}/scripts/social_announcer.py generate --version X.X.X --changelog-file <CTX.config.changelog_file> --repo-url <CTX.config.repo_url>
 ```
 
 **8.5c.** Preview all announcements:
 ```bash
-python3 ${CLAUDE_PLUGIN_ROOT}/scripts/social_announcer.py preview --version X.X.X
+python3 ${CLAW_ROOT}/scripts/social_announcer.py preview --version X.X.X
 ```
 
 Present the preview to the user showing each platform and its formatted announcement.
@@ -595,12 +556,12 @@ In yolo mode, auto-select "Post to all configured platforms".
 
 **8.5e.** For each selected platform with direct posting (Bluesky, Mastodon, Discord, Slack):
 ```bash
-python3 ${CLAUDE_PLUGIN_ROOT}/scripts/social_announcer.py post --platform <name> --message "<announcement>"
+python3 ${CLAW_ROOT}/scripts/social_announcer.py post --platform <name> --message "<announcement>"
 ```
 
 **8.5f.** For each clipboard platform (Twitter/X, LinkedIn, Reddit, Hacker News):
 ```bash
-python3 ${CLAUDE_PLUGIN_ROOT}/scripts/social_announcer.py post --platform clipboard --message "<announcement>"
+python3 ${CLAW_ROOT}/scripts/social_announcer.py post --platform clipboard --message "<announcement>"
 ```
 
 Present: "Announcement copied to clipboard. Open [URL] to post."
@@ -631,15 +592,9 @@ If "Yes": execute `PM close-milestone title="vX.X.X"`. On failure, warn but cont
 
 **9c.** Clear state: `RM release-state-clear`
 
-**9d.** Clean up all release-related worktrees:
+**9d.** Run vector memory garbage collection to clean up stale entries, orphaned agent sessions, and compact the index:
 ```bash
-TM remove-worktree --task-code <CODE>
-```
-for every task worktree associated with this release.
-
-**9d-bis.** Run vector memory garbage collection to clean up stale entries, orphaned agent sessions, and compact the index:
-```bash
-python3 ${CLAUDE_PLUGIN_ROOT}/scripts/vector_memory.py gc --json
+python3 ${CLAW_ROOT}/scripts/vector_memory.py gc --json
 ```
 On failure, warn but do not block — GC is best-effort cleanup.
 
@@ -711,13 +666,7 @@ If "Yes": execute `PM close-milestone title="vX.X.X"`. On failure, warn but cont
 RM release-state-clear
 ```
 
-**7.** Clean up all release-related worktrees:
-```bash
-TM remove-worktree --task-code <CODE>
-```
-for every task worktree associated with this release.
-
-**8.** Present:
+**7.** Present:
 
 > **Release X.X.X closed.**
 > Tasks: N done out of M total.
@@ -789,7 +738,7 @@ Also update local `releases.json` via `RM release-plan-set-status` or direct edi
 3. **Sub-agents run in parallel, one per PR.** Each follows the full analyze → optimize → security → comment → fix → comment → merge → cleanup sequence.
 4. **Sub-agents fix what they can, escalate what they can't.** Unresolved issues become RPAT tasks and loop back to Stage 2.
 5. **Every PR comment is structured.** Findings and fixes are posted as separate, labeled comments for audit trail.
-6. **Worktrees are always cleaned up.** After PR merge and at pipeline end, all worktrees are deleted.
+6. **Task branches are preserved for PRs.** After PR merge, the source branch is deleted by the merge command.
 7. **Staging = Main minus public visibility.** If it wouldn't survive on main, it doesn't pass staging.
 8. **Every unresolved issue loops back to Stage 2.** No ad-hoc fixes in downstream stages. When RPAT tasks are created, the pipeline loops back to the Task Readiness Gate, which will stop if those tasks are not yet done — the user must implement them via `/task pick` before resuming.
 9. **The release branch is single source of truth** until merged into develop. Then develop → staging → main.
