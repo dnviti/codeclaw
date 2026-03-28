@@ -8,8 +8,8 @@
       "name": "claw",
       "source": "./",
       "description": "Project-agnostic task and release management framework with 8 streamlined skills and a gated release pipeline with automatic subagent orchestration.",
-      "version": "4.0.3"
+      "version": "4.0.4"
     }
   ],
-  "version": "4.0.3"
+  "version": "4.0.4"
 }

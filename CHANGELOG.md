@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.0.4] - 2026-03-28
+
+### Added
+- Make CodeClaw platform-agnostic: remove CLAUDE.md coupling from all 9 skills
+- Add `load_config()` to common.py merging project-config.json with CLAUDE.md fallback
+- Add `skills.sh` as canonical platform-agnostic installer
+- Extract Agent Teams documentation to `docs/agent-teams.md`
+- Add `development_branch`, `staging_branch`, `production_branch` to project-config.example.json
+
+### Changed
+- Replace `${CLAUDE_PLUGIN_ROOT}` with `${CLAW_ROOT}` across all files
+- Replace "CLAUDE.md IS LAW" with "Project configuration is authoritative" in all skills
+- Remove mandatory Agent Teams sections from all 9 skills
+- Default install platform changed from claude-code to generic
+- Update skill_helper.py, release_manager.py, test_manager.py to use load_config()
+- Mark CLAUDE.md template as optional
+
 ## [4.0.3] - 2026-03-25
 
 ### Added
