@@ -62,30 +62,8 @@ def find_project_root() -> Path:
 
 
 def get_main_repo_root() -> Path:
-    """Return main repo root, even from inside a git worktree.
-
-    In a worktree, git rev-parse --show-toplevel returns the *worktree* root,
-    not the main repository root.  This function detects that case and returns
-    the actual main repo root so that task files (to-do.txt, progressing.txt,
-    etc.) and config files (.claude/) are always found correctly.
-    """
-    try:
-        common = subprocess.run(
-            ["git", "rev-parse", "--git-common-dir"],
-            capture_output=True, text=True, check=True,
-        ).stdout.strip()
-        git_dir = subprocess.run(
-            ["git", "rev-parse", "--git-dir"],
-            capture_output=True, text=True, check=True,
-        ).stdout.strip()
-        common_path = Path(common).resolve()
-        git_dir_path = Path(git_dir).resolve()
-        if common_path != git_dir_path:
-            # Inside a worktree: common_dir is /path/to/main/.git
-            return common_path.parent
-        return find_project_root()
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        return find_project_root()
+    """Return the main repository root directory."""
+    return find_project_root()
 
 
 # ── CLAUDE.md Parser ───────────────────────────────────────────────────────
@@ -170,6 +148,45 @@ def parse_skill_md(skill_path: Path) -> dict | None:
         "path": str(skill_path),
         "directory": skill_path.parent.name,
     }
+
+
+# ── Unified Config Loader ─────────────────────────────────────────────────
+
+_CLAUDE_MD_WARNED: set[str] = set()
+
+
+def load_config(root: Path | None = None) -> dict[str, str]:
+    """Load project configuration, merging project-config.json with CLAUDE.md fallback.
+
+    Primary source: project-config.json (checked at .claude/, config/, root).
+    Fallback: CLAUDE.md bash block key=value pairs (deprecated).
+    All keys are normalized to lowercase.
+    """
+    if root is None:
+        root = get_main_repo_root()
+    pc = load_project_config(root)
+
+    # Flatten project-config.json top-level string values
+    merged: dict[str, str] = {}
+    for k, v in pc.items():
+        if isinstance(v, str) and v:
+            merged[k] = v
+
+    # Fallback to CLAUDE.md bash block for any missing keys
+    md_vars = parse_claude_md(root)
+    for k_upper, v in md_vars.items():
+        k_lower = k_upper.lower()
+        if k_lower not in merged and v:
+            if k_lower not in _CLAUDE_MD_WARNED:
+                print(
+                    f"[codeclaw] Config key '{k_lower}' read from CLAUDE.md"
+                    " — migrate to project-config.json",
+                    file=sys.stderr,
+                )
+                _CLAUDE_MD_WARNED.add(k_lower)
+            merged[k_lower] = v
+
+    return merged
 
 
 # ── Project Config ────────────────────────────────────────────────────────

@@ -55,7 +55,7 @@ from analyzers.coverage import (
     load_snapshot,
     read_manifest as read_coverage_manifest,
 )
-from common import parse_claude_md, output_json
+from common import load_config, output_json
 
 # ── Constants ───────────────────────────────────────────────────────────────
 
@@ -89,12 +89,12 @@ FUNC_RE = re.compile("|".join(FUNCTION_PATTERNS), re.MULTILINE)
 # ── Helpers ─────────────────────────────────────────────────────────────────
 
 def get_test_config(root: Path) -> dict:
-    """Read test configuration from CLAUDE.md."""
-    md_vars = parse_claude_md(root)
+    """Read test configuration from project config."""
+    cfg = load_config(root)
     return {
-        "framework": md_vars.get("TEST_FRAMEWORK", ""),
-        "command": md_vars.get("TEST_COMMAND", ""),
-        "file_pattern": md_vars.get("TEST_FILE_PATTERN", ""),
+        "framework": cfg.get("test_framework", ""),
+        "command": cfg.get("test_command", ""),
+        "file_pattern": cfg.get("test_file_pattern", ""),
     }
 
 

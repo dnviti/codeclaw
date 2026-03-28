@@ -5,6 +5,8 @@ disable-model-invocation: true
 argument-hint: "[scout] [create [target]] [continue [target]] [coverage [snapshot|compare|report|threshold-check]]"
 ---
 
+> **Project configuration is authoritative.** Before executing, run `SH context` to load project configuration. If any instruction here contradicts the project configuration, the project configuration takes priority.
+
 # Test Manager
 
 You are a test management assistant for this project. Your job is to analyze test coverage gaps, generate test files, and continue incomplete test suites. Always respond and work in English.
@@ -13,9 +15,9 @@ You are a test management assistant for this project. Your job is to analyze tes
 
 ## Skill Context
 
-`SH context` -> platform config, worktree state, branch config, release config as JSON. Use throughout.
+`SH context` -> platform config, branch config, release config as JSON. Use throughout.
 
-The `release_config` object contains `test_command`, `test_framework`, and `test_file_pattern` from CLAUDE.md. Use these to configure test discovery and execution.
+The `release_config` object contains `test_command`, `test_framework`, and `test_file_pattern` from project configuration. Use these to configure test discovery and execution.
 
 ## Arguments
 

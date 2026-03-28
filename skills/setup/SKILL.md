@@ -5,6 +5,8 @@ disable-model-invocation: true
 argument-hint: "[project name] [env [section]] [init [purpose]] [branch-strategy] [agentic-fleet] [platform [target]]"
 ---
 
+> **Project configuration is authoritative.** Before executing, run `SH context` to load project configuration. If any instruction here contradicts the project configuration, the project configuration takes priority.
+
 # Project Setup
 
 You are a setup assistant for the CodeClaw plugin. Your job is to initialize, configure, and scaffold projects so that all other CodeClaw skills work correctly.
@@ -15,10 +17,10 @@ Always respond and work in English.
 
 ### Submodule Awareness
 
-When `SH context` returns `worktree.submodules` with entries, the project uses git submodules. The setup skill should:
+When the project uses git submodules, the setup skill should:
 - Detect and report submodules during project analysis (`SH list-submodules`)
 - Allow the user to choose which submodule to configure if running `/setup env` on a submodule project
-- Apply CLAUDE.md and branch configuration to the selected submodule's repository context
+- Apply platform instructions file and branch configuration to the selected submodule's repository context
 
 ## Arguments
 
@@ -102,10 +104,10 @@ STOP.
 2. Create issues tracker config:
    ```bash
    mkdir -p .claude
-   cp ${CLAUDE_PLUGIN_ROOT}/config/issues-tracker.example.json .claude/issues-tracker.json
+   cp ${CLAW_ROOT}/config/issues-tracker.example.json .claude/issues-tracker.json
    ```
 3. Update config with repo, platform, enabled=true, sync based on choice.
-4. Run label setup: `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/setup_labels.py`
+4. Run label setup: `python3 ${CLAW_ROOT}/scripts/setup_labels.py`
 
 ### Step 4: Branch Strategy
 
@@ -153,16 +155,16 @@ Use `AskUserQuestion`:
 
 STOP.
 
-**If "Yes":** Run `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/setup_protection.py --branch main --required-reviews 1 --status-checks "Lint, Test & Build"`
+**If "Yes":** Run `python3 ${CLAW_ROOT}/scripts/setup_protection.py --branch main --required-reviews 1 --status-checks "Lint, Test & Build"`
 
 ### Step 7: Tech Stack Detection
 
 **If `SCAN` detected the tech stack**, present findings and ask:
 
 Use `AskUserQuestion`:
-- **"Yes, auto-configure with detected values"** — apply SCAN results to CLAUDE.md (run Env Steps 3-4 with pre-filled data)
+- **"Yes, auto-configure with detected values"** — apply SCAN results to the platform instructions file (run Env Steps 3-4 with pre-filled data)
 - **"Auto-detect again (deeper scan)"** — run full Env Flow
-- **"I'll configure manually later"** — create CLAUDE.md with empty placeholders
+- **"I'll configure manually later"** — create platform instructions file with empty placeholders
 
 STOP.
 
@@ -187,25 +189,7 @@ STOP.
 
 Store the preference. If "Full pipeline", ensure branch strategy includes staging.
 
-### Step 8.5: Worktree-Based Task Isolation [BETA] (Optional)
-
-Use `AskUserQuestion`:
-- **"Yes, enable worktree-based task isolation [BETA]"** — each `/task pick` creates an isolated git worktree
-- **"No, use standard branch switching (default)"** — `/task pick` uses `git checkout` (recommended for most projects)
-
-STOP.
-
-**If "Yes":**
-1. Ensure `.claude/project-config.json` exists (copy from example if not).
-2. Set `worktrees.enabled = true` in `.claude/project-config.json`.
-3. Add `.worktrees/` to `.gitignore` if not already present.
-4. Inform: "Worktree isolation enabled. Each task will get its own directory under `.worktrees/task/<code>/`. This is a [BETA] feature — you can disable it later by setting `worktrees.enabled` to `false` in `.claude/project-config.json`."
-
-**If "No":**
-1. Ensure `.claude/project-config.json` exists (copy from example if not).
-2. Set `worktrees.enabled = false` in `.claude/project-config.json` (this is the default).
-
-Then return here for Step 9.
+Then proceed to Step 9.
 
 ### Step 9: Agentic Fleet (Optional)
 
@@ -229,13 +213,13 @@ STOP.
 
 1. Detect hardware:
    ```bash
-   python3 ${CLAUDE_PLUGIN_ROOT}/scripts/ollama_manager.py detect-hardware
+   python3 ${CLAW_ROOT}/scripts/ollama_manager.py detect-hardware
    ```
    Parse the JSON result: `ram_gb`, `vram_gb`, `gpu_vendor`, `cpu_cores`.
 
 2. Check if Ollama is installed:
    ```bash
-   python3 ${CLAUDE_PLUGIN_ROOT}/scripts/ollama_manager.py check-install
+   python3 ${CLAW_ROOT}/scripts/ollama_manager.py check-install
    ```
 
 3. **If not installed**, use `AskUserQuestion`:
@@ -246,12 +230,12 @@ STOP.
 
    If "Yes":
    ```bash
-   python3 ${CLAUDE_PLUGIN_ROOT}/scripts/ollama_manager.py install
+   python3 ${CLAW_ROOT}/scripts/ollama_manager.py install
    ```
 
 4. Recommend a model based on detected hardware:
    ```bash
-   python3 ${CLAUDE_PLUGIN_ROOT}/scripts/ollama_manager.py recommend-model --ram <RAM_GB> --vram <VRAM_GB>
+   python3 ${CLAW_ROOT}/scripts/ollama_manager.py recommend-model --ram <RAM_GB> --vram <VRAM_GB>
    ```
 
    Present the recommendation:
@@ -268,7 +252,7 @@ STOP.
 
 5. **If a model was chosen**, pull it:
    ```bash
-   python3 ${CLAUDE_PLUGIN_ROOT}/scripts/ollama_manager.py pull-model --name <MODEL_NAME>
+   python3 ${CLAW_ROOT}/scripts/ollama_manager.py pull-model --name <MODEL_NAME>
    ```
 
 6. Ask about offloading level:
@@ -297,7 +281,7 @@ STOP.
 7. Save configuration:
    ```bash
    mkdir -p .claude
-   cp ${CLAUDE_PLUGIN_ROOT}/config/ollama-config.example.json .claude/ollama-config.json
+   cp ${CLAW_ROOT}/config/ollama-config.example.json .claude/ollama-config.json
    ```
    Update `.claude/ollama-config.json` with:
    - `enabled: true`
@@ -324,9 +308,6 @@ Before asking the user about vector memory, ensure `.gitignore` contains the req
 # Append .claude/memory/ if not already present
 grep -qxF '.claude/memory/' .gitignore 2>/dev/null || echo '.claude/memory/' >> .gitignore
 
-# Append .claude/worktrees/ if not already present
-grep -qxF '.claude/worktrees/' .gitignore 2>/dev/null || echo '.claude/worktrees/' >> .gitignore
-
 # Append .mcp.json if not already present (contains machine-specific absolute paths)
 grep -qxF '.mcp.json' .gitignore 2>/dev/null || echo '.mcp.json' >> .gitignore
 ```
@@ -343,7 +324,7 @@ Use `AskUserQuestion`:
 
    First, detect the user's GPU hardware:
    ```bash
-   python3 ${CLAUDE_PLUGIN_ROOT}/scripts/deps_check.py detect-gpu
+   python3 ${CLAW_ROOT}/scripts/deps_check.py detect-gpu
    ```
 
    Parse the JSON result to get `vendor`, `vram_gb`, `recommended_package`, and `gpu_mode`.
@@ -371,14 +352,14 @@ Use `AskUserQuestion`:
    > ```
    > pip install "mcp>=1.0" "lancedb>=0.5.0,<1.0" "sentence-transformers>=2.7.0,<3.0" "<recommended_package>"
    > ```
-   > Then re-run: `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/vector_memory.py index --force-init`
+   > Then re-run: `python3 ${CLAW_ROOT}/scripts/vector_memory.py index --force-init`
 
    Do NOT continue with remaining sub-steps if pip fails — skip to Step 10 with a warning.
 
    **After install, discover GPU library paths and auto-configure:**
 
    ```bash
-   python3 ${CLAUDE_PLUGIN_ROOT}/scripts/deps_check.py discover-gpu-libs
+   python3 ${CLAW_ROOT}/scripts/deps_check.py discover-gpu-libs
    ```
 
    Parse the JSON result. If `paths` is non-empty:
@@ -388,7 +369,7 @@ Use `AskUserQuestion`:
    **Verify GPU provider is available (with auto-fix):**
 
    ```bash
-   python3 ${CLAUDE_PLUGIN_ROOT}/scripts/deps_check.py verify-gpu --auto-fix
+   python3 ${CLAW_ROOT}/scripts/deps_check.py verify-gpu --auto-fix
    ```
 
    - If `available` is `true`: report the active GPU provider(s). Note whether `auto_fixed` was needed.
@@ -399,7 +380,7 @@ Use `AskUserQuestion`:
    Read `.claude/project-config.json` (or create from template if missing):
    ```bash
    mkdir -p .claude
-   [ -f .claude/project-config.json ] || cp ${CLAUDE_PLUGIN_ROOT}/config/project-config.example.json .claude/project-config.json
+   [ -f .claude/project-config.json ] || cp ${CLAW_ROOT}/config/project-config.example.json .claude/project-config.json
    ```
 
    Set the following fields in `.claude/project-config.json`:
@@ -432,13 +413,13 @@ Use `AskUserQuestion`:
    ```
 
    Where:
-   - `<RESOLVED_PATH_TO_CLAW_SCRIPTS>` = the absolute path to the CodeClaw `scripts/` directory (resolve `${CLAUDE_PLUGIN_ROOT}/scripts`)
+   - `<RESOLVED_PATH_TO_CLAW_SCRIPTS>` = the absolute path to the CodeClaw `scripts/` directory (resolve `${CLAW_ROOT}/scripts`)
    - `<RESOLVED_PROJECT_ROOT>` = the absolute path to the current project root (resolve `.`)
 
 4. **Build initial vector index:**
 
    ```bash
-   python3 ${CLAUDE_PLUGIN_ROOT}/scripts/vector_memory.py index --force-init --root .
+   python3 ${CLAW_ROOT}/scripts/vector_memory.py index --force-init --root .
    ```
 
    - If the index succeeds, report: "Vector memory index built successfully."
@@ -448,7 +429,7 @@ Use `AskUserQuestion`:
 5. **Verify MCP server starts:**
 
    ```bash
-   python3 ${CLAUDE_PLUGIN_ROOT}/scripts/mcp_server.py --check
+   python3 ${CLAW_ROOT}/scripts/mcp_server.py --check
    ```
 
    - If `{"mcp_sdk": true}` → report: "MCP server ready. It will start automatically via `.mcp.json` when your AI assistant connects."
@@ -490,7 +471,7 @@ After collecting all inputs, write to `.claude/project-config.json`:
 If `.claude/project-config.json` does not exist, copy from example first:
 ```bash
 mkdir -p .claude
-cp ${CLAUDE_PLUGIN_ROOT}/config/project-config.example.json .claude/project-config.json
+cp ${CLAW_ROOT}/config/project-config.example.json .claude/project-config.json
 ```
 
 Then return here for Step 9.8.
@@ -507,7 +488,7 @@ STOP.
 
 1. Run to see current credential status:
    ```bash
-   python3 ${CLAUDE_PLUGIN_ROOT}/scripts/social_announcer.py platforms
+   python3 ${CLAW_ROOT}/scripts/social_announcer.py platforms
    ```
 
 2. Ask which platforms to enable (multiSelect):
@@ -552,26 +533,32 @@ Then return here for Step 10.
 Based on all answers collected:
 
 1. Create task/idea files: `SH create-project-files --project-name "<NAME>"`
-2. Create/update CLAUDE.md (see Step 11)
+2. Create/update platform instructions file (see Step 11)
 3. Create AGENTS.md with project memory (see Step 11b — always, no prompt)
 4. Create branches (from Step 4)
-5. Create `.worktrees/` in `.gitignore` if not present
 
-### Step 11: Create/Update CLAUDE.md
+### Step 11: Create/Update platform instructions file
 
-**If CLAUDE.md does not exist**, create it by copying the template:
+Detect the platform to determine which instructions file to create:
+- **Claude Code:** Create/update `CLAUDE.md`
+- **Generic/other:** Create/update `AGENTS.md`
+
+**If the platform instructions file does not exist**, create it by copying the template:
 
 ```bash
-cp ${CLAUDE_PLUGIN_ROOT}/templates/CLAUDE.md ./CLAUDE.md
+# For Claude Code:
+cp ${CLAW_ROOT}/templates/CLAUDE.md ./CLAUDE.md
+# For Generic/other:
+cp ${CLAW_ROOT}/templates/AGENTS.md ./AGENTS.md
 ```
 
 Then apply any detected values (branch strategy, release config, etc.) to the newly created file.
 
-**If CLAUDE.md exists but does NOT contain `<!-- CodeClaw:START -->`**, extract the framework section (from `<!-- CodeClaw:START -->` to `<!-- CodeClaw:END -->`) from `${CLAUDE_PLUGIN_ROOT}/templates/CLAUDE.md` and append it at the end of the existing file.
+**If CLAUDE.md exists but does NOT contain `<!-- CodeClaw:START -->`**, extract the framework section (from `<!-- CodeClaw:START -->` to `<!-- CodeClaw:END -->`) from `${CLAW_ROOT}/templates/CLAUDE.md` and append it at the end of the existing file.
 
 **If CLAUDE.md exists and already contains `<!-- CodeClaw:START -->`**, skip.
 
-**Ensure CLAUDE.md contains `@AGENTS.md`**: If the file does not already contain the line `@AGENTS.md`, add it after the first heading/description line.
+**Ensure CLAUDE.md contains `@AGENTS.md`** (if CLAUDE.md is the target): If the file does not already contain the line `@AGENTS.md`, add it after the first heading/description line.
 
 ### Step 11b: Create AGENTS.md (Always)
 
@@ -580,7 +567,7 @@ Then apply any detected values (branch strategy, release config, etc.) to the ne
 **If AGENTS.md does not exist**, create it by copying the template:
 
 ```bash
-cp ${CLAUDE_PLUGIN_ROOT}/templates/AGENTS.md ./AGENTS.md
+cp ${CLAW_ROOT}/templates/AGENTS.md ./AGENTS.md
 ```
 
 Then populate the **Project Overview** section with a brief description based on the project scan (`SCAN`) results — project name, detected tech stack, and purpose (if derivable from README or manifest).
@@ -589,31 +576,21 @@ Then populate the **Project Overview** section with a brief description based on
 
 ### Step 12: Final Report
 
-Present a summary covering: project name, platform (tracking mode, repository, labels), branch strategy table (name + status per branch), CI/CD (pipelines, protection, files), task files created, CLAUDE.md status, AGENTS.md status, release workflow, agentic fleet status.
+Present a summary covering: project name, platform (tracking mode, repository, labels), branch strategy table (name + status per branch), CI/CD (pipelines, protection, files), task files created, Platform instructions file status, AGENTS.md status, release workflow, agentic fleet status.
 
-**Next Steps** (include only applicable items): fill CLAUDE.md sections, review pipeline files, replace CI placeholders, verify platform labels, customize `to-do.txt`, use `/task create` and `/idea create`, add API key secret.
+**Next Steps** (include only applicable items): fill platform instructions file sections, review pipeline files, replace CI placeholders, verify platform labels, customize `to-do.txt`, use `/task create` and `/idea create`, add API key secret.
 
 ---
 
 ## Env Flow
 
-You are an environment setup assistant. Scan the project, detect its tech stack, and update CLAUDE.md so all CodeClaw skills work correctly.
+You are an environment setup assistant. Scan the project, detect its tech stack, and update the platform instructions file so all CodeClaw skills work correctly.
 
 ### Environment Detection
 
 `SH context`
 
-Returns platform config, worktree state, branch info, and release config.
-
-#### Worktree check:
-If `worktree.in_worktree` is `true`, warn: "You are in a worktree. CLAUDE.md should be updated in the main repository."
-
-Use `AskUserQuestion`:
-- **"Switch to main repo"** — change working directory to `worktree.main_root`
-- **"Update in worktree instead"** — proceed (changes need manual propagation)
-- **"Cancel"** — abort
-
-STOP.
+Returns platform config, branch info, and release config.
 
 ### Env Step 1: Parse Arguments
 
@@ -622,9 +599,9 @@ Extract the **section** from `$ARGUMENTS` (after `env` prefix). Default: `all`.
 | Section | Updates |
 |---------|---------|
 | `all` | Everything (default) |
-| `commands` | Development Commands in CLAUDE.md |
-| `setup` | Environment Setup in CLAUDE.md |
-| `architecture` | Architecture in CLAUDE.md |
+| `commands` | Development Commands in platform instructions file |
+| `setup` | Environment Setup in platform instructions file |
+| `architecture` | Architecture in platform instructions file |
 | `config` | `.claude/project-config.json` |
 
 ### Env Step 2: Deep Scan the Project
@@ -668,17 +645,17 @@ Replace `## Architecture` with: project structure (annotated directory tree), ke
 
 ##### Project Config (section: `config` or `all`)
 
-If `.claude/project-config.json` exists, update it. If not, create from `${CLAUDE_PLUGIN_ROOT}/config/project-config.example.json` and fill detected values. Leave empty fields for undetected values.
+If `.claude/project-config.json` exists, update it. If not, create from `${CLAW_ROOT}/config/project-config.example.json` and fill detected values. Leave empty fields for undetected values.
 
 ### Env Step 5: Post-Update Verification
 
-1. Re-read CLAUDE.md — verify well-formed markdown, no duplicates, no broken markers.
+1. Re-read the platform instructions file — verify well-formed markdown, no duplicates, no broken markers.
 2. Verify `.claude/project-config.json` is valid JSON (if updated).
 3. Verify `<!-- CodeClaw:START -->` / `<!-- CodeClaw:END -->` content was not modified.
 
 ### Env Step 6: Report
 
-Present: changes applied per section (Updated/Skipped/No changes needed), undetected values the user should fill manually, and next steps (review CLAUDE.md, fill remaining values, verify dev server).
+Present: changes applied per section (Updated/Skipped/No changes needed), undetected values the user should fill manually, and next steps (review platform instructions file, fill remaining values, verify dev server).
 
 ---
 
@@ -768,9 +745,9 @@ STOP.
 
 ### Init Step 6: Configure the Project
 
-Scan the scaffolded project using Glob, Grep, and Read tools to detect: dev server command/ports, pre-dev command, verify/build command, test framework/command/pattern, CI runtime setup, release branch, manifest paths, changelog, tag prefix, repo URL, file naming conventions. Also discover all version-bearing manifest files (`package.json` outside `node_modules/`, `pyproject.toml`, `setup.cfg`, `Cargo.toml`, `pom.xml`, `build.gradle`) and populate `PACKAGE_JSON_PATHS` in CLAUDE.md with their space-separated paths.
+Scan the scaffolded project using Glob, Grep, and Read tools to detect: dev server command/ports, pre-dev command, verify/build command, test framework/command/pattern, CI runtime setup, release branch, manifest paths, changelog, tag prefix, repo URL, file naming conventions. Also discover all version-bearing manifest files (`package.json` outside `node_modules/`, `pyproject.toml`, `setup.cfg`, `Cargo.toml`, `pom.xml`, `build.gradle`) and populate `PACKAGE_JSON_PATHS` in the platform instructions file with their space-separated paths.
 
-#### 6b. Update CLAUDE.md
+#### 6b. Update Platform Instructions File
 
 Update Development Commands with all detected values (same format as Env Step 4). Update Environment Setup, Architecture, and File Naming Conventions.
 
@@ -798,11 +775,11 @@ STOP.
 
 **If "Yes":**
 1. Ask platform: **"GitHub"** / **"GitLab"** — STOP.
-2. Copy: `cp ${CLAUDE_PLUGIN_ROOT}/config/issues-tracker.example.json .claude/issues-tracker.json`
+2. Copy: `cp ${CLAW_ROOT}/config/issues-tracker.example.json .claude/issues-tracker.json`
 3. Ask for repository (free-text) — STOP.
 4. Update config with repo, platform, enabled=true.
 5. Ask sync mode: **"Platform-only"** / **"Dual sync"** — STOP.
-6. Run: `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/setup_labels.py`
+6. Run: `python3 ${CLAW_ROOT}/scripts/setup_labels.py`
 7. Report the setup.
 
 ### Init Step 9: CI/CD & Branch Protection Setup (Optional)
@@ -818,8 +795,8 @@ STOP.
 
 1. Detect platform from issues tracker config (default: GitHub).
 2. Copy CI/CD templates:
-   - **GitHub:** `${CLAUDE_PLUGIN_ROOT}/templates/github/workflows/*.yml` to `.github/workflows/`
-   - **GitLab:** `${CLAUDE_PLUGIN_ROOT}/templates/gitlab/.gitlab-ci.yml` to project root
+   - **GitHub:** `${CLAW_ROOT}/templates/github/workflows/*.yml` to `.github/workflows/`
+   - **GitLab:** `${CLAW_ROOT}/templates/gitlab/.gitlab-ci.yml` to project root
 3. Customize templates: replace `[CI_RUNTIME_SETUP]`, `[INSTALL_COMMAND]`, `[LINT_COMMAND]`, `[TEST_COMMAND]`, `[BUILD_COMMAND]`, `[CI_IMAGE]` with actual values.
 4. Copy additional templates (if issues tracker enabled): `issue-triage.yml`, `status-guard.yml`, `CODEOWNERS`.
 
@@ -836,7 +813,7 @@ STOP.
 
 **If branch protection also selected:**
 
-6. Run: `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/setup_protection.py --branch main --required-reviews 1 --status-checks "Lint, Test & Build"`
+6. Run: `python3 ${CLAW_ROOT}/scripts/setup_protection.py --branch main --required-reviews 1 --status-checks "Lint, Test & Build"`
 7. Report full CI/CD and protection setup.
 
 ---
@@ -853,7 +830,7 @@ Returns `branches_exist`, `branches_remote`, `claude_md_config`, `needs_creation
 
 ### Step B2: Present Findings
 
-Show what exists and what's missing: develop, staging, main branches and CLAUDE.md config.
+Show what exists and what's missing: develop, staging, main branches and project configuration.
 
 ### Step B3: Ask User
 
@@ -870,13 +847,13 @@ STOP.
 
 For each missing branch: `git checkout -b <name> && git checkout -`
 
-### Step B5: Update CLAUDE.md
+### Step B5: Update Platform Instructions File
 
 Update the Development Commands section Branch Strategy fields. If fields exist, update them. If not, add after the Release section in the bash block.
 
 ### Step B6: Report
 
-Present: branch table (name + Created/Already existed for each), CLAUDE.md update status, and workflow summary (develop -> staging -> production).
+Present: branch table (name + Created/Already existed for each), platform instructions file update status, and workflow summary (develop -> staging -> production).
 
 ---
 
@@ -925,23 +902,23 @@ STOP.
 Based on platform and selected pipelines:
 
 **GitHub:** `mkdir -p .github/workflows`
-- Idea Scout: `cp ${CLAUDE_PLUGIN_ROOT}/templates/github/workflows/agentic-fleet.yml .github/workflows/`
-- Task Implementation: `cp ${CLAUDE_PLUGIN_ROOT}/templates/github/workflows/agentic-task.yml .github/workflows/` then `sed -i 's|__AGENTIC_TASK_CRON__|<cron>|' .github/workflows/agentic-task.yml`
-- Docs: `cp ${CLAUDE_PLUGIN_ROOT}/templates/github/workflows/agentic-docs.yml .github/workflows/`
+- Idea Scout: `cp ${CLAW_ROOT}/templates/github/workflows/agentic-fleet.yml .github/workflows/`
+- Task Implementation: `cp ${CLAW_ROOT}/templates/github/workflows/agentic-task.yml .github/workflows/` then `sed -i 's|__AGENTIC_TASK_CRON__|<cron>|' .github/workflows/agentic-task.yml`
+- Docs: `cp ${CLAW_ROOT}/templates/github/workflows/agentic-docs.yml .github/workflows/`
 
-**GitLab:** Copy corresponding `.gitlab-ci.yml` files from `${CLAUDE_PLUGIN_ROOT}/templates/gitlab/`. If `.gitlab-ci.yml` exists, instruct user to add `include:` directives.
+**GitLab:** Copy corresponding `.gitlab-ci.yml` files from `${CLAW_ROOT}/templates/gitlab/`. If `.gitlab-ci.yml` exists, instruct user to add `include:` directives.
 
 ### Step A5: Copy Scripts, Prompts, and Skills
 
 ```bash
 mkdir -p .claude/scripts .claude/prompts .claude/skills/idea-scout .claude/skills/docs
-cp ${CLAUDE_PLUGIN_ROOT}/scripts/memory_builder.py .claude/scripts/memory_builder.py
-cp ${CLAUDE_PLUGIN_ROOT}/scripts/codebase_analyzer.py .claude/scripts/codebase_analyzer.py
-cp ${CLAUDE_PLUGIN_ROOT}/scripts/agent_runner.py .claude/scripts/agent_runner.py
-cp ${CLAUDE_PLUGIN_ROOT}/templates/prompts/agentic-task-prompt.md .claude/prompts/agentic-task-prompt.md
-cp ${CLAUDE_PLUGIN_ROOT}/templates/prompts/agentic-docs-prompt.md .claude/prompts/agentic-docs-prompt.md
-cp ${CLAUDE_PLUGIN_ROOT}/skills/idea-scout/SKILL.md .claude/skills/idea-scout/SKILL.md
-cp ${CLAUDE_PLUGIN_ROOT}/skills/docs/SKILL.md .claude/skills/docs/SKILL.md
+cp ${CLAW_ROOT}/scripts/memory_builder.py .claude/scripts/memory_builder.py
+cp ${CLAW_ROOT}/scripts/codebase_analyzer.py .claude/scripts/codebase_analyzer.py
+cp ${CLAW_ROOT}/scripts/agent_runner.py .claude/scripts/agent_runner.py
+cp ${CLAW_ROOT}/templates/prompts/agentic-task-prompt.md .claude/prompts/agentic-task-prompt.md
+cp ${CLAW_ROOT}/templates/prompts/agentic-docs-prompt.md .claude/prompts/agentic-docs-prompt.md
+cp ${CLAW_ROOT}/skills/idea-scout/SKILL.md .claude/skills/idea-scout/SKILL.md
+cp ${CLAW_ROOT}/skills/docs/SKILL.md .claude/skills/docs/SKILL.md
 ```
 
 ### Step A5.5: Create Provider Configuration
@@ -953,7 +930,7 @@ Create `.claude/agentic-provider.json`:
 {"provider":"claude","model":{"task":"claude-opus-4-6","scout":"claude-sonnet-4-6","docs":"claude-sonnet-4-6"},"budget":{"task":15,"scout":5,"docs":5},"auto_pr":true}
 ```
 
-For openai/openclaw, adjust `provider`, `model`, and `budget` fields per the example configs in `${CLAUDE_PLUGIN_ROOT}/config/agentic-provider.example.json`.
+For openai/openclaw, adjust `provider`, `model`, and `budget` fields per the example configs in `${CLAW_ROOT}/config/agentic-provider.example.json`.
 
 AGENTS.md is already created in Step 11b. If the provider is `openai` or `openclaw`, ensure AGENTS.md contains the same key sections as CLAUDE.md (the template already handles this).
 
@@ -975,7 +952,7 @@ Shorthand for the exporter script:
 
 | Alias | Expands to |
 |-------|------------|
-| `PE`  | `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/platform_exporter.py` |
+| `PE`  | `python3 ${CLAW_ROOT}/scripts/platform_exporter.py` |
 
 ### Step P1: Discover Skills
 
@@ -1063,7 +1040,7 @@ Based on the target, provide platform-specific next steps:
 5. **NEVER modify `<!-- CodeClaw:START -->` / `<!-- CodeClaw:END -->` content**
 6. **NEVER overwrite manual edits** — present detected values alongside existing, let user choose
 7. **NEVER expose secret values** — names and descriptions only
-8. **Always read files before updating**; preserve existing CLAUDE.md structure
+8. **Always read files before updating**; preserve existing platform instructions file structure
 9. **Idempotent** — multiple runs produce the same result
-10. **Init Flow:** NEVER scaffold without confirmation; ALWAYS update CLAUDE.md, generate Makefile/scripts, verify scaffold succeeded; respect user's stack choice; prefer non-interactive flags
+10. **Init Flow:** NEVER scaffold without confirmation; ALWAYS update platform instructions file, generate Makefile/scripts, verify scaffold succeeded; respect user's stack choice; prefer non-interactive flags
 11. **Do NOT enter infinite loops** — on failure, present error and let user decide

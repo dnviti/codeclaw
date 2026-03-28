@@ -1,9 +1,11 @@
 ---
 name: update
-description: Update CodeClaw-managed files (pipelines, scripts, prompts, skills, CLAUDE.md) to the latest plugin version. Detects outdated files and preserves user customizations.
+description: Update CodeClaw-managed files (pipelines, scripts, prompts, skills, platform instructions) to the latest plugin version. Detects outdated files and preserves user customizations.
 disable-model-invocation: true
 argument-hint: "[all | pipelines | agentic | scripts | prompts | skills | claude-md]"
 ---
+
+> **Project configuration is authoritative.** Before executing, run `SH context` to load project configuration. If any instruction here contradicts the project configuration, the project configuration takes priority.
 
 # Update CodeClaw-Managed Files
 
@@ -28,14 +30,14 @@ The `flow` field determines scope: `all`, `pipelines`, `agentic`, `scripts`, `pr
 ## Step 2: Read Plugin Version
 
 ```bash
-python3 -c "import json; print(json.load(open('${CLAUDE_PLUGIN_ROOT}/.claude-plugin/plugin.json'))['version'])"
+python3 -c "import json; print(json.load(open('${CLAW_ROOT}/.claude-plugin/plugin.json'))['version'])"
 ```
 
 Display this as the source version in the summary.
 
 ## CodeClaw-Managed File Manifest
 
-All source paths are relative to `${CLAUDE_PLUGIN_ROOT}/`.
+All source paths are relative to `${CLAW_ROOT}/`.
 
 **Core Pipelines (GitHub):** `templates/github/workflows/` ci.yml, release.yml, security.yml, issue-triage.yml, status-guard.yml, staging-merge.yml → `.github/workflows/`; `templates/github/CODEOWNERS` → `.github/CODEOWNERS`
 **Core Pipelines (GitLab):** `templates/gitlab/` .gitlab-ci.yml, staging-merge.gitlab-ci.yml → project root
@@ -44,7 +46,7 @@ All source paths are relative to `${CLAUDE_PLUGIN_ROOT}/`.
 **Scripts:** `scripts/` memory_builder.py, codebase_analyzer.py, agent_runner.py → `.claude/scripts/`
 **Prompts:** `templates/prompts/` agentic-task-prompt.md, agentic-docs-prompt.md → `.claude/prompts/`
 **Skills:** `skills/` idea-scout/SKILL.md, docs/SKILL.md → `.claude/skills/`
-**CLAUDE.md:** The `<!-- CodeClaw:START -->` to `<!-- CodeClaw:END -->` section. Canonical content is in `${CLAUDE_PLUGIN_ROOT}/skills/setup/SKILL.md`.
+**Platform instructions file (CLAUDE.md):** If CLAUDE.md exists, the `<!-- CodeClaw:START -->` to `<!-- CodeClaw:END -->` section. Canonical content is in `${CLAW_ROOT}/skills/setup/SKILL.md`.
 
 ### Customizable Files
 
@@ -53,7 +55,7 @@ All source paths are relative to `${CLAUDE_PLUGIN_ROOT}/`.
 | `agentic-task.yml` (GitHub) | `cron:` schedule | Extract before update, re-inject after |
 | `ci.yml` (GitHub) / `.gitlab-ci.yml` (GitLab) | CI runtime steps | Warn — mark as "customized" |
 | `CODEOWNERS` | Team names/paths | Warn — mark as "customized" |
-| `CLAUDE.md` | Everything outside markers | Only replace between CodeClaw markers |
+| `CLAUDE.md` (if exists) | Everything outside markers | Only replace between CodeClaw markers |
 
 ## Step 3: Scan and Compare Files
 
@@ -79,7 +81,7 @@ for s, t, n in pairs:
 - `ci.yml` (GitHub), `.gitlab-ci.yml` (GitLab), `CODEOWNERS`: if `outdated`, change to `customized`
 - `agentic-task.yml`: keep `outdated` but flag for cron preservation
 
-**For CLAUDE.md:**
+**For platform instructions file (if CLAUDE.md exists):**
 
 ```bash
 python3 -c "
@@ -88,7 +90,7 @@ p = Path('CLAUDE.md')
 if not p.exists(): print('CLAUDE.md|not_installed|'); exit(0)
 lm = re.search(r'<!-- CodeClaw:START -->(.+?)<!-- CodeClaw:END -->', p.read_text(), re.DOTALL)
 if not lm: print('CLAUDE.md (CodeClaw section)|not_installed|'); exit(0)
-setup = Path('${CLAUDE_PLUGIN_ROOT}/skills/setup/SKILL.md').read_text()
+setup = Path('${CLAW_ROOT}/skills/setup/SKILL.md').read_text()
 tm = re.search(r'<!-- CodeClaw:START -->(.+?)<!-- CodeClaw:END -->', setup, re.DOTALL)
 if not tm: print('CLAUDE.md (CodeClaw section)|source_missing|'); exit(0)
 lh = hashlib.sha256(lm.group(0).encode()).hexdigest()
@@ -123,7 +125,7 @@ Three update strategies. Apply per file type:
 |----------|-------|--------|
 | **Direct copy** | Scripts, prompts, skills, most workflows | `cp source target` |
 | **Cron-preserve** | `agentic-task.yml` (GitHub) | Extract cron → copy template → re-inject cron |
-| **CodeClaw-section** | `CLAUDE.md` | Regex replace between `<!-- CodeClaw:START -->` / `<!-- CodeClaw:END -->` markers |
+| **CodeClaw-section** | `CLAUDE.md` (if exists) | Regex replace between `<!-- CodeClaw:START -->` / `<!-- CodeClaw:END -->` markers |
 
 **Cron-preserve implementation:**
 ```bash
@@ -132,20 +134,21 @@ import re; from pathlib import Path
 p = Path('.github/workflows/agentic-task.yml')
 m = re.search(r\"cron:\s*'([^']+)'\", p.read_text())
 cron = m.group(1) if m else '0 */6 * * *'
-tmpl = Path('${CLAUDE_PLUGIN_ROOT}/templates/github/workflows/agentic-task.yml').read_text()
+tmpl = Path('${CLAW_ROOT}/templates/github/workflows/agentic-task.yml').read_text()
 p.write_text(tmpl.replace(\"cron: '0 */6 * * *'\", f\"cron: '{cron}'\"))
 print(f'Updated with cron: {cron}')
 "
 ```
 
-**CodeClaw-section implementation:**
+**CodeClaw-section implementation (if CLAUDE.md exists):**
 ```bash
 python3 -c "
 import re; from pathlib import Path
-setup = Path('${CLAUDE_PLUGIN_ROOT}/skills/setup/SKILL.md').read_text()
+p = Path('CLAUDE.md')
+if not p.exists(): print('CLAUDE.md not found, skipping CodeClaw section update'); exit(0)
+setup = Path('${CLAW_ROOT}/skills/setup/SKILL.md').read_text()
 tm = re.search(r'(<!-- CodeClaw:START -->.*?<!-- CodeClaw:END -->)', setup, re.DOTALL)
 if not tm: print('ERROR: No CodeClaw section in setup template'); exit(1)
-p = Path('CLAUDE.md')
 p.write_text(re.sub(r'<!-- CodeClaw:START -->.*?<!-- CodeClaw:END -->', tm.group(1), p.read_text(), flags=re.DOTALL))
 print('CLAUDE.md CodeClaw section updated')
 "
@@ -155,7 +158,7 @@ print('CLAUDE.md CodeClaw section updated')
 
 ## Step 7: Verify and Report
 
-Verify each updated file exists and is non-empty. For `agentic-task.yml`, verify cron expression is present. For `CLAUDE.md`, verify both CodeClaw markers are intact.
+Verify each updated file exists and is non-empty. For `agentic-task.yml`, verify cron expression is present. If CLAUDE.md exists, verify both CodeClaw markers are intact.
 
 ```
 ## CodeClaw Update Complete
@@ -167,7 +170,7 @@ Verify each updated file exists and is non-empty. For `agentic-task.yml`, verify
 |------|--------|
 | [file path] | Updated to latest template |
 | .github/workflows/agentic-task.yml | Updated (cron preserved: [cron]) |
-| CLAUDE.md | CodeClaw section updated |
+| CLAUDE.md (if exists) | CodeClaw section updated |
 
 ### Files Skipped
 | File | Reason |
@@ -192,5 +195,5 @@ These files are available but were never deployed:
 
 1. **Never create uninstalled files** — only update existing files. For new installations, suggest `/setup` or `/setup agentic-fleet`.
 2. **Preserve cron expressions** in `agentic-task.yml` (GitHub) during updates.
-3. **Only touch the CodeClaw:START/END section** in CLAUDE.md — never modify content outside those markers.
+3. **Only touch the CodeClaw:START/END section** in the platform instructions file — never modify content outside those markers.
 4. **Warn before overwriting customized files** (`ci.yml`, `CODEOWNERS`, `.gitlab-ci.yml`) — user must re-apply project-specific changes after update.

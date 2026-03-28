@@ -6,6 +6,8 @@ disable-model-invocation: true
 argument-hint: "[project description]"
 ---
 
+> **Project configuration is authoritative.** Before executing, run `SH context` to load project configuration. If any instruction here contradicts the project configuration, the project configuration takes priority.
+
 > **[BETA]** This skill is experimental. Expect rough edges and provide feedback.
 
 # Crazy Builder
@@ -18,7 +20,7 @@ Always respond and work in English.
 
 ## Skill Context
 
-`SH context` -> platform config, worktree state, branch config, release config as JSON. Use throughout.
+`SH context` -> platform config, branch config, release config as JSON. Use throughout.
 
 `PM <operation> [key=value ...]` -- operations: `list-issues`, `search-issues`, `view-issue`, `edit-issue`, `close-issue`, `comment-issue`, `create-issue`, `create-pr`, `list-pr`, `merge-pr`, `create-release`, `edit-release`.
 
@@ -167,7 +169,7 @@ Invoke the `/idea scout` logic to generate ideas for the project.
 SH context
 ```
 
-Read CLAUDE.md `## Architecture` to understand the codebase domain and stack.
+Read the project's architecture documentation to understand the codebase domain and stack.
 
 ### Step 1.2: Analyze Codebase
 
@@ -282,7 +284,7 @@ SH check-project-state
 
 ### Step 4.2: Setup Decision
 
-- If task files are missing or the project is not initialized: invoke `/setup init` logic -- create task files, configure CLAUDE.md variables, set up `.gitignore`, initialize git if needed.
+- If task files are missing or the project is not initialized: invoke `/setup init` logic -- create task files, configure project configuration, set up `.gitignore`, initialize git if needed.
 - If the project is already initialized: invoke `/setup env` logic -- verify environment, install dependencies, check configuration.
 
 ### Step 4.3: Verify Environment
@@ -329,8 +331,8 @@ Create team `"claw-crazy-{VERSION}"` via `TeamCreate` with `description: "Crazy 
 
 | Teammate | Count | Config |
 |----------|-------|--------|
-| `backend-dev-{CODE}` | 1 per task in batch | `isolation: "worktree"`, `mode: "bypassPermissions"` |
-| `frontend-dev-{CODE}` | 1 per task in batch | `isolation: "worktree"`, `mode: "bypassPermissions"` |
+| `backend-dev-{CODE}` | 1 per task in batch | `mode: "bypassPermissions"` |
+| `frontend-dev-{CODE}` | 1 per task in batch | `mode: "bypassPermissions"` |
 | `qa-agent` | 1 | `mode: "bypassPermissions"` |
 | `documenter` | 1 | `mode: "bypassPermissions"` |
 | `security-scanner` | 1 | `mode: "bypassPermissions"` |
@@ -341,7 +343,7 @@ Backend dev prompt (`name: "backend-dev-{CODE}"`):
 "You are backend-dev-{CODE} on team claw-crazy-{VERSION}. Implement server-side logic for task {CODE}.
 1. Claim task via TaskUpdate
 2. `TM move {CODE} --to progressing` + `PM edit-issue number=ISSUE_NUM add-assignee="@me"`
-3. `SH setup-task-worktree --task-code {CODE} --base-branch {DEVELOPMENT_BRANCH}`
+3. Checkout task branch: `git checkout task/{CODE}` (create from {DEVELOPMENT_BRANCH} if needed)
 4. `TM parse {CODE}` — read full task details
 5. Implement server-side logic, APIs, data layer per DESCRIPTION and TECHNICAL DETAILS
 6. Run {VERIFY_COMMAND} — fix and retry (max 3)
@@ -358,13 +360,13 @@ Frontend dev prompt (`name: "frontend-dev-{CODE}"`):
 "You are frontend-dev-{CODE} on team claw-crazy-{VERSION}. Implement UI/client-side for task {CODE}.
 1. Wait for backend-dev-{CODE} SendMessage with API contracts
 2. If no frontend work needed: SendMessage to team lead 'No frontend for {CODE}', TaskUpdate completed, exit
-3. Reuse worktree, implement UI per DESCRIPTION and TECHNICAL DETAILS using backend APIs
+3. Checkout task branch: `git checkout task/{CODE}`, implement UI per DESCRIPTION and TECHNICAL DETAILS using backend APIs
 4. Run {VERIFY_COMMAND} — fix and retry (max 3)
 5. Commit and push
 6. SendMessage to security-scanner and qa-agent: 'Implementation complete for {CODE}'
 7. Wait for security + QA approval. Fix bugs if reported (max 3 iterations)
 8. Create PR via `PM create-pr` targeting {DEVELOPMENT_BRANCH} with milestone
-9. `TM move {CODE} --to done` + `TM remove-worktree --task-code {CODE}`
+9. `TM move {CODE} --to done`
 10. TaskUpdate completed. SendMessage to team lead: {{ code, success, pr_url, files_changed[], error_if_any, failed_at_step }}"
 ```
 
@@ -399,7 +401,7 @@ Security scanner prompt (`name: "security-scanner"`):
 1. Claim 'Security scan' task via TaskUpdate
 2. Wait for backend-dev and frontend-dev SendMessage notifications
 3. For each PR: read diff + files, analyze for OWASP Top 10 (injection, broken auth, data exposure, XXE, broken access control, misconfiguration, XSS, insecure deserialization, vulnerable components, insufficient logging), hardcoded secrets, path traversal, race conditions, ReDoS, CSRF
-4. Run quality gate: `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/quality_gate.py --files <files> --json`
+4. Run quality gate: `python3 ${CLAW_ROOT}/scripts/quality_gate.py --files <files> --json`
 5. Post security comment on PR (by severity + OWASP category)
 6. Critical → SendMessage to implementer AND team lead, block until fixed
 7. Approved → SendMessage approval to implementer
@@ -410,18 +412,17 @@ After all teammates complete → `SendMessage {type: "shutdown_request"}` to all
 
 **── Standard subagent mode (default) ──**
 
-For each batch, spawn Agent subagents with `isolation: "worktree"` and `mode: "bypassPermissions"`, scaled by project size:
+For each batch, spawn Agent subagents with `mode: "bypassPermissions"`, scaled by project size:
 
 ```
 prompt: "Implement task {CODE} for release {VERSION}. Follow the standard /task pick flow:
 1. `TM move {CODE} --to progressing` + `PM edit-issue` to assign
-2. `SH setup-task-worktree --task-code {CODE} --base-branch {DEVELOPMENT_BRANCH}`
+2. Checkout task branch: `git checkout -b task/{CODE} {DEVELOPMENT_BRANCH}` (or `git checkout task/{CODE}` if exists)
 3. Read task details (`TM parse {CODE}`), explore codebase, implement changes
 4. Run verify command, fix failures (max 3 retries)
 5. Commit, push, create PR via `PM create-pr` targeting {DEVELOPMENT_BRANCH}
 6. `TM move {CODE} --to done` + `PM close-issue`
-7. `TM remove-worktree --task-code {CODE}`
-On failure: rollback worktree + task status, report failed step.
+On failure: rollback task status, report failed step.
 Report: { code, success, summary, files_changed[], pr_url, error_if_any, failed_at_step }"
 ```
 
@@ -533,7 +534,7 @@ If a README.md exists, update it with:
 - Updated setup instructions if Phase 4 changed anything.
 - Links to generated documentation.
 
-If no README.md exists, do NOT create one (per CLAUDE.md rules -- only create documentation files if explicitly part of the project prompt).
+If no README.md exists, do NOT create one (per project configuration rules -- only create documentation files if explicitly part of the project prompt).
 
 Log: "Documentation final pass complete."
 

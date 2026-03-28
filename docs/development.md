@@ -23,7 +23,7 @@ source-files:
 
 ## Overview
 
-CodeClaw is developed using its own workflow: ideas are captured, evaluated, promoted to tasks, implemented in worktrees, and released through the gated pipeline.
+CodeClaw is developed using its own workflow: ideas are captured, evaluated, promoted to tasks, implemented on dedicated branches, and released through the gated pipeline.
 
 ## Local Development Setup
 
@@ -41,7 +41,7 @@ claude --plugin-dir .
 
 - **Python 3.12+** — All scripts use stdlib only (no pip install needed for core features)
 - **Claude Code CLI** — The host application
-- **Git** — For worktree management and branch strategy
+- **Git** — For branch management and branch strategy
 - **`gh` CLI** (optional) — For GitHub Issues integration testing
 
 **Optional (for vector memory development):**
@@ -69,7 +69,7 @@ codeclaw/
 ├── scripts/                     # Python automation (stdlib only)
 │   ├── task_manager.py          # Task/idea CRUD, hooks, platform sync
 │   ├── release_manager.py       # Version, changelog, state, platform release state
-│   ├── skill_helper.py          # Context, dispatch, worktrees
+│   ├── skill_helper.py          # Context, dispatch, branches
 │   ├── docs_manager.py          # Documentation lifecycle
 │   ├── agent_runner.py          # Multi-provider fleet runner
 │   ├── app_manager.py           # Port/process management
@@ -136,7 +136,7 @@ codeclaw/
 
 - Written in Markdown with structured headings
 - Define AI behavior declaratively
-- Reference scripts via `${CLAUDE_PLUGIN_ROOT}/scripts/` paths
+- Reference scripts via `${CLAW_ROOT}/scripts/` paths
 - Use `$ARGUMENTS` placeholder for user input
 - Gates (AskUserQuestion) for user confirmation at critical decision points
 
@@ -200,15 +200,13 @@ Key rules:
 
 ```mermaid
 flowchart LR
-    FEAT["task/CODE branches<br>in worktrees"] -->|"PR → squash merge"| DEV["develop"]
+    FEAT["task/CODE branches"] -->|"PR → squash merge"| DEV["develop"]
     DEV -->|"Release Stage 5"| STG["staging"]
     STG -->|"Release Stage 7"| MAIN["main"]
-
-    DEV -->|"worktree teardown:<br>merge task branch locally"| DEV
 ```
 
-- **Feature branches** — Created per-task in worktrees (enabled by default since v4.0.2) at `.worktrees/task/<code>/`, named `task/<code>`. Worktrees are auto-pruned when exceeding `max_count` (default: 10) or `cleanup_after_days` (default: 7)
-- **develop** — Active development; all feature PRs target here. On worktree teardown, the task branch is merged into local develop before the worktree is removed
+- **Feature branches** — Created per-task as `task/<code>` branches from develop
+- **develop** — Active development; all feature PRs target here
 - **staging** — Pre-release validation; tagged `vX.X.X-staging`
 - **main** — Production releases with semantic version tags `vX.X.X`
 
@@ -266,7 +264,6 @@ Key behaviors:
 - **MCP server** — `mcp_server.py` provides semantic search, indexing, memory storage, and task context tools via stdio transport
 - **Garbage collection** — Run `python3 scripts/vector_memory.py gc --json` to prune stale entries
 - **Index location** — `.claude/memory/vectors` (gitignored via `.gitignore`)
-- **Worktree-shared memory** — When `vector_memory.worktree_shared` is `true` (default), all worktrees resolve to the main repo's vector index. Verify with `python3 scripts/vector_memory.py verify-worktree-sharing`
 - **GPU path allowlist** — `deps_check.py` validates `LD_LIBRARY_PATH` entries against a configurable allowlist (`gpu_acceleration.gpu_path_allowlist`) to prevent config-injected paths from reaching ONNX Runtime
 - **Model download robustness** — `local_onnx.py` uses `urlopen` with configurable timeout, retry with exponential backoff, and integrity checks (file size, basic format validation)
 - **Config locking** — `config_lock.py` provides cross-platform file locking (`fcntl`/`msvcrt`) for atomic `project-config.json` writes during parallel agent execution
@@ -276,7 +273,6 @@ Related test files:
 - `tests/test_config_lock.py` — Config locking tests
 - `tests/test_local_onnx.py` — Model download and ONNX inference tests
 - `tests/test_search_log_security.py` — Search log permission and retention tests
-- `tests/test_worktree_memory.py` — Worktree memory sharing tests
 
 ## Ollama Integration Development
 
@@ -292,7 +288,7 @@ Key design decisions:
 1. Create an idea: `/idea create [description]`
 2. Approve it: `/idea approve [ID]`
 3. Pick the task: `/task pick [CODE]`
-4. Implement in the worktree (vector memory indexes your changes in real time)
+4. Implement on the task branch (vector memory indexes your changes in real time)
 5. Close the task: confirm via the task completion gate
-6. PR is created automatically; worktree is removed (task branch merged into local develop)
+6. PR is created automatically
 7. Release: `/release continue X.X.X`
