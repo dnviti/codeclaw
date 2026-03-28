@@ -1,19 +1,18 @@
 # AGENTS.md
 
-Project memory for AI agents. This file is automatically created by CodeClaw and referenced from CLAUDE.md. Agents should read this file for project context and update it as the project evolves.
+Project memory for AI agents. This file is automatically created by CodeClaw. Agents should read this file for project context and update it as the project evolves.
 
 ## Project Overview
 
-CodeClaw is a Claude Code plugin providing project-agnostic task and release management via 9 skills: `/task`, `/idea`, `/release`, `/setup`, `/docs`, `/tests`, `/update`, `/help`, and `/crazy`. It is designed to work across GitHub and GitLab, with local-only fallback, and supports Windows, macOS, and Linux.
+CodeClaw is a platform-agnostic skillset providing task and release management via 9 skills: `/task`, `/idea`, `/release`, `/setup`, `/docs`, `/tests`, `/update`, `/help`, and `/crazy`. It works across any AI coding platform (Claude Code, Cursor, Windsurf, Copilot, Aider, etc.), supports GitHub and GitLab with local-only fallback, and runs on Windows, macOS, and Linux.
 
 ## Architecture Decisions
 
-- **Shared utilities in `scripts/common.py`**: Root detection (`find_project_root`, `get_main_repo_root`), CLAUDE.md parsing, JSON output, tag helpers, SKILL.md parsing, and project config loading are centralised here. All scripts import from `common.py` instead of defining their own copies.
-- **Skill shorthand aliases and Yolo Mode defined in CLAUDE.md**: Common preamble content (TM/SH/RM/PM/DM/SA/TESTS aliases and the canonical Yolo Mode definition) lives in CLAUDE.md so it is always in context. Individual skills no longer repeat these sections.
-- **Worktree-based task isolation**: Tasks are developed in isolated git worktrees under `.worktrees/task/<code>/`, enabling parallel work without branch switching.
+- **Shared utilities in `scripts/common.py`**: Root detection (`find_project_root`, `get_main_repo_root`), config loading (`load_config`), JSON output, tag helpers, SKILL.md parsing, and project config loading are centralised here. All scripts import from `common.py` instead of defining their own copies.
+- **Config-first architecture**: Project configuration lives in `project-config.json` (primary source). CLAUDE.md bash blocks are supported as a backward-compatible fallback. Skills read config via `SH context`, not by parsing CLAUDE.md directly.
 - **Platform abstraction**: A single `platform_adapter.py` with 4 adapter classes (claude_code, opencode, openclaw, generic) handles all supported AI coding platforms.
 - **Optional vector memory**: Semantic search over code and tasks via LanceDB + ONNX embeddings. Disabled by default, enabled in `project-config.json`.
-- **AGENTS.md is always created**: Setup flow creates AGENTS.md alongside CLAUDE.md without prompting. This file acts as persistent project memory for all agents.
+- **AGENTS.md is always created**: Setup flow creates AGENTS.md as persistent project memory for all agents.
 
 ## Key Patterns
 

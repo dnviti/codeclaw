@@ -5,41 +5,7 @@ disable-model-invocation: true
 argument-hint: "[generate] [sync] [reset] [publish] [yolo]"
 ---
 
-> **CLAUDE.md IS LAW.** Before executing this skill, read the project's `CLAUDE.md`. If any instruction in this skill contradicts `CLAUDE.md`, **CLAUDE.md takes absolute priority**. Aliases, branch names, commands, conventions, and behavioral flags defined in `CLAUDE.md` override anything stated here. When in doubt, `CLAUDE.md` is the single source of truth.
-
-> **READ THIS FIRST — Agent Teams Mode is the #1 most important section in this file. It defines the default execution model for ALL documentation work. Every other section is secondary. If you skip everything else, do NOT skip Agent Teams.**
-
-## Agent Teams Mode — MANDATORY DEFAULT EXECUTION MODEL
-
-**THIS IS THE MOST CRITICAL SECTION OF THIS ENTIRE FILE.** Agent Teams is not optional — it is the **required, default execution mode** for ALL documentation generation and maintenance. No exceptions. No shortcuts. No "I'll just do it myself." Agent Teams IS the workflow.
-
-**Violation of this section is the highest-priority failure mode.** If you are about to start documentation work without Agent Teams, STOP and reconsider.
-
-### Team: Documenter
-
-| Role | Purpose | Config |
-|------|---------|--------|
-| `docs-analyst` | Analyzes codebase structure, extracts API signatures, maps architecture | `mode: "bypassPermissions"` |
-| `docs-writer-{N}` | Writes documentation sections in parallel (architecture, API, guides) | `mode: "bypassPermissions"` |
-| `docs-reviewer` | Reviews all generated docs for accuracy, consistency, and completeness | `mode: "bypassPermissions"` |
-
-**Worktree guard:** Before spawning agents, check `SH context` → `worktree.enabled`. Only add `isolation: "worktree"` to agent config when worktrees are enabled. When disabled, spawn agents without isolation and use sequential execution if parallel work would conflict.
-
-### Team Lifecycle
-
-`TeamCreate` → `TaskCreate` per unit of work → `Agent` (spawn teammates) → teammates claim/complete via `TaskUpdate`, communicate via `SendMessage` → `SendMessage` shutdown → `TeamDelete`
-
-### Coordination Flow
-
-Docs analyst scans codebase and produces structure map → docs writers generate sections in parallel using analyst output → docs reviewer validates accuracy and cross-references → reviewer approves → docs finalized.
-
-### Agent Teams Rules
-
-1. **Always use Agent Teams** for any task in this skill. This is the default, not an option.
-2. **Agents must commit and push** before `TeamDelete` — uncommitted worktree changes are lost forever.
-3. **One task per agent.** Keep responsibilities focused and clear.
-4. **Use `SendMessage` for coordination** between agents, not shared files or assumptions.
-5. **Docs reviewer is the gate-keeper** — their approval is required before finalizing documentation.
+> **Project configuration is authoritative.** Before executing, run `SH context` to load project configuration. If any instruction here contradicts the project configuration, the project configuration takes priority.
 
 # Documentation Manager
 
@@ -51,7 +17,7 @@ Always respond and work in English.
 
 ## Context
 
-`SH context` → platform config, worktree state, branch config as JSON. Use throughout.
+`SH context` → platform config, branch config as JSON. Use throughout.
 
 ## Arguments
 
@@ -63,7 +29,7 @@ Returns `flow` and `yolo`:
 - **`"reset"`**: Remove all generated documentation.
 - **`"publish"`**: Build and publish docs as a website.
 
-Also returns `yolo: true/false` (see **Yolo Mode** in CLAUDE.md).
+Also returns `yolo: true/false` (see **Yolo Mode** in project configuration).
 
 ---
 
@@ -153,7 +119,7 @@ GATE via `AskUserQuestion` with header "Visual Richness":
 
 Store the selection as `visual_richness_level` (`zero`, `tiny`, `moderate`, or `large`) for use in all subsequent generation steps.
 
-**3.** Read CLAUDE.md for project-specific architecture, commands, and patterns.
+**3.** Read the project documentation for architecture and patterns.
 
 **4.** Present analysis:
 

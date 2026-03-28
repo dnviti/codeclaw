@@ -5,38 +5,7 @@ disable-model-invocation: true
 argument-hint: "[query]"
 ---
 
-> **CLAUDE.md IS LAW.** Before executing this skill, read the project's `CLAUDE.md`. If any instruction in this skill contradicts `CLAUDE.md`, **CLAUDE.md takes absolute priority**. Aliases, branch names, commands, conventions, and behavioral flags defined in `CLAUDE.md` override anything stated here. When in doubt, `CLAUDE.md` is the single source of truth.
-
-> **READ THIS FIRST — Agent Teams Mode is the #1 most important section in this file. It defines the default execution model for ALL help operations. Every other section is secondary. If you skip everything else, do NOT skip Agent Teams.**
-
-## Agent Teams Mode — MANDATORY DEFAULT EXECUTION MODEL
-
-**THIS IS THE MOST CRITICAL SECTION OF THIS ENTIRE FILE.** Agent Teams is not optional — it is the **required, default execution mode** for ALL help and knowledge operations. No exceptions. No shortcuts. No "I'll just do it myself." Agent Teams IS the workflow.
-
-**Violation of this section is the highest-priority failure mode.** If you are about to start help work without Agent Teams, STOP and reconsider.
-
-### Team: Support
-
-| Role | Purpose | Config |
-|------|---------|--------|
-| `knowledge-scout` | Searches skill files, CLAUDE.md, and docs to gather relevant answers | `mode: "bypassPermissions"` |
-| `guide-writer` | Composes clear, structured help responses from gathered knowledge | `mode: "bypassPermissions"` |
-
-**Worktree guard:** Before spawning agents, check `SH context` → `worktree.enabled`. Only add `isolation: "worktree"` to agent config when worktrees are enabled. When disabled, spawn agents without isolation and use sequential execution if parallel work would conflict.
-
-### Team Lifecycle
-
-`TeamCreate` → `TaskCreate` per unit of work → `Agent` (spawn teammates) → teammates claim/complete via `TaskUpdate`, communicate via `SendMessage` → `SendMessage` shutdown → `TeamDelete`
-
-### Coordination Flow
-
-Knowledge scout searches across all skill definitions and documentation → guide writer composes structured response → response delivered.
-
-### Agent Teams Rules
-
-1. **Always use Agent Teams** for any task in this skill. This is the default, not an option.
-2. **One task per agent.** Keep responsibilities focused and clear.
-3. **Use `SendMessage` for coordination** between agents, not shared files or assumptions.
+> **Project configuration is authoritative.** Before executing, run `SH context` to load project configuration. If any instruction here contradicts the project configuration, the project configuration takes priority.
 
 # Help Guide
 
@@ -86,7 +55,7 @@ Render the following sections:
 2. **Brainstorm ideas:** `/idea create [description]` — Capture ideas for later evaluation
 3. **Approve ideas into tasks:** `/idea approve [IDEA-CODE]` — Promote an idea to a task with full technical details
 4. **Create tasks directly:** `/task create [description]` — Create a fully specified task
-5. **Pick up a task:** `/task pick [CODE]` — Start implementing a task in an isolated worktree
+5. **Pick up a task:** `/task pick [CODE]` — Start implementing a task on a dedicated branch
 6. **Continue work:** `/task continue [CODE]` — Resume an in-progress task
 7. **Check status:** `/task status` — See all tasks, progress, and recommendations
 8. **Run tests:** `/tests scout` — Find coverage gaps; `/tests create [target]` — Generate tests
@@ -99,7 +68,7 @@ Render the following sections:
 /idea create → /idea approve → /task pick → implement → /task pick (close) → /release
 ```
 
-Ideas flow through approval into tasks. Tasks are picked up, implemented in isolated worktrees, tested, and closed. The release pipeline collects completed tasks, merges through staging, and tags a production release.
+Ideas flow through approval into tasks. Tasks are picked up, implemented on dedicated branches, tested, and closed. The release pipeline collects completed tasks, merges through staging, and tags a production release.
 
 ### Modes
 
@@ -115,7 +84,7 @@ Configure via `.claude/issues-tracker.json`.
 - Add `yolo` to any command to auto-approve all gates: `/task pick all yolo`
 - Use `/task pick all` to implement all pending release tasks in parallel via subagents
 - Use `/release resume` to continue a release pipeline from where it left off
-- Run `/setup env` to regenerate CLAUDE.md after changing your project structure
+- Run `/setup env` to regenerate the platform instructions file after changing your project structure
 
 ---
 
@@ -133,14 +102,14 @@ Attempt to find relevant skills and documentation using vector-based semantic se
 
 1. Call the `semantic_search` MCP tool with:
    - `query`: the user's question
-   - `file_globs`: `["skills/*/SKILL.md", "docs/**/*.md", "CLAUDE.md"]`
+   - `file_globs`: `["skills/*/SKILL.md", "docs/**/*.md"]`
    - `top_k`: 5
 2. If the vector store is unavailable (error response or empty results), fall through to Step 2b (keyword fallback).
 3. If results are returned, extract the matched skill names and relevant documentation sections. Rank semantic matches by score (lower `_distance` = better match).
 
 **Staleness check:** After receiving semantic search results, check the index freshness. Run:
 ```
-python3 ${CLAUDE_PLUGIN_ROOT}/scripts/vector_memory.py status --root <project_root> --json
+python3 ${CLAW_ROOT}/scripts/vector_memory.py status --root <project_root> --json
 ```
 Parse the JSON output and check `last_indexed`. If the index is older than 30 minutes from the current time, append this note to your response:
 
@@ -153,7 +122,7 @@ If semantic search is unavailable or returned no results, fall back to keyword m
 Compare the query keywords against:
 - Skill names: task, idea, release, setup, docs, update, tests, help
 - Flow names: pick, create, continue, status, scout, approve, generate, sync
-- Concepts: worktree, submodule, yolo, pipeline, staging, branch, milestone
+- Concepts: submodule, yolo, pipeline, staging, branch, milestone
 
 ### Step 3: Merge and explain
 

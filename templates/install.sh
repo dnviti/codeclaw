@@ -215,8 +215,8 @@ detect_platform() {
         return
     fi
 
-    # Default: Claude Code (CodeClaw's native platform)
-    PLATFORM="claude-code"
+    # Default: generic (platform-agnostic installation)
+    PLATFORM="generic"
 }
 
 # ── File operations ──────────────────────────────────────────────────────────
@@ -491,7 +491,6 @@ install_aider() {
             cat > "$TARGET_DIR/.aiderignore" <<'AIDER_IGNORE'
 # CodeClaw generated files
 dist/
-.worktrees/
 __pycache__/
 AIDER_IGNORE
             ok "Created .aiderignore"
@@ -539,7 +538,7 @@ post_install() {
 
     # Ensure .gitignore has common entries
     if [ -f "$TARGET_DIR/.gitignore" ]; then
-        for entry in __pycache__/ "*.pyc" .worktrees/ dist/; do
+        for entry in __pycache__/ "*.pyc" dist/; do
             if ! grep -qF "$entry" "$TARGET_DIR/.gitignore" 2>/dev/null; then
                 if ! $DRY_RUN; then
                     echo "$entry" >> "$TARGET_DIR/.gitignore"
@@ -589,9 +588,8 @@ main() {
     ok "CodeClaw installed successfully for platform: $PLATFORM"
     echo ""
     info "Next steps:"
-    info "  1. Review configuration in config/"
-    info "  2. Customize your CLAUDE.md (or platform equivalent)"
-    info "  3. Run: python3 scripts/task_manager.py list"
+    info "  1. Copy config/project-config.example.json to .claude/project-config.json and fill in your values"
+    info "  2. Run: python3 scripts/task_manager.py list"
     echo ""
 }
 

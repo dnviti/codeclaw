@@ -116,14 +116,12 @@ flowchart LR
 
 ### 📋 Task Pipeline
 
-Tasks are actionable work items with technical details, file lists, and dependencies. Each task gets an isolated git worktree for parallel development.
+Tasks are actionable work items with technical details, file lists, and dependencies. Each task gets a dedicated branch for isolated development.
 
 ```mermaid
 flowchart LR
     A["to-do.txt [ ]"] -->|"/task pick"| B["progressing.txt [~]"]
     B -->|"verify + close"| C["done.txt [x]"]
-    B -.->|worktree created| D[".worktrees/task/code/"]
-    C -.->|worktree removed| D
 ```
 
 ### 🚀 Release Pipeline — Flow Diagram
@@ -204,14 +202,13 @@ flowchart TD
 3. 🤖 **Sub-agents run in parallel, one per PR** — each follows the full analyze → optimize → security → comment → fix → merge → cleanup sequence.
 4. 🔧 **Sub-agents fix what they can, escalate what they can't** — unresolved issues become RPAT tasks and loop back.
 5. 📝 **Every PR comment is structured** — findings and fixes are posted as separate, labeled comments for audit trail.
-6. 🧹 **Worktrees are always cleaned up** — after PR merge and at pipeline end, no stale worktrees survive.
-7. 🔒 **Staging = Main minus public visibility** — if it wouldn't survive on main, it doesn't pass staging.
-8. 🏷️ **Tags are only created on the production branch** — after full pipeline through staging.
-9. 🔄 **Loop counter enforced** — warnings at 3 iterations, forced choice at 5. Prevents infinite loops.
-10. ✅ **Local build and tests must pass before any push** — catches regressions from version bump commits or post-merge changes.
-11. 🏷️ **Tags are moved, never recreated** — when post-tag CI fixes are needed: delete tag → pull fix → rebuild → re-tag → delete and recreate platform release.
-12. 📦 **Version fields in all manifests must be bumped before tagging** — explicit gate with user confirmation at Step 7d.
-13. 📡 **Remote CI monitoring is platform-only** — without a connected platform, local build success is the sole pre-release gate.
+6. 🔒 **Staging = Main minus public visibility** — if it wouldn't survive on main, it doesn't pass staging.
+7. 🏷️ **Tags are only created on the production branch** — after full pipeline through staging.
+8. 🔄 **Loop counter enforced** — warnings at 3 iterations, forced choice at 5. Prevents infinite loops.
+9. ✅ **Local build and tests must pass before any push** — catches regressions from version bump commits or post-merge changes.
+10. 🏷️ **Tags are moved, never recreated** — when post-tag CI fixes are needed: delete tag → pull fix → rebuild → re-tag → delete and recreate platform release.
+11. 📦 **Version fields in all manifests must be bumped before tagging** — explicit gate with user confirmation at Step 7d.
+12. 📡 **Remote CI monitoring is platform-only** — without a connected platform, local build success is the sole pre-release gate.
 
 ### 🌿 Branch Strategy
 
@@ -248,7 +245,7 @@ flowchart LR
 
 | Skill | Usage | Description |
 |-------|-------|-------------|
-| `/task pick` | `/task pick [CODE]` | Pick up the next task — creates worktree, presents briefing, runs quality gates |
+| `/task pick` | `/task pick [CODE]` | Pick up the next task — creates branch, presents briefing, runs quality gates |
 | `/task pick all` | `/task pick all [sequential]` | Pick up and implement all pending release tasks (parallel by default, `sequential` for one-at-a-time) |
 | `/task create` | `/task create [description]` | Create a new task with auto-assigned ID and codebase-informed technical details |
 | `/task create all` | `/task create all [sequential]` | Create tasks from all pending ideas (parallel by default) |
@@ -306,8 +303,8 @@ flowchart LR
 2.  /idea approve IDEA-NOTIF-0001           → ✅ Idea promoted to task in to-do.txt
 3.  /release create 1.0.0                   → 🏷️ Create release milestone
 4.  /task schedule NOTIF-0001 to 1.0.0      → 📌 Assign task to release
-5.  /task pick                              → 🌿 Worktree created, briefing presented
-6.  (implement the task)                    → 💻 Write code in isolated worktree
+5.  /task pick                              → 🌿 Branch created, briefing presented
+6.  (implement the task)                    → 💻 Write code on task branch
 7.  /task pick                              → ✅ Verify, close task, create PR
 8.  /release continue 1.0.0                 → 🚀 Full pipeline: tasks → PRs → staging → main
 9.  /release close 1.0.0                    → 🎉 Finalize and close the release
@@ -345,7 +342,7 @@ CodeClaw includes automated CI/CD pipelines that use Claude Code to perform idea
 | Pipeline | Trigger | What it does |
 |----------|---------|--------------|
 | 💡 **Idea Scout** | On release publish | Scans trends, documentation, and community sources to suggest new ideas |
-| ⚙️ **Task Implementation** | Cron-based schedule | Picks up pending tasks, implements them in isolated worktrees, and opens PRs |
+| ⚙️ **Task Implementation** | Cron-based schedule | Picks up pending tasks, implements them on dedicated branches, and opens PRs |
 | 📖 **Docs** | On release publish | Updates documentation based on code changes |
 
 Each pipeline uses a **three-agent architecture**: Orchestrator, Worker, and Memory Builder. Supports both **GitHub Actions** and **GitLab CI/CD** with multiple AI providers (Claude, OpenAI Codex, OpenClaw).

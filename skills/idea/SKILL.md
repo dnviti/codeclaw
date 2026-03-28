@@ -5,41 +5,7 @@ disable-model-invocation: true
 argument-hint: "[create [description]] [approve IDEA-CODE] [disapprove IDEA-CODE] [edit IDEA-CODE] [refactor] [scout] [yolo]"
 ---
 
-> **CLAUDE.md IS LAW.** Before executing this skill, read the project's `CLAUDE.md`. If any instruction in this skill contradicts `CLAUDE.md`, **CLAUDE.md takes absolute priority**. Aliases, branch names, commands, conventions, and behavioral flags defined in `CLAUDE.md` override anything stated here. When in doubt, `CLAUDE.md` is the single source of truth.
-
-> **READ THIS FIRST — Agent Teams Mode is the #1 most important section in this file. It defines the default execution model for ALL research work. Every other section is secondary. If you skip everything else, do NOT skip Agent Teams.**
-
-## Agent Teams Mode — MANDATORY DEFAULT EXECUTION MODEL
-
-**THIS IS THE MOST CRITICAL SECTION OF THIS ENTIRE FILE.** Agent Teams is not optional — it is the **required, default execution mode** for ALL idea management and research work. No exceptions. No shortcuts. No "I'll just do it myself." Agent Teams IS the workflow.
-
-**Violation of this section is the highest-priority failure mode.** If you are about to start research work without Agent Teams, STOP and reconsider.
-
-### Team: Research
-
-| Role | Purpose | Config |
-|------|---------|--------|
-| `task-creator-{N}` | Converts an idea into a task spec, performs codebase analysis | `mode: "bypassPermissions"` |
-| `consistency-reviewer` | Reviews task specs for consistency, checks duplicates, validates scope | `mode: "bypassPermissions"` |
-| `security-scanner` | Evaluates idea security implications before approval | `mode: "bypassPermissions"` |
-
-**Worktree guard:** Before spawning agents, check `SH context` → `worktree.enabled`. Only add `isolation: "worktree"` to agent config when worktrees are enabled. When disabled, spawn agents without isolation and use sequential execution if parallel work would conflict.
-
-### Team Lifecycle
-
-`TeamCreate` → `TaskCreate` per unit of work → `Agent` (spawn teammates) → teammates claim/complete via `TaskUpdate`, communicate via `SendMessage` → `SendMessage` shutdown → `TeamDelete`
-
-### Coordination Flow
-
-Task creators analyze ideas and draft specs in parallel → consistency reviewer validates across all specs → security scanner flags security-sensitive ideas → all approve → ideas proceed to approval/task creation.
-
-### Agent Teams Rules
-
-1. **Always use Agent Teams** for any task in this skill. This is the default, not an option.
-2. **Agents must commit and push** before `TeamDelete` — uncommitted worktree changes are lost forever.
-3. **One task per agent.** Keep responsibilities focused and clear.
-4. **Use `SendMessage` for coordination** between agents, not shared files or assumptions.
-5. **Consistency reviewer is the gate-keeper** — their approval is required before finalizing ideas.
+> **Project configuration is authoritative.** Before executing, run `SH context` to load project configuration. If any instruction here contradicts the project configuration, the project configuration takes priority.
 
 # Idea Manager
 
@@ -49,7 +15,7 @@ Always respond and work in English. All idea and task content MUST be written in
 
 ## Skill Context
 
-`SH context` → platform config (mode, cli, repo, labels), worktree state, branch config as JSON. Use throughout.
+`SH context` → platform config (mode, cli, repo, labels), branch config as JSON. Use throughout.
 
 **Fetch current state (all flows):**
 - **Platform-only:** Use `PM list-issues labels="idea" state="open"` for ideas; pipe titles into `TM next-id --type idea --source platform-titles` for next ID. For tasks: `PM list-issues labels="task" ...` and `TM next-id --type task --source platform-titles`.
@@ -69,7 +35,7 @@ Always respond and work in English. All idea and task content MUST be written in
 
 Routes to: `create`, `approve`, `disapprove`, `edit`, `refactor`, `scout`, or `list` flow.
 
-Also returns `yolo: true/false` (see **Yolo Mode** in CLAUDE.md).
+Also returns `yolo: true/false` (see **Yolo Mode** in project configuration).
 
 If `list`: show all ideas (from `ideas.txt` in local/dual mode, or platform issues in platform-only mode) and ask which action to perform. STOP.
 
@@ -85,7 +51,7 @@ Fetch current state per Skill Context.
 
 **Step 1 — Validate Input:** If description (from args after `create`) is empty/unclear, ask: "Please describe the idea you want to add. Include what the feature/improvement should do and why it would be valuable." STOP.
 
-**Step 2 — Category:** Read CLAUDE.md `## Architecture` to derive categories. Universal: Core Features, Security, Performance, Infrastructure. Add 2-3 project-domain categories. Create a new one if needed.
+**Step 2 — Category:** Read the project's architecture documentation to derive categories. Universal: Core Features, Security, Performance, Infrastructure. Add 2-3 project-domain categories. Create a new one if needed.
 
 **Step 2.5 — Code Prefix:** Check existing prefixes from next-id output. Reuse if the idea fits that domain. Otherwise create a new 3-5 uppercase letter prefix (e.g., AUTH, FEAT, DOCS). Code format: `IDEA-PREFIX-XXXX`. When approved, `IDEA-` is stripped (e.g., `IDEA-AUTH-0001` becomes `AUTH-0001`).
 
@@ -150,7 +116,7 @@ Present the idea to the user.
 **Step 5 — Draft Task:**
 
 Based on mode:
-- **(platform)** Issue title: `[PREFIX-XXXX] Task Title`. Body: `**Code:** PREFIX-XXXX | **Priority:** HIGH/MEDIUM/LOW | **Section:** SECTION | **Dependencies:** DEPS | **Release:** VERSION`, `**Promoted from:** [IDEA-PREFIX-XXXX] #ISSUE_NUM`, then `## Description` (4-10 lines), `## Technical Details` (structured by architecture layer from CLAUDE.md), `## Files Involved` (`**CREATE:**`, `**MODIFY:**`). If `show_generated_footer` is `true` (or absent) in `.claude/project-config.json`, end with `*Generated by Claude Code via /idea approve*`.
+- **(platform)** Issue title: `[PREFIX-XXXX] Task Title`. Body: `**Code:** PREFIX-XXXX | **Priority:** HIGH/MEDIUM/LOW | **Section:** SECTION | **Dependencies:** DEPS | **Release:** VERSION`, `**Promoted from:** [IDEA-PREFIX-XXXX] #ISSUE_NUM`, then `## Description` (4-10 lines), `## Technical Details` (structured by architecture layer from the project's architecture documentation), `## Files Involved` (`**CREATE:**`, `**MODIFY:**`). If `show_generated_footer` is `true` (or absent) in `.claude/project-config.json`, end with `*Generated by Claude Code via /idea approve*`.
 - **(local/dual)** Block format:
 ```
 ------------------------------------------------------------------------------
@@ -362,7 +328,7 @@ Focus area: remainder after `scout` in arguments. If contains `@`-prefixed path 
 
 ### Scout Steps
 
-Fetch current state per Skill Context (ideas AND tasks by all statuses). Read CLAUDE.md `## Architecture` to understand domain, tech stack, and target audience.
+Fetch current state per Skill Context (ideas AND tasks by all statuses). Read the project's architecture documentation to understand domain, tech stack, and target audience.
 
 **Step 1 — Analyze current state** — understand planned, in-progress, completed tasks AND existing ideas to prevent duplicates.
 

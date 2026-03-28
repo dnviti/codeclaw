@@ -556,14 +556,15 @@ def build_prompt(pipeline: str, provider: str, model: str, auto_pr: bool = True)
                 sys.exit(1)
             skill_content = _strip_yaml_frontmatter(skill_content)
             # Replace plugin root references with local paths
-            skill_content = skill_content.replace(
-                "${CLAUDE_PLUGIN_ROOT}/scripts/",
-                f"{SCRIPTS_DIR}/",
-            )
-            skill_content = skill_content.replace(
-                "${CLAUDE_PLUGIN_ROOT}/",
-                ".claude/",
-            )
+            for root_var in ("${CLAW_ROOT}", "${CLAUDE_PLUGIN_ROOT}"):
+                skill_content = skill_content.replace(
+                    f"{root_var}/scripts/",
+                    f"{SCRIPTS_DIR}/",
+                )
+                skill_content = skill_content.replace(
+                    f"{root_var}/",
+                    ".claude/",
+                )
             # Replace arguments placeholder
             skill_content = skill_content.replace(
                 "$ARGUMENTS",
@@ -609,14 +610,15 @@ def build_prompt(pipeline: str, provider: str, model: str, auto_pr: bool = True)
             skill_content = _read_file_or_empty(str(skill_path))
             if skill_content:
                 skill_content = _strip_yaml_frontmatter(skill_content)
-                skill_content = skill_content.replace(
-                    "${CLAUDE_PLUGIN_ROOT}/scripts/",
-                    f"{SCRIPTS_DIR}/",
-                )
-                skill_content = skill_content.replace(
-                    "${CLAUDE_PLUGIN_ROOT}/",
-                    ".claude/",
-                )
+                for root_var in ("${CLAW_ROOT}", "${CLAUDE_PLUGIN_ROOT}"):
+                    skill_content = skill_content.replace(
+                        f"{root_var}/scripts/",
+                        f"{SCRIPTS_DIR}/",
+                    )
+                    skill_content = skill_content.replace(
+                        f"{root_var}/",
+                        ".claude/",
+                    )
                 skill_content = skill_content.replace("CLAUDE.md", instructions_file)
 
             # Build the docs prompt with inlined skill

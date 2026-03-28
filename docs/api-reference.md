@@ -28,7 +28,7 @@ source-files:
 
 | Command | Arguments | Description |
 |---------|-----------|-------------|
-| `/task pick` | `[CODE]` | Pick up next (or specific) task; creates worktree, presents briefing |
+| `/task pick` | `[CODE]` | Pick up next (or specific) task; creates branch, presents briefing |
 | `/task pick all` | `[sequential]` | Pick up and implement all pending release tasks |
 | `/task create` | `[description]` | Create a new task with auto-assigned ID |
 | `/task create all` | `[sequential]` | Create tasks from all pending ideas |
@@ -129,10 +129,7 @@ python3 scripts/task_manager.py <subcommand> [options]
 | `is-frontend-task` | `CODE`, `--json-body JSON` | Check if a task involves frontend work |
 | `hook` | `FILE_PATH` | PostToolUse hook: correlate file edit to task |
 | `platform-cmd` | `OPERATION [key=value...]` | Run a platform (GitHub/GitLab) operation |
-| `worktree-info` | -- | Return worktree detection and listing |
 | `platform-config` | -- | Return platform tracker configuration |
-| `setup-task-worktree` | `--task-code CODE`, `--base-branch BRANCH` | Create isolated git worktree for a task |
-| `remove-worktree` | `--task-code CODE`, `--remove-branch`, `--no-merge-to-develop` | Remove a task's worktree (merges branch into develop first) |
 | `list-release-tasks` | `--version VERSION`, `--format json\|text` | List all tasks assigned to a release |
 | `schedule-tasks` | `--codes "CODE1,CODE2"`, `--version VERSION` | Assign tasks to a release |
 | `create-patch-task` | `--source SOURCE`, `--title TITLE`, `--release VERSION`, `--priority PRIORITY`, `--description TEXT` | Create a release patch task (RPAT) |
@@ -202,26 +199,17 @@ python3 scripts/skill_helper.py <subcommand> [options]
 
 | Subcommand | Key Options | Description |
 |------------|-------------|-------------|
-| `context` | -- | Return platform config, worktree state, branch config, submodules as JSON |
+| `context` | -- | Return platform config, branch config, submodules as JSON |
 | `dispatch` | `--skill NAME`, `--args TEXT` | Parse skill arguments: flow, yolo, task code |
 | `check-project-state` | -- | Return project file existence and CLAUDE.md status |
 | `create-project-files` | `--project-name NAME` | Create missing task/idea files |
 | `detect-branch-strategy` | -- | Return branch state and needs |
-| `setup-task-worktree` | `--task-code CODE`, `--base-branch BRANCH` | Create isolated git worktree for a task |
-| `status-report` | -- | Pre-computed status: task counts, in-progress, next recommended, worktrees |
+| `status-report` | -- | Pre-computed status: task counts, in-progress, next recommended |
 | `list-submodules` | -- | List git submodules with paths |
 | `detect-release-config` | -- | Return all release configuration |
 | `detect-platform` | -- | Detect AI coding platform and return adapter info |
 | `refresh-branch-config` | -- | Refresh branch config cache |
 | `adapter-invoke` | `--platform PLATFORM`, `--tool TOOL`, `--tool-args ARGS` | Invoke a tool through the platform adapter |
-
-**Internal functions (used by `setup-task-worktree`):**
-
-| Function | Description |
-|----------|-------------|
-| `_load_worktree_config(root)` | Load the `worktrees` section from `project-config.json` with defaults applied. Validates `base_dir` is a safe relative path (rejects absolute paths and path traversal) |
-| `_enforce_worktree_limits(root, wt_config)` | Prune worktrees exceeding `max_count` or `cleanup_after_days`. Skips worktrees with uncommitted changes. Returns list of removed paths |
-| `_verify_worktree_memory_sharing(main_root, wt_dir)` | Verify that the vector index path from a worktree resolves to the main repo's shared location via `git rev-parse --git-common-dir` |
 
 ### ollama_manager.py
 
@@ -275,7 +263,6 @@ python3 scripts/vector_memory.py <subcommand> [options]
 | `agents` | `--root PATH`, `--status STATUS`, `--type TYPE`, `--json` | List active/historical agent sessions |
 | `conflicts` | `--root PATH`, `--status STATUS`, `--resolve ID`, `--json` | Show flagged contradictions between agents |
 | `validate-model` | `--root PATH`, `--model MODEL` | Validate embedding model files are present and intact |
-| `verify-worktree-sharing` | `--root PATH`, `--json` | Verify vector memory resolves to a shared location across worktrees. Reports whether the current directory is a worktree, the resolved main root, and lists all worktrees with their sharing status |
 | `hook` | `FILE_PATH` | PostToolUse hook: auto-index an edited file |
 
 > **Prerequisites:** `pip install "lancedb>=0.5.0,<1.0" "sentence-transformers>=2.7.0,<3.0"` (or `onnxruntime`+`tokenizers` as an alternative to `sentence-transformers`)
@@ -441,7 +428,7 @@ python3 scripts/setup_protection.py [options]
         "hooks": [
           {
             "type": "command",
-            "command": "python3 ${CLAUDE_PLUGIN_ROOT}/scripts/hooks/pre_tool_offload.py \"$CLAUDE_TOOL_NAME\" \"$CLAUDE_TOOL_INPUT\""
+            "command": "python3 ${CLAW_ROOT}/scripts/hooks/pre_tool_offload.py \"$CLAUDE_TOOL_NAME\" \"$CLAUDE_TOOL_INPUT\""
           }
         ]
       }
@@ -473,11 +460,11 @@ python3 scripts/setup_protection.py [options]
       "hooks": [
         {
           "type": "command",
-          "command": "python3 ${CLAUDE_PLUGIN_ROOT}/scripts/task_manager.py hook \"$CLAUDE_FILE_PATH\""
+          "command": "python3 ${CLAW_ROOT}/scripts/task_manager.py hook \"$CLAUDE_FILE_PATH\""
         },
         {
           "type": "command",
-          "command": "python3 ${CLAUDE_PLUGIN_ROOT}/scripts/vector_memory.py hook \"$CLAUDE_FILE_PATH\""
+          "command": "python3 ${CLAW_ROOT}/scripts/vector_memory.py hook \"$CLAUDE_FILE_PATH\""
         }
       ]
     }
