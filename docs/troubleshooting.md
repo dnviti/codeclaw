@@ -34,34 +34,6 @@ source-files:
 
 **Fix:** Run `/setup [project name]` to create the tracking files (`to-do.txt`, `progressing.txt`, `done.txt`, `ideas.txt`, `idea-disapproved.txt`).
 
-### Worktree Conflicts
-
-**Symptom:** `/task pick` fails with git worktree errors.
-
-**Debugging:**
-```bash
-# List active worktrees
-python3 scripts/skill_helper.py context
-
-# List worktrees via git
-git worktree list
-
-# Prune stale worktree references
-git worktree prune
-
-# Force remove a stale worktree
-git worktree remove .worktrees/task/CODE --force
-```
-
-**Common causes:**
-- A previous task session crashed without cleanup
-- The worktree directory was manually deleted but git still tracks it
-- The number of worktrees exceeds `max_count` (default: 10) and auto-pruning cannot remove any because they all have uncommitted changes
-
-**Worktree teardown note (v3.5.1+):** When a task worktree is removed via `TM remove-worktree`, the task branch is first merged into local develop before the worktree is deleted. If the local develop branch has uncommitted changes, the merge may fail — commit or stash local changes first.
-
-**Worktree auto-management (v4.0.2+):** Worktrees are enabled by default. The system auto-prunes worktrees exceeding `max_count` or older than `cleanup_after_days`. Worktrees with dirty working trees are never auto-removed. Configure via `worktrees` section in `project-config.json`.
-
 ### Release Pipeline Stuck
 
 **Symptom:** `/release continue` hangs or fails at a specific stage.
@@ -243,30 +215,6 @@ ls -la .claude/memory/search_log.jsonl
 rm .claude/memory/search_log.jsonl
 ```
 
-### Worktree Memory Sharing Issues
-
-**Symptom:** Vector memory not available or returning empty results when working in a task worktree, or separate indexes being created per worktree.
-
-**Debugging:**
-```bash
-# Verify memory sharing from a worktree directory
-python3 scripts/vector_memory.py verify-worktree-sharing --root .worktrees/task/CODE --json
-
-# Check the worktree_shared config
-python3 scripts/vector_memory.py configure --root .
-```
-
-**Common causes:**
-1. **`worktree_shared` is `false`** — Set `vector_memory.worktree_shared: true` in `project-config.json` (this is the default)
-2. **Worktree detached from main repo** — The worktree's `--git-common-dir` does not resolve to the main repo. Recreate the worktree: `/task continue CODE`
-3. **Index path misconfigured** — Ensure `vector_memory.index_path` uses a relative path that resolves inside the main repo
-
-**Verification output example:**
-```bash
-python3 scripts/vector_memory.py verify-worktree-sharing --json
-# Returns: {"in_worktree": true, "main_root": "/path/to/repo", "shared": true, "worktrees": [...]}
-```
-
 ### Agentic Fleet Pipeline Fails
 
 **Symptom:** CI/CD agentic pipeline exits with an error.
@@ -351,19 +299,6 @@ python3 scripts/deps_check.py
 
 # Check MCP SDK availability
 python3 scripts/mcp_server.py --check
-```
-
-### Git Worktree Troubleshooting
-
-```bash
-# List all worktrees (git native)
-git worktree list
-
-# Prune stale worktree references
-git worktree prune
-
-# Force remove a worktree
-git worktree remove .worktrees/task/CODE --force
 ```
 
 ### Windows-Specific Issues

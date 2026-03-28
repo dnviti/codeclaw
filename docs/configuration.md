@@ -145,7 +145,6 @@ Project-specific settings used by skills during task creation and releases.
       "hybrid_weight_text": 0.3,
       "db_path": ".claude/memory/sqlite/memory.db"
     },
-    "worktree_shared": true,
     "gpu_acceleration": {
       "mode": "auto",
       "log_provider": true,
@@ -213,12 +212,6 @@ Project-specific settings used by skills during task creation and releases.
     "model": "",
     "offloading_level": 5
   },
-  "worktrees": {
-    "enabled": true,
-    "max_count": 10,
-    "cleanup_after_days": 7,
-    "base_dir": ".worktrees"
-  }
 }
 ```
 
@@ -282,7 +275,6 @@ Project-specific settings used by skills during task creation and releases.
 | `batch_size` | Embedding batch size for indexing (default: 64) |
 | `include_patterns` | Glob patterns of files to always index |
 | `exclude_patterns` | Glob patterns of files to never index |
-| `worktree_shared` | Share a single vector index across all worktrees (default: `true`). When enabled, worktrees resolve the index path to the main repo |
 | `backend` | Primary backend engine: `"lancedb"` (default) |
 
 **`vector_memory.lock_backend` section:**
@@ -409,17 +401,6 @@ Quick-enable for Ollama. For full Ollama configuration, use `ollama-config.json`
 | `enabled` | Enable Ollama local model routing |
 | `model` | Model name to use (auto-detected if empty) |
 | `offloading_level` | Default offloading level 0–10 (default: 5) |
-
-**`worktrees` section:**
-
-Controls git worktree-based task isolation. Worktrees are enabled by default since v4.0.2.
-
-| Field | Description |
-|-------|-------------|
-| `enabled` | Enable worktree-based task isolation (default: `true`). When `false`, falls back to standard branch switching |
-| `max_count` | Maximum number of concurrent worktrees. Oldest idle worktrees are auto-pruned when exceeded (default: 10). Worktrees with uncommitted changes are never auto-removed |
-| `cleanup_after_days` | Remove worktrees older than N days on next `/task pick` (default: 7). Skips worktrees with dirty working trees |
-| `base_dir` | Base directory for worktree storage (default: `.worktrees`). Must be a relative path; absolute paths and path traversal are rejected |
 
 ### ollama-config.json
 
@@ -599,5 +580,4 @@ CodeClaw uses configuration-driven feature flags rather than compile-time flags:
 | MCP server | `project-config.json → mcp_server.enabled` | Exposes vector memory via MCP protocol |
 | Ollama routing | `ollama-config.json → enabled` | Routes tool calls/tasks to local model |
 | Social announce | `project-config.json → social_announce.platforms.<name>.enabled` | Enables release announcements |
-| Worktrees | `project-config.json → worktrees.enabled` | Git worktree-based task isolation (enabled by default since v4.0.2) |
 | Search logging | `project-config.json → vector_memory.search_log.enabled` | Opt-in search query logging with privacy controls |

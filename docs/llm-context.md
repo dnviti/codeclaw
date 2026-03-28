@@ -73,9 +73,9 @@ Hooks (hooks.json)    → Event-driven integration (PreToolUse + PostToolUse)
 
 | Script | Purpose |
 |--------|---------|
-| `scripts/task_manager.py` | Task/idea CRUD, platform sync, worktree management (~2,700 lines) |
+| `scripts/task_manager.py` | Task/idea CRUD, platform sync, branch management (~2,700 lines) |
 | `scripts/release_manager.py` | Version detection, changelog, release state (local + platform) |
-| `scripts/skill_helper.py` | Context gathering, argument dispatch, worktree lifecycle (enabled by default, auto-prune, shared memory verification) |
+| `scripts/skill_helper.py` | Context gathering, argument dispatch, branch management |
 | `scripts/config_lock.py` | Cross-platform file locking for atomic config writes (fcntl/msvcrt) |
 | `scripts/deps_check.py` | Dependency checking with GPU path allowlist security |
 | `scripts/ollama_manager.py` | Local model routing, hardware detection, tool-calling loop |
@@ -114,7 +114,7 @@ Hooks (hooks.json)    → Event-driven integration (PreToolUse + PostToolUse)
 develop → staging → main
 ```
 
-- `develop` — All feature PRs; worktree task branches merge here on teardown (worktrees enabled by default with `max_count: 10`, `cleanup_after_days: 7`)
+- `develop` — All feature PRs; task branches merge here
 - `staging` — Pre-release validation; tagged `vX.X.X-staging`
 - `main` — Production; tagged `vX.X.X`
 
@@ -138,13 +138,10 @@ Essential subcommands:
 - `summary --format json|text` — task counts and progress
 - `semantic-explore CODE` — explore codebase semantically via vector search
 - `platform-cmd OPERATION [key=value...]` — GitHub/GitLab operations
-- `setup-task-worktree --task-code CODE --base-branch develop`
-- `remove-worktree --task-code CODE --remove-branch --no-merge-to-develop`
 - `list-release-tasks --version X.X.X`
 - `schedule-tasks --codes "CODE1,CODE2" --version X.X.X`
 - `create-patch-task --source SOURCE --title TITLE --release X.X.X`
 - `sync-from-platform --dry-run` — sync task status from platform Issues
-- `worktree-info` — worktree detection and listing
 - `find-files --patterns GLOBS --max-depth N` — cross-platform file search
 - `register-agent --task-code CODE --agent-type TYPE` — memory consistency protocol
 - `pr-body --task-code CODE --title TEXT --summary TEXT` — generate PR body
@@ -181,10 +178,9 @@ python3 scripts/skill_helper.py <subcommand> [options]
 ```
 
 Essential subcommands:
-- `context` — platform config, branches, worktrees, submodules as JSON
+- `context` — platform config, branches, submodules as JSON
 - `dispatch --skill NAME --args TEXT` — parse flow, yolo, task code
-- `setup-task-worktree --task-code CODE --base-branch BRANCH`
-- `status-report` — task counts, in-progress, next recommended, worktrees
+- `status-report` — task counts, in-progress, next recommended
 
 ### ollama_manager.py CLI
 
@@ -232,7 +228,6 @@ Essential subcommands:
 - `agents --root PATH --status STATUS` — list active/historical agent sessions
 - `conflicts --root PATH --resolve ID` — show/resolve contradictions between agents
 - `validate-model --root PATH --model MODEL` — validate embedding model files
-- `verify-worktree-sharing --root PATH --json` — verify vector memory is shared across worktrees
 - `hook FILE_PATH` — PostToolUse hook: auto-index an edited file
 
 ### mcp_server.py
@@ -310,7 +305,6 @@ Always exits 0. Never blocks Claude. Applies NFKC normalization to prevent Unico
       "hybrid_weight_vector": 0.7,
       "hybrid_weight_text": 0.3
     },
-    "worktree_shared": true,
     "gpu_acceleration": { "mode": "auto", "gpu_path_allowlist": [] },
     "search_log": { "enabled": false, "retention_days": 30 },
     "event_sourcing": { "enabled": false },
@@ -343,12 +337,6 @@ Always exits 0. Never blocks Claude. Applies NFKC normalization to prevent Unico
     "enabled": false,
     "offloading_level": 5      // 0-10
   },
-  "worktrees": {
-    "enabled": true,            // enabled by default since v4.0.2
-    "max_count": 10,            // auto-prune oldest when exceeded
-    "cleanup_after_days": 7,    // remove stale worktrees
-    "base_dir": ".worktrees"    // must be relative path
-  }
 }
 ```
 
@@ -461,9 +449,9 @@ Always-excluded (regardless of level): `git push`, `git reset`, `rm -rf`, `sudo`
     └── locks/              # Lock files for multi-agent coordination
 
 scripts/
-├── task_manager.py         # Task/idea CRUD, platform sync, worktrees
+├── task_manager.py         # Task/idea CRUD, platform sync
 ├── release_manager.py      # Version, changelog, release state
-├── skill_helper.py         # Context, dispatch, worktrees
+├── skill_helper.py         # Context, dispatch
 ├── ollama_manager.py       # Local model routing + tool calling
 ├── vector_memory.py        # Semantic indexing and search
 ├── mcp_server.py           # MCP stdio server for vector memory

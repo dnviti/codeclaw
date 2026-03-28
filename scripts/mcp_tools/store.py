@@ -55,7 +55,7 @@ def register(server):
                            f"hyphens, and underscores.",
             })
 
-        # Resolve to main repo root (worktree-aware)
+        # Resolve to main repo root
         root_path = resolve_main_repo_root(root)
         notes_dir = root_path / ".claude" / "memory" / "notes" / namespace
         # Verify resolved path stays within expected directory

@@ -549,19 +549,7 @@ class MemoryOrchestrator:
         self._available = self.registry.discover()
 
     def _find_root(self) -> Path:
-        """Auto-detect project root, resolving through git worktrees.
-
-        Delegates to ``mcp_tools.resolve_main_repo_root()`` for worktree
-        resolution, falling back to the legacy directory-walk approach
-        when the import is unavailable.
-        """
-        try:
-            from mcp_tools import resolve_main_repo_root
-            return resolve_main_repo_root(".")
-        except ImportError:
-            pass
-
-        # Fallback: walk up directories looking for .claude/ or .git/
+        """Auto-detect project root by walking up from cwd."""
         d = Path.cwd()
         while d != d.parent:
             if (d / ".claude").is_dir() or (d / ".git").exists():
@@ -917,13 +905,7 @@ Examples:
         parser.print_help()
         sys.exit(1)
 
-    # Resolve root through git worktrees so that agents running in
-    # .claude/worktrees/ use the main repo's shared memory directory.
-    try:
-        from mcp_tools import resolve_main_repo_root
-        root = resolve_main_repo_root(args.root)
-    except ImportError:
-        root = Path(args.root).resolve()
+    root = Path(args.root).resolve()
 
     if args.command == "search":
         orch = MemoryOrchestrator(root=root)

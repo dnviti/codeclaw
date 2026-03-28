@@ -62,7 +62,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - enable claw@dnviti-plugins in settings.json
 
 ### Fixed
-- worktree-aware vector memory path resolution and [BETA] opt-in (FIX-0001) (#172)
+- vector memory path resolution and [BETA] opt-in (FIX-0001) (#172)
 
 ## [4.0.0] - 2026-03-19
 
@@ -120,7 +120,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - NFKC Unicode normalization for exclude-pattern bypass hardening (RPAT-v3.5.1-3) (#94)
 - VMEM-0024 patch — refactor _Args, pin pip deps (RPAT-v3.5.1-2) (#86)
 - OLLAM-0023 patch — normalize scoring input, deduplicate level helper, harden exclude patterns, add api_base warning (RPAT-v3.5.1-1) (#87)
-- merge task branch into local develop on worktree removal (CodeClaw-0025) (#81)
 
 ## [3.5.0] - 2026-03-17
 

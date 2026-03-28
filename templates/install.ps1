@@ -425,7 +425,6 @@ function Install-Aider {
         $ignoreContent = @"
 # CodeClaw generated files
 dist/
-.worktrees/
 __pycache__/
 "@
         Set-Content -Path $ignoreFile -Value $ignoreContent -Encoding UTF8
@@ -480,7 +479,7 @@ function Post-Install {
     $gitignore = Join-Path $TargetDir ".gitignore"
     if (Test-Path $gitignore) {
         $content = Get-Content -Raw $gitignore -ErrorAction SilentlyContinue
-        foreach ($entry in @("__pycache__/", "*.pyc", ".worktrees/", "dist/")) {
+        foreach ($entry in @("__pycache__/", "*.pyc", "dist/")) {
             if ($content -and ($content -notmatch [regex]::Escape($entry))) {
                 if (-not $DryRun) {
                     Add-Content -Path $gitignore -Value $entry
