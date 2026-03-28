@@ -27,7 +27,7 @@ def register(server):
         Returns:
             JSON object with ``status``, ``message``, and optional diagnostics.
         """
-        # Resolve to main repo root (worktree-aware)
+        # Resolve to main repo root
         resolved_path = resolve_main_repo_root(path)
         if not resolved_path.is_dir():
             return json.dumps({

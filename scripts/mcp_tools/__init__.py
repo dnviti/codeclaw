@@ -24,10 +24,7 @@ if str(SCRIPTS_DIR) not in sys.path:
 
 
 def resolve_main_repo_root(path_hint: str) -> Path:
-    """Resolve path to the main repository root (worktree-aware).
-
-    If *path_hint* is inside a git worktree, returns the main repository
-    root so that vector memory storage is always shared in one location.
+    """Resolve path to the main repository root.
 
     Uses a single ``git rev-parse`` call with both ``--git-common-dir``
     and ``--git-dir`` flags to minimise subprocess overhead.

@@ -71,7 +71,7 @@ flowchart TD
     subgraph "Scripts Layer"
         TM["task_manager.py<br>Task/idea CRUD, hooks"]
         RM["release_manager.py<br>Version, changelog, state"]
-        SH["skill_helper.py<br>Context, dispatch, worktrees"]
+        SH["skill_helper.py<br>Context, dispatch, branches"]
         DM["docs_manager.py<br>Discover, staleness, manifest"]
         AR["agent_runner.py<br>Multi-provider fleet runner"]
         AM["app_manager.py<br>Port/process management"]
@@ -156,9 +156,7 @@ The largest script (~2,700 lines). Manages the full lifecycle of tasks and ideas
 - PostToolUse hook: correlates edited files to in-progress tasks
 - Duplicate detection, file verification, section support
 - GitHub/GitLab Issues integration (tri-modal: local-only, platform-only, dual-sync)
-- Worktree setup: on teardown, merges task branch into local develop before removing worktree
-
-**CLI subcommands:** `list`, `list-ideas`, `parse`, `next-id`, `move`, `remove`, `sections`, `duplicates`, `summary`, `prefixes`, `verify-files`, `semantic-explore`, `is-frontend-task`, `hook`, `platform-cmd`, `setup-task-worktree`, `remove-worktree`, `list-release-tasks`, `schedule-tasks`, `create-patch-task`, `sync-from-platform`, `register-agent`, `deregister-agent`, `add-test-procedure`, `set-release`, `find-files`, `pr-body`, `worktree-info`, `platform-config`
+**CLI subcommands:** `list`, `list-ideas`, `parse`, `next-id`, `move`, `remove`, `sections`, `duplicates`, `summary`, `prefixes`, `verify-files`, `semantic-explore`, `is-frontend-task`, `hook`, `platform-cmd`, `list-release-tasks`, `schedule-tasks`, `create-patch-task`, `sync-from-platform`, `register-agent`, `deregister-agent`, `add-test-procedure`, `set-release`, `find-files`, `pr-body`, `platform-config`
 
 ### release_manager.py
 
@@ -180,15 +178,13 @@ Manages the release lifecycle including version detection, changelog generation,
 Consolidated helper that eliminates repeated logic across all skills.
 
 **Key responsibilities:**
-- Gather platform context (GitHub/GitLab config, worktree state, branch config, submodule list)
+- Gather platform context (GitHub/GitLab config, branch config, submodule list)
 - Dispatch skill arguments (parse flow, yolo mode, task codes)
-- Manage git worktrees for isolated task development
 - Parse project config for skill behavior
 - Branch strategy detection and enforcement
-- Worktree lifecycle management: load config (`_load_worktree_config`), enforce limits (`_enforce_worktree_limits` -- auto-prune by max_count and cleanup_after_days, skip dirty worktrees), verify shared memory (`_verify_worktree_memory_sharing`)
 - Status reports (task counts, in-progress tasks, recommended next tasks)
 
-**CLI subcommands:** `context`, `dispatch`, `check-project-state`, `create-project-files`, `detect-branch-strategy`, `setup-task-worktree`, `status-report`, `list-submodules`, `detect-release-config`, `detect-platform`, `refresh-branch-config`, `adapter-invoke`
+**CLI subcommands:** `context`, `dispatch`, `check-project-state`, `create-project-files`, `detect-branch-strategy`, `status-report`, `list-submodules`, `detect-release-config`, `detect-platform`, `refresh-branch-config`, `adapter-invoke`
 
 ### ollama_manager.py
 
@@ -226,8 +222,6 @@ Always-on semantic memory layer for the project codebase.
 - Garbage collection: prune stale entries, compact the index
 - Embedding providers: local `all-MiniLM-L6-v2` (default), or remote via API key
 - Versioned reads via LanceDB dataset versioning for point-in-time queries
-- `verify-worktree-sharing` subcommand: validates that the vector index resolves to the main repo's shared location from any worktree, lists all worktrees and their sharing status
-
 ### config_lock.py
 
 Cross-platform file locking for `project-config.json` writes.
@@ -342,33 +336,10 @@ flowchart LR
         T2 -->|"verify + close"| T3["done.txt<br>[x] TASK-0001"]
     end
 
-    subgraph "Worktree"
-        T2 -.->|"creates"| W[".worktrees/task/<br>TASK-0001/"]
-        T3 -.->|"merge branch → develop<br>then remove"| W
-    end
-
     subgraph "Vector Memory"
         T2 -.->|"PostToolUse hook"| VM["vector_memory.py<br>auto-index on edit"]
     end
 ```
-
-### Worktree Lifecycle Management
-
-Worktrees are enabled by default (v4.0.2+). The `skill_helper.py` manages the full worktree lifecycle with configurable limits.
-
-```mermaid
-flowchart TD
-    PICK["/task pick CODE"] --> LOAD["_load_worktree_config()<br>max_count, cleanup_after_days, base_dir"]
-    LOAD --> ENFORCE["_enforce_worktree_limits()<br>Prune stale/excess worktrees<br>(skip dirty worktrees)"]
-    ENFORCE --> CREATE["git worktree add<br>.worktrees/task/CODE/"]
-    CREATE --> VERIFY["_verify_worktree_memory_sharing()<br>Ensure vector index resolves<br>to main repo"]
-    VERIFY --> WORK["Agent works in worktree"]
-    WORK --> CLOSE["Task closed"]
-    CLOSE --> MERGE["Merge task branch → develop"]
-    MERGE --> REMOVE["git worktree remove"]
-```
-
-**Shared memory architecture:** When `vector_memory.worktree_shared` is `true` (default), all worktrees share the same vector index in the main repository at `.claude/memory/vectors/`. The `_verify_worktree_memory_sharing` function validates that git's `--git-common-dir` resolves to the main repo root, ensuring worktree-local indexes are never accidentally created.
 
 ### Release Pipeline
 
@@ -487,7 +458,7 @@ flowchart LR
 ```
 
 The three-branch strategy enforces a strict promotion path:
-- **develop** — All feature branches merge here via PRs; on task worktree teardown, the task branch is merged into local develop
+- **develop** — All feature branches merge here via PRs
 - **staging** — Pre-release validation; builds the `latest` Docker image; tagged `vX.X.X-staging`
 - **main** — Production; tagged releases build `stable` + versioned Docker images
 

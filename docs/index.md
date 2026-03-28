@@ -49,7 +49,7 @@ A project-agnostic task and idea management plugin for Claude Code with 8 stream
 |-----------|-----------|
 | Runtime | Python 3.12+ (stdlib only, zero dependencies) |
 | Host | Claude Code CLI |
-| Version Control | Git (worktrees, branches, tags) |
+| Version Control | Git (branches, tags) |
 | Platform | GitHub Actions / GitLab CI/CD |
 | AI Providers | Claude, OpenAI Codex, OpenClaw |
 | MCP Server | Vector memory semantic search (stdio transport) |

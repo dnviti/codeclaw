@@ -66,8 +66,8 @@ def _build_status(root: str) -> dict:
     Uses get_cached_config() to avoid redundant config reads when this
     resource is polled multiple times during a server session.
 
-    The *root* parameter is expected to be already resolved through
-    worktrees by ``run_server()`` / ``create_server()``.
+    The *root* parameter is expected to be already resolved by
+    ``run_server()`` / ``create_server()``.
     """
     from mcp_tools import get_cached_config
 
@@ -245,9 +245,9 @@ def create_server(root: str = "."):
 def run_server(root: str = "."):
     """Run the MCP server with stdio transport.
 
-    Resolves *root* through git worktrees before passing it to
-    ``create_server()`` so that server-level resources (``memory://status``,
-    ``memory://backends``) always point to the main repo's memory directory.
+    Resolves *root* before passing it to ``create_server()`` so that
+    server-level resources (``memory://status``, ``memory://backends``)
+    always point to the main repo's memory directory.
     """
     resolved_root = str(resolve_main_repo_root(root))
     server = create_server(resolved_root)

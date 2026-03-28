@@ -40,7 +40,7 @@ def register(server):
             JSON array of search results with file_path, name, chunk_type,
             score, and content fields.
         """
-        # Resolve to main repo root (worktree-aware)
+        # Resolve to main repo root
         resolved_root = resolve_main_repo_root(root)
         if not resolved_root.is_dir():
             return json.dumps({

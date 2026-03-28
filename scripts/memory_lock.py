@@ -51,8 +51,7 @@ else:
 
 # ── Constants ────────────────────────────────────────────────────────────────
 
-# Relative path — callers must resolve against the *main* repository root
-# (not a worktree root) via get_main_repo_root() or _find_project_root().
+# Relative path — callers must resolve against the project repository root.
 DEFAULT_LOCK_DIR = ".claude/memory/locks"
 DEFAULT_TIMEOUT = 30.0      # seconds
 DEFAULT_POLL_INTERVAL = 0.1  # seconds

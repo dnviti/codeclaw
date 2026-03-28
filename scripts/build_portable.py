@@ -58,7 +58,6 @@ EXCLUDE_PATTERNS = [
     r"^\.git(/|$)",
     r"^\.github(/|$)",
     r"^\.claude(/|$)",
-    r"^\.worktrees(/|$)",
     r"^tests(/|$)",
     r"__pycache__(/|$)",
     r"\.pyc$",

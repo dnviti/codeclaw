@@ -1,9 +1,7 @@
 __pycache__/
 *.pyc
 *.pyo
-.worktrees/
 dist/
 .claude/memory/
-.claude/worktrees/
 .mcp.json
 .remember/
