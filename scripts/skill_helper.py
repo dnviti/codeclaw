@@ -2,8 +2,7 @@
 """Consolidated skill helper for codeclaw.
 
 Eliminates repeated logic across CodeClaw skills by providing single-call
-subcommands that gather context, dispatch arguments, check state, and
-manage worktrees.
+subcommands that gather context, dispatch arguments, and check state.
 
 All output is JSON.  Zero external dependencies — stdlib only.
 """
@@ -17,7 +16,6 @@ import platform as platform_mod
 import re
 import subprocess
 import sys
-import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -29,7 +27,7 @@ _SCRIPT_DIR = Path(__file__).resolve().parent
 if str(_SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPT_DIR))
 
-from common import find_project_root, get_main_repo_root, parse_claude_md, output_json, get_latest_tag
+from common import find_project_root, get_main_repo_root, load_config, output_json, get_latest_tag
 
 # ── Optional locked config support ─────────────────────────────────────────
 try:
@@ -50,24 +48,6 @@ TASK_HEADER_RE = re.compile(r"^\[(.)\]\s+([A-Z]{3,5}-\d{4})\s+—\s+(.+)$")
 IDEA_HEADER_RE = re.compile(r"^(IDEA-[A-Z]{3,5}-\d{4})\s+—\s+(.+)$")
 TASK_CODE_RE = re.compile(r"^[A-Z]{3,5}-\d{4}$")
 VERSION_RE = re.compile(r"(\d+)\.(\d+)\.(\d+)(?:-beta)?")
-
-
-# ── Worktree Detection ─────────────────────────────────────────────────────
-
-def is_in_worktree() -> bool:
-    """Return True if CWD is inside a git worktree (not the main repo)."""
-    try:
-        common = subprocess.run(
-            ["git", "rev-parse", "--git-common-dir"],
-            capture_output=True, text=True, check=True,
-        ).stdout.strip()
-        git_dir = subprocess.run(
-            ["git", "rev-parse", "--git-dir"],
-            capture_output=True, text=True, check=True,
-        ).stdout.strip()
-        return Path(common).resolve() != Path(git_dir).resolve()
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        return False
 
 
 # ── Git Helpers ─────────────────────────────────────────────────────────────
@@ -95,31 +75,6 @@ def git_branch_exists(name: str) -> bool:
 
 def git_remote_branch_exists(name: str) -> bool:
     return git_run("rev-parse", "--verify", f"refs/remotes/origin/{name}") is not None
-
-
-def git_worktree_list() -> list[dict]:
-    """Parse git worktree list --porcelain output."""
-    raw = git_run("worktree", "list", "--porcelain")
-    if not raw:
-        return []
-    worktrees = []
-    current: dict = {}
-    for line in raw.splitlines():
-        if line.startswith("worktree "):
-            if current:
-                worktrees.append(current)
-            current = {"path": line[9:]}
-        elif line.startswith("HEAD "):
-            current["head"] = line[5:]
-        elif line.startswith("branch "):
-            current["branch"] = line[7:]
-        elif line == "bare":
-            current["bare"] = True
-        elif line == "detached":
-            current["detached"] = True
-    if current:
-        worktrees.append(current)
-    return worktrees
 
 
 # ── Submodule Detection ────────────────────────────────────────────────────
@@ -320,11 +275,11 @@ def refresh_branch_config(root: Path) -> dict:
     if not repo:
         return {}
 
-    # Determine branch names from CLAUDE.md or defaults
-    md_vars = parse_claude_md(root)
-    prod = md_vars.get("PRODUCTION_BRANCH", "") or "main"
-    staging = md_vars.get("STAGING_BRANCH", "") or "staging"
-    dev = md_vars.get("DEVELOPMENT_BRANCH", "") or "develop"
+    # Determine branch names from project config
+    cfg = load_config(root)
+    prod = cfg.get("production_branch", "") or "main"
+    staging = cfg.get("staging_branch", "") or "staging"
+    dev = cfg.get("development_branch", "") or "develop"
 
     role_map = {
         prod: "production",
@@ -582,40 +537,21 @@ def _detect_mcp_server_status(root: Path) -> dict:
 def cmd_context(_args) -> dict:
     """Return all context a skill needs in one call."""
     root = get_main_repo_root()
-    md_vars = parse_claude_md(root)
+    cfg = load_config(root)
 
     # ── platform ──
     platform = get_platform_info(root)
 
-    # ── worktree ──
-    in_wt = is_in_worktree()
-    wt_list = git_worktree_list()
-    try:
-        wt_root = Path(subprocess.run(
-            ["git", "rev-parse", "--show-toplevel"],
-            capture_output=True, text=True, check=True,
-        ).stdout.strip()).resolve()
-    except Exception:
-        wt_root = None
-
     submodules = _detect_submodules(root)
 
-    worktree = {
-        "in_worktree": in_wt,
-        "main_root": str(root),
-        "worktree_root": str(wt_root) if in_wt and wt_root else None,
-        "worktrees": [w.get("path", "") for w in wt_list],
-        "submodules": submodules,
-    }
-
     # ── branches ──
-    dev_branch = md_vars.get("DEVELOPMENT_BRANCH", "")
+    dev_branch = cfg.get("development_branch", "")
     if not dev_branch:
-        dev_branch = md_vars.get("RELEASE_BRANCH", "")
+        dev_branch = cfg.get("release_branch", "")
     if not dev_branch:
         dev_branch = "develop" if git_branch_exists("develop") else "main"
-    staging_branch = md_vars.get("STAGING_BRANCH", "") or "staging"
-    prod_branch = md_vars.get("PRODUCTION_BRANCH", "") or "main"
+    staging_branch = cfg.get("staging_branch", "") or "staging"
+    prod_branch = cfg.get("production_branch", "") or "main"
 
     # Read cached branch protection settings
     cached_branches = get_cached_branch_config(root)
@@ -641,24 +577,24 @@ def cmd_context(_args) -> dict:
     }
 
     # ── release_config ──
-    tag_prefix = md_vars.get("TAG_PREFIX", "")
+    tag_prefix = cfg.get("tag_prefix", "")
     if not tag_prefix:
         tag_prefix = detect_tag_prefix()
-    repo_url = md_vars.get("GITHUB_REPO_URL", "")
+    repo_url = cfg.get("github_repo_url", "")
     if not repo_url:
         url = git_run("remote", "get-url", "origin")
         if url:
             repo_url = url.replace(".git", "").replace("git@github.com:", "https://github.com/")
-    changelog = md_vars.get("CHANGELOG_FILE", "") or "CHANGELOG.md"
+    changelog = cfg.get("changelog_file", "") or "CHANGELOG.md"
 
     release_config = {
         "tag_prefix": tag_prefix,
-        "package_paths": md_vars.get("PACKAGE_JSON_PATHS", ""),
+        "package_paths": cfg.get("package_json_paths", ""),
         "changelog_file": changelog,
         "repo_url": repo_url,
-        "verify_command": md_vars.get("VERIFY_COMMAND", ""),
-        "test_command": md_vars.get("TEST_COMMAND", ""),
-        "test_framework": md_vars.get("TEST_FRAMEWORK", ""),
+        "verify_command": cfg.get("verify_command", ""),
+        "test_command": cfg.get("test_command", ""),
+        "test_framework": cfg.get("test_framework", ""),
     }
 
     # ── memory_agents ──
@@ -700,13 +636,13 @@ def cmd_context(_args) -> dict:
 
     return {
         "platform": platform,
-        "worktree": worktree,
         "branches": branches,
         "release_config": release_config,
         "memory_agents": memory_agents,
         "vector_memory": vector_memory,
         "mcp_server": mcp_server,
         "os_info": os_info,
+        "submodules": submodules,
     }
 
 
@@ -1040,20 +976,12 @@ def cmd_check_project_state(_args) -> dict:
     uses_local = platform_info["mode"] != "platform-only"
     git_init = (root / ".git").exists() or git_run("rev-parse", "--git-dir") is not None
 
-    # Check .gitignore for .worktrees/
-    gitignore = root / ".gitignore"
-    gitignore_has_wt = False
-    if gitignore.exists():
-        content = gitignore.read_text(encoding="utf-8")
-        gitignore_has_wt = ".worktrees" in content or ".worktrees/" in content
-
     return {
         "existing_files": existing,
         "missing_files": missing,
         "claude_md": claude_md_info(root),
         "releases_json": {"exists": releases_json.exists(), "active": uses_local},
         "git_initialized": git_init,
-        "gitignore_has_worktrees": gitignore_has_wt,
     }
 
 
@@ -1128,11 +1056,11 @@ def cmd_create_project_files(args) -> dict:
 def cmd_detect_branch_strategy(_args) -> dict:
     """Return current branch state and what needs to be created."""
     root = get_main_repo_root()
-    md_vars = parse_claude_md(root)
+    cfg = load_config(root)
 
-    dev = md_vars.get("DEVELOPMENT_BRANCH", "") or md_vars.get("RELEASE_BRANCH", "") or "develop"
-    staging = md_vars.get("STAGING_BRANCH", "") or "staging"
-    prod = md_vars.get("PRODUCTION_BRANCH", "") or "main"
+    dev = cfg.get("development_branch", "") or cfg.get("release_branch", "") or "develop"
+    staging = cfg.get("staging_branch", "") or "staging"
+    prod = cfg.get("production_branch", "") or "main"
 
     names = {"develop": dev, "staging": staging, "main": prod}
     branches_exist: dict[str, bool] = {}
@@ -1144,404 +1072,18 @@ def cmd_detect_branch_strategy(_args) -> dict:
 
     needs_creation = [k for k in ("develop", "staging", "main") if not branches_exist[k]]
 
-    # Check if CLAUDE.md already has the values configured
-    has_dev = bool(md_vars.get("DEVELOPMENT_BRANCH") or md_vars.get("RELEASE_BRANCH"))
-    has_staging = bool(md_vars.get("STAGING_BRANCH"))
-    has_prod = bool(md_vars.get("PRODUCTION_BRANCH"))
+    # Check if config already has the values configured
+    has_dev = bool(cfg.get("development_branch") or cfg.get("release_branch"))
+    has_staging = bool(cfg.get("staging_branch"))
+    has_prod = bool(cfg.get("production_branch"))
     needs_update = not (has_dev and has_staging and has_prod)
 
     return {
         "branches_exist": branches_exist,
         "branches_remote": branches_remote,
-        "claude_md_config": {"development": dev, "staging": staging, "production": prod},
+        "branch_config": {"development": dev, "staging": staging, "production": prod},
         "needs_creation": needs_creation,
-        "needs_claude_md_update": needs_update,
-    }
-
-
-# ════════════════════════════════════════════════════════════════════════════
-# Subcommand: setup-task-worktree
-# ════════════════════════════════════════════════════════════════════════════
-
-def _load_worktree_config(root: Path) -> dict:
-    """Load worktree configuration from project-config.json.
-
-    Returns the ``worktrees`` section with defaults applied.
-    Validates that ``base_dir`` is a safe relative path.
-    """
-    defaults = {
-        "enabled": True,
-        "max_count": 10,
-        "cleanup_after_days": 7,
-        "base_dir": ".worktrees",
-    }
-    for cfg_name in [
-        root / ".claude" / "project-config.json",
-        root / "config" / "project-config.json",
-    ]:
-        if cfg_name.exists():
-            try:
-                data = json.loads(cfg_name.read_text(encoding="utf-8"))
-                wt = data.get("worktrees", {})
-                merged = {**defaults, **{k: v for k, v in wt.items() if not k.startswith("_")}}
-                # Sanitize base_dir: reject absolute paths or path traversal
-                bd = Path(merged.get("base_dir", ".worktrees"))
-                if bd.is_absolute() or ".." in bd.parts:
-                    logger.warning(
-                        "Ignoring unsafe worktrees.base_dir '%s' — falling back to '.worktrees'",
-                        merged["base_dir"],
-                    )
-                    merged["base_dir"] = ".worktrees"
-                return merged
-            except (json.JSONDecodeError, OSError):
-                pass
-    return defaults
-
-
-def _is_worktree_enabled(root: Path) -> bool:
-    """Check whether worktree-based task isolation is enabled in project config.
-
-    Reads ``worktrees.enabled`` from project-config.json.  Returns True
-    by default — worktrees are the standard task isolation mode.
-    """
-    return _load_worktree_config(root).get("enabled", True)
-
-
-def _is_worktree_dirty(wt_path: str) -> bool:
-    """Check if a worktree has uncommitted changes (dirty working tree)."""
-    try:
-        result = subprocess.run(
-            ["git", "status", "--porcelain"],
-            capture_output=True, text=True, check=True,
-            cwd=wt_path,
-        )
-        return bool(result.stdout.strip())
-    except (subprocess.CalledProcessError, FileNotFoundError, OSError):
-        # If we cannot determine status, assume dirty to be safe
-        return True
-
-
-def _enforce_worktree_limits(root: Path, wt_config: dict) -> list[str]:
-    """Prune worktrees that exceed max_count or cleanup_after_days.
-
-    Skips worktrees with uncommitted changes to prevent data loss.
-    Returns a list of removed worktree paths for logging.
-    """
-    max_count = wt_config.get("max_count", 10)
-    cleanup_days = wt_config.get("cleanup_after_days", 7)
-    removed: list[str] = []
-
-    # Collect existing worktrees (excluding the main repo)
-    try:
-        result = subprocess.run(
-            ["git", "worktree", "list", "--porcelain"],
-            capture_output=True, text=True, check=True,
-            cwd=str(root),
-        )
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        return removed
-
-    worktrees: list[dict] = []
-    current: dict = {}
-    for line in result.stdout.splitlines():
-        if line.startswith("worktree "):
-            current = {"path": line.split(" ", 1)[1]}
-        elif line.startswith("branch "):
-            current["branch"] = line.split(" ", 1)[1]
-        elif line == "":
-            if current and current.get("path") != str(root):
-                worktrees.append(current)
-            current = {}
-    if current and current.get("path") != str(root):
-        worktrees.append(current)
-
-    # Add mtime for age-based cleanup
-    now = time.time()
-    cutoff = now - (cleanup_days * 86400)
-    for wt in worktrees:
-        p = Path(wt["path"])
-        try:
-            wt["mtime"] = p.stat().st_mtime
-        except OSError:
-            wt["mtime"] = 0
-
-    # Sort oldest first
-    worktrees.sort(key=lambda w: w["mtime"])
-
-    # 1. Remove worktrees older than cleanup_after_days
-    surviving: list[dict] = []
-    for wt in worktrees:
-        if wt["mtime"] < cutoff and wt["mtime"] > 0:
-            # Skip worktrees with uncommitted changes to prevent data loss
-            if _is_worktree_dirty(wt["path"]):
-                logger.warning(
-                    "Skipping removal of stale worktree %s — has uncommitted changes",
-                    wt["path"],
-                )
-                surviving.append(wt)
-                continue
-            try:
-                subprocess.run(
-                    ["git", "worktree", "remove", "--force", wt["path"]],
-                    capture_output=True, text=True, check=True,
-                    cwd=str(root),
-                )
-                removed.append(wt["path"])
-            except subprocess.CalledProcessError:
-                surviving.append(wt)
-        else:
-            surviving.append(wt)
-    worktrees = surviving
-
-    # 2. Remove oldest worktrees if count exceeds max_count
-    # Leave room for the new one being created (max_count - 1)
-    while len(worktrees) >= max_count and worktrees:
-        wt = worktrees[0]
-        # Skip worktrees with uncommitted changes to prevent data loss
-        if _is_worktree_dirty(wt["path"]):
-            logger.warning(
-                "Skipping removal of worktree %s (over limit) — has uncommitted changes",
-                wt["path"],
-            )
-            worktrees.pop(0)
-            continue
-        try:
-            subprocess.run(
-                ["git", "worktree", "remove", "--force", wt["path"]],
-                capture_output=True, text=True, check=True,
-                cwd=str(root),
-            )
-            removed.append(wt["path"])
-        except subprocess.CalledProcessError:
-            pass
-        worktrees.pop(0)
-
-    return removed
-
-
-_SEMVER_RE = re.compile(r"^\d+\.\d+\.\d+$")
-
-
-def _get_active_release_version(root: Path) -> str | None:
-    """Query the active release version from release-state.json.
-
-    Returns the version string (e.g. '4.0.2') if an active release exists,
-    or None if no release state is found or the version is malformed.
-    """
-    state_file = root / ".claude" / "release-state.json"
-    if state_file.exists():
-        try:
-            data = json.loads(state_file.read_text(encoding="utf-8"))
-            version = data.get("version", "")
-            if version and _SEMVER_RE.match(version):
-                return version
-        except (json.JSONDecodeError, OSError):
-            pass
-
-    # Fallback: try running release_manager.py release-state-get
-    try:
-        result = subprocess.run(
-            [sys.executable, str(_SCRIPT_DIR / "release_manager.py"), "release-state-get"],
-            capture_output=True, text=True, timeout=15,
-            cwd=str(root),
-        )
-        if result.returncode == 0:
-            data = json.loads(result.stdout.strip())
-            version = data.get("version", "")
-            if version and "error" not in data and _SEMVER_RE.match(version):
-                return version
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired,
-            json.JSONDecodeError, FileNotFoundError, OSError):
-        pass
-
-    return None
-
-
-def _verify_worktree_memory_sharing(main_root: Path, wt_dir: Path) -> bool:
-    """Verify that vector memory resolves to the main repo from a worktree.
-
-    Checks that the vector index path from the worktree points to the
-    shared location in the main repository, not a worktree-local copy.
-    """
-    try:
-        result = subprocess.run(
-            ["git", "rev-parse", "--git-common-dir", "--git-dir"],
-            capture_output=True, text=True, check=True,
-            cwd=str(wt_dir),
-        )
-        lines = result.stdout.strip().splitlines()
-        if len(lines) >= 2:
-            common = Path(lines[0]).resolve()
-            git_dir = Path(lines[1]).resolve()
-            resolved_root = common.parent if common != git_dir else git_dir.parent
-            if resolved_root == main_root.resolve():
-                return True
-            logger.warning(
-                "Worktree %s resolves to %s instead of main repo %s — "
-                "memory may not be shared",
-                wt_dir, resolved_root, main_root,
-            )
-            return False
-    except (subprocess.CalledProcessError, FileNotFoundError, OSError):
-        pass
-    return False
-
-
-def cmd_setup_task_worktree(args) -> dict:
-    """Consolidate 5-step worktree creation into one command.
-
-    When ``worktrees.enabled`` is False, falls back to standard branch
-    switching instead of creating a git worktree.  The default is True.
-    """
-    task_code = args.task_code
-    base_branch = args.base_branch or "develop"
-
-    if not task_code:
-        return {"success": False, "error": "task_code is required"}
-
-    root = get_main_repo_root()
-    wt_config = _load_worktree_config(root)
-
-    # Check if worktree isolation is enabled in project config
-    if not wt_config.get("enabled", True):
-        # Simplified pipeline: dedicated task/<code> branch without worktree
-        code_lower = task_code.lower()
-        branch_name = f"task/{code_lower}"
-
-        # Fetch latest base branch
-        git_run("fetch", "origin", base_branch, cwd=str(root))
-
-        branch_exists = git_branch_exists(branch_name)
-        try:
-            if branch_exists:
-                subprocess.run(
-                    ["git", "checkout", branch_name],
-                    capture_output=True, text=True, check=True,
-                    cwd=str(root),
-                )
-            else:
-                # Try from remote first, then local
-                result = subprocess.run(
-                    ["git", "checkout", "-b", branch_name, f"origin/{base_branch}"],
-                    capture_output=True, text=True,
-                    cwd=str(root),
-                )
-                if result.returncode != 0:
-                    subprocess.run(
-                        ["git", "checkout", "-b", branch_name, base_branch],
-                        capture_output=True, text=True, check=True,
-                        cwd=str(root),
-                    )
-        except subprocess.CalledProcessError as e:
-            return {"success": False, "error": e.stderr.strip() or str(e)}
-
-        return {
-            "success": True,
-            "worktree_dir": str(root),
-            "branch": branch_name,
-            "created": not branch_exists,
-            "reused_existing": branch_exists,
-            "worktree_mode": False,
-        }
-    code_lower = task_code.lower()
-    branch_name = f"task/{code_lower}"
-    base_dir = wt_config.get("base_dir", ".worktrees")
-
-    # Validate base_dir to prevent path traversal (S-1)
-    base_dir_path = Path(base_dir)
-    if base_dir_path.is_absolute() or ".." in base_dir_path.parts:
-        return {
-            "success": False,
-            "error": f"Invalid worktrees.base_dir '{base_dir}': must be a relative path without '..' components",
-        }
-    # Ensure resolved path stays within project root
-    resolved_base = (root / base_dir).resolve()
-    if not str(resolved_base).startswith(str(root.resolve())):
-        return {
-            "success": False,
-            "error": f"Invalid worktrees.base_dir '{base_dir}': resolves outside project root",
-        }
-
-    wt_dir = root / base_dir / "task" / code_lower
-
-    # 0. Enforce worktree limits (max_count, cleanup_after_days)
-    removed = _enforce_worktree_limits(root, wt_config)
-
-    # 1. Ensure directories exist
-    (root / base_dir / "task").mkdir(parents=True, exist_ok=True)
-
-    # 2. Ensure .gitignore has the worktree base_dir (line-level match)
-    gitignore = root / ".gitignore"
-    gitignore_entry = f"{base_dir}/"
-    if gitignore.exists():
-        content = gitignore.read_text(encoding="utf-8")
-        lines = content.splitlines()
-        if base_dir not in lines and gitignore_entry not in lines:
-            with open(gitignore, "a", encoding="utf-8") as f:
-                f.write(f"\n{gitignore_entry}\n")
-    else:
-        gitignore.write_text(f"{gitignore_entry}\n", encoding="utf-8")
-
-    # 3. Check if worktree already exists
-    if wt_dir.exists() and (wt_dir / ".git").exists():
-        return {
-            "success": True,
-            "worktree_dir": str(wt_dir),
-            "branch": branch_name,
-            "created": False,
-            "reused_existing": True,
-        }
-
-    # 4. Prune stale worktrees
-    git_run("worktree", "prune", cwd=str(root))
-
-    # 5. Fetch latest base branch
-    git_run("fetch", "origin", base_branch, cwd=str(root))
-
-    # 6. Check if branch exists
-    branch_exists = git_branch_exists(branch_name)
-
-    # Safe: content passed via argument list (not shell), no injection vector
-    try:
-        if branch_exists:
-            result = subprocess.run(
-                ["git", "worktree", "add", str(wt_dir), branch_name],
-                capture_output=True, text=True, check=True,
-                cwd=str(root),
-            )
-        else:
-            result = subprocess.run(
-                ["git", "worktree", "add", "-b", branch_name, str(wt_dir), f"origin/{base_branch}"],
-                capture_output=True, text=True,
-                cwd=str(root),
-            )
-            if result.returncode != 0:
-                # Fallback: try from local base branch
-                result = subprocess.run(
-                    ["git", "worktree", "add", "-b", branch_name, str(wt_dir), base_branch],
-                    capture_output=True, text=True, check=True,
-                    cwd=str(root),
-                )
-    except subprocess.CalledProcessError as e:
-        return {"success": False, "error": e.stderr.strip() or str(e)}
-
-    # Initialize submodules in the new worktree (if any)
-    submodules = _detect_submodules(root)
-    if submodules:
-        git_run("submodule", "update", "--init", "--recursive", cwd=str(wt_dir))
-
-    # Validate shared memory accessibility from the new worktree
-    memory_shared = _verify_worktree_memory_sharing(root, wt_dir)
-
-    return {
-        "success": True,
-        "worktree_dir": str(wt_dir),
-        "branch": branch_name,
-        "created": True,
-        "reused_existing": False,
-        "submodules_initialized": len(submodules) > 0,
-        "removed_stale": removed,
-        "memory_shared": memory_shared,
+        "needs_config_update": needs_update,
     }
 
 
@@ -1605,20 +1147,6 @@ def cmd_status_report(_args) -> dict:
         key=lambda x: (priority_order.get(x["priority"].upper(), 3), not x["deps_satisfied"])
     )
 
-    # Worktrees mapped to tasks
-    wt_list = git_worktree_list()
-    task_worktrees = []
-    for wt in wt_list:
-        branch = wt.get("branch", "")
-        if "task/" in branch:
-            code_part = branch.split("task/")[-1].upper().replace("/", "")
-            # Try to map to a real code (best-effort)
-            task_worktrees.append({
-                "path": wt.get("path", ""),
-                "branch": branch.replace("refs/heads/", ""),
-                "task_code": code_part,
-            })
-
     # Release plan from releases.json (only when using local file tracking)
     release_plan = None
     platform_info = get_platform_info(root)
@@ -1642,7 +1170,6 @@ def cmd_status_report(_args) -> dict:
         "in_progress": in_progress,
         "blocked": blocked_items,
         "next_recommended": next_recommended[:10],
-        "worktrees": task_worktrees,
         "release_plan": release_plan,
     }
 
@@ -1669,9 +1196,9 @@ def cmd_list_submodules(_args) -> dict:
 def cmd_detect_release_config(_args) -> dict:
     """Return all release configuration in one call."""
     root = get_main_repo_root()
-    md_vars = parse_claude_md(root)
+    cfg = load_config(root)
 
-    tag_prefix = md_vars.get("TAG_PREFIX", "")
+    tag_prefix = cfg.get("tag_prefix", "")
     if not tag_prefix:
         tag_prefix = detect_tag_prefix()
 
@@ -1695,16 +1222,16 @@ def cmd_detect_release_config(_args) -> dict:
             current_version = f"{vm.group(1)}.{vm.group(2)}.{vm.group(3)}"
             is_beta = "-beta" in v_str
 
-    changelog_file = md_vars.get("CHANGELOG_FILE", "") or "CHANGELOG.md"
+    changelog_file = cfg.get("changelog_file", "") or "CHANGELOG.md"
     changelog_exists = (root / changelog_file).exists()
 
-    repo_url = md_vars.get("GITHUB_REPO_URL", "")
+    repo_url = cfg.get("github_repo_url", "")
     if not repo_url:
         url = git_run("remote", "get-url", "origin")
         if url:
             repo_url = url.replace(".git", "").replace("git@github.com:", "https://github.com/")
 
-    dev_branch = md_vars.get("DEVELOPMENT_BRANCH", "") or md_vars.get("RELEASE_BRANCH", "")
+    dev_branch = cfg.get("development_branch", "") or cfg.get("release_branch", "")
     if not dev_branch:
         dev_branch = "develop" if git_branch_exists("develop") else "main"
 
@@ -1718,8 +1245,8 @@ def cmd_detect_release_config(_args) -> dict:
         "changelog_exists": changelog_exists,
         "repo_url": repo_url,
         "development_branch": dev_branch,
-        "staging_branch": md_vars.get("STAGING_BRANCH", "") or "staging",
-        "production_branch": md_vars.get("PRODUCTION_BRANCH", "") or "main",
+        "staging_branch": cfg.get("staging_branch", "") or "staging",
+        "production_branch": cfg.get("production_branch", "") or "main",
     }
 
 
@@ -1816,11 +1343,6 @@ def main():
     # detect-branch-strategy
     sub.add_parser("detect-branch-strategy", help="Return branch state and needs")
 
-    # setup-task-worktree
-    p_wt = sub.add_parser("setup-task-worktree", help="Create task worktree in one step")
-    p_wt.add_argument("--task-code", required=True, help="Task code e.g. AUTH-0001")
-    p_wt.add_argument("--base-branch", default="develop", help="Base branch")
-
     # status-report
     sub.add_parser("status-report", help="Return pre-computed task status data")
 
@@ -1854,7 +1376,6 @@ def main():
         "check-project-state": cmd_check_project_state,
         "create-project-files": cmd_create_project_files,
         "detect-branch-strategy": cmd_detect_branch_strategy,
-        "setup-task-worktree": cmd_setup_task_worktree,
         "list-submodules": cmd_list_submodules,
         "status-report": cmd_status_report,
         "detect-release-config": cmd_detect_release_config,

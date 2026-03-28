@@ -23,7 +23,7 @@ _SCRIPT_DIR = Path(__file__).resolve().parent
 if str(_SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPT_DIR))
 
-from common import find_project_root, get_main_repo_root, get_latest_tag  # noqa: E402
+from common import find_project_root, get_main_repo_root, get_latest_tag, load_config  # noqa: E402
 
 # ── Constants ───────────────────────────────────────────────────────────────
 
@@ -1533,19 +1533,6 @@ def cmd_merge_check(args):
 
 # ── Subcommand: full-context ────────────────────────────────────────────────
 
-def parse_claude_md_config(root: Path) -> dict:
-    """Parse KEY="value" patterns from CLAUDE.md bash blocks."""
-    claude_md = root / "CLAUDE.md"
-    if not claude_md.exists():
-        return {}
-    content = claude_md.read_text(encoding="utf-8")
-    config = {}
-    # Match KEY="value" patterns in bash blocks
-    for match in re.finditer(r'^(\w+)="([^"]*)"', content, re.MULTILINE):
-        config[match.group(1).lower()] = match.group(2)
-    return config
-
-
 def cmd_full_context(args):
     """Return all release-related context in a single call."""
     root = find_project_root()
@@ -1602,13 +1589,13 @@ def cmd_full_context(args):
     except (subprocess.CalledProcessError, FileNotFoundError):
         pass
 
-    # 5. Read CLAUDE.md config
-    claude_config = parse_claude_md_config(root)
+    # 5. Read project config
+    project_cfg = load_config(root)
 
     # 6. Auto-detect missing values
-    # Tag prefix: use --tag-prefix arg first, then CLAUDE.md, then auto-detect from existing tags
+    # Tag prefix: use --tag-prefix arg first, then config, then auto-detect from existing tags
     if args.tag_prefix == "auto":
-        configured_prefix = claude_config.get("tag_prefix", "")
+        configured_prefix = project_cfg.get("tag_prefix", "")
         if configured_prefix:
             tag_prefix = configured_prefix
         else:
@@ -1630,11 +1617,11 @@ def cmd_full_context(args):
         # Re-fetch latest tag with detected prefix
         latest_tag = get_latest_tag(tag_prefix)
 
-    # Release branch: from CLAUDE.md or auto-detect
-    development_branch = claude_config.get("development_branch", "") or ""
-    staging_branch = claude_config.get("staging_branch", "") or "staging"
-    production_branch = claude_config.get("production_branch", "") or "main"
-    release_branch_legacy = claude_config.get("release_branch", "")
+    # Release branch: from config or auto-detect
+    development_branch = project_cfg.get("development_branch", "") or ""
+    staging_branch = project_cfg.get("staging_branch", "") or "staging"
+    production_branch = project_cfg.get("production_branch", "") or "main"
+    release_branch_legacy = project_cfg.get("release_branch", "")
 
     # Auto-detect development branch if not configured
     if not development_branch and not release_branch_legacy:
@@ -1649,15 +1636,15 @@ def cmd_full_context(args):
             pass
 
     # Changelog
-    changelog_file = claude_config.get("changelog_file", "")
+    changelog_file = project_cfg.get("changelog_file", "")
     changelog_exists = False
     if changelog_file:
         changelog_exists = (root / changelog_file).exists()
 
     # Repo URL and verify command
-    repo_url = claude_config.get("github_repo_url", "")
-    verify_command = claude_config.get("verify_command", "")
-    package_paths = claude_config.get("package_json_paths", "")
+    repo_url = project_cfg.get("github_repo_url", "")
+    verify_command = project_cfg.get("verify_command", "")
+    package_paths = project_cfg.get("package_json_paths", "")
 
     # 7. Check releases.json for next planned release (only when using local files)
     release_plan = {

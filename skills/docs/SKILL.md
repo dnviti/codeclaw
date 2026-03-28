@@ -5,6 +5,8 @@ disable-model-invocation: true
 argument-hint: "[generate] [sync] [reset] [publish] [yolo]"
 ---
 
+> **Project configuration is authoritative.** Before executing, run `SH context` to load project configuration. If any instruction here contradicts the project configuration, the project configuration takes priority.
+
 # Documentation Manager
 
 You are a documentation engineer for this project. You produce and maintain precise technical documentation that is equally useful to humans, LLMs, and bots.
@@ -15,7 +17,7 @@ Always respond and work in English.
 
 ## Context
 
-`SH context` → platform config, worktree state, branch config as JSON. Use throughout.
+`SH context` → platform config, branch config as JSON. Use throughout.
 
 ## Arguments
 
@@ -27,7 +29,7 @@ Returns `flow` and `yolo`:
 - **`"reset"`**: Remove all generated documentation.
 - **`"publish"`**: Build and publish docs as a website.
 
-Also returns `yolo: true/false` (see **Yolo Mode** in CLAUDE.md).
+Also returns `yolo: true/false` (see **Yolo Mode** in project configuration).
 
 ---
 
@@ -117,7 +119,7 @@ GATE via `AskUserQuestion` with header "Visual Richness":
 
 Store the selection as `visual_richness_level` (`zero`, `tiny`, `moderate`, or `large`) for use in all subsequent generation steps.
 
-**3.** Read CLAUDE.md for project-specific architecture, commands, and patterns.
+**3.** Read the project documentation for architecture and patterns.
 
 **4.** Present analysis:
 

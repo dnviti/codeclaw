@@ -84,7 +84,7 @@
       "event": "PostToolUse",
       "matcher": "Edit|Write",
       "handler_type": "command",
-      "command": "python3 ${CLAUDE_PLUGIN_ROOT}/scripts/task_manager.py hook \"$CLAUDE_FILE_PATH\""
+      "command": "python3 ${CLAW_ROOT}/scripts/task_manager.py hook \"$CLAUDE_FILE_PATH\""
     },
     {
       "type": "agent",

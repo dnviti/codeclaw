@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Project memory for AI agents. This file is automatically created by CodeClaw and referenced from CLAUDE.md. Agents should read this file for project context and update it as the project evolves.
+Project memory for AI agents. This file is automatically created by CodeClaw. Agents should read this file for project context and update it as the project evolves.
 
 ## Project Overview
 
