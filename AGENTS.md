@@ -9,9 +9,9 @@ CodeClaw is a platform-agnostic skillset providing task and release management v
 ## Architecture Decisions
 
 - **Shared utilities in `scripts/common.py`**: Root detection (`find_project_root`, `get_main_repo_root`), config loading (`load_config`), JSON output, tag helpers, SKILL.md parsing, and project config loading are centralised here. All scripts import from `common.py` instead of defining their own copies.
-- **Config-first architecture**: Project configuration lives in `project-config.json` (primary source). CLAUDE.md bash blocks are supported as a backward-compatible fallback. Skills read config via `SH context`, not by parsing CLAUDE.md directly.
+- **Config-first architecture**: Project configuration lives in `project-config.json` (primary source). Skills read config via `SH context` and generated guidance lives in `project-context.md`.
 - **Platform abstraction**: A single `platform_adapter.py` with 4 adapter classes (claude_code, opencode, openclaw, generic) handles all supported AI coding platforms.
-- **Optional vector memory**: Semantic search over code and tasks via LanceDB + ONNX embeddings. Disabled by default, enabled in `project-config.json`.
+- **Project-context guidance**: The setup flow creates `project-context.md` as the shared instructions file for agents and tools.
 - **AGENTS.md is always created**: Setup flow creates AGENTS.md as persistent project memory for all agents.
 
 ## Key Patterns
@@ -26,12 +26,12 @@ CodeClaw is a platform-agnostic skillset providing task and release management v
 
 - `test_sqlite_lock_mutual_exclusion` is a flaky test due to SQLite thread contention — intermittent failures are expected and unrelated to code changes.
 - The `/crazy` skill is marked BETA — context compaction during long runs may lose progress.
-- Vector memory requires optional pip dependencies (`lancedb`, `onnxruntime`, `tokenizers`, `numpy`, `pyarrow`).
+- Historical optional dependencies were removed from the supported surface.
 
 ## Memory Log
 
 <!-- Agents append context here as they learn about the project.
      Format: YYYY-MM-DD — [topic] — description -->
 
-2026-03-24 — [optimization] — Consolidated duplicate utility functions from 8+ scripts into `scripts/common.py`. Removed dead code from `platform_utils.py`. Moved shorthand tables and yolo definition from 9 skills into CLAUDE.md. Condensed crazy skill agent prompts. Net savings: ~481 lines.
-2026-03-24 — [agents-md] — Established AGENTS.md as mandatory project memory file. Setup flow always creates it alongside CLAUDE.md. CLAUDE.md references it via `@AGENTS.md`.
+2026-03-24 — [optimization] — Consolidated duplicate utility functions from 8+ scripts into `scripts/common.py`. Removed dead code from `platform_utils.py`. Moved shorthand tables and yolo definition from 9 skills into shared project guidance. Condensed crazy skill prompts. Net savings: ~481 lines.
+2026-03-24 — [agents-md] — Established AGENTS.md as mandatory project memory file. Setup flow always creates it alongside the project guidance file.

@@ -2,28 +2,31 @@
 title: Development
 description: Contributing guidelines, local development setup, testing, branch strategy, and coding conventions
 generated-by: claw-docs
-generated-at: 2026-03-20T00:25:00Z
+generated-at: 2026-03-29T00:00:00Z
 source-files:
   - README.md
-  - CLAUDE.md
+  - AGENTS.md
   - .gitignore
+  - scripts/common.py
+  - scripts/config_lock.py
+  - scripts/skill_helper.py
   - scripts/task_manager.py
   - scripts/release_manager.py
-  - scripts/skill_helper.py
-  - scripts/ollama_manager.py
-  - scripts/vector_memory.py
-  - scripts/mcp_server.py
-  - scripts/memory_orchestrator.py
-  - scripts/hooks/pre_tool_offload.py
+  - scripts/docs_manager.py
   - scripts/test_manager.py
-  - scripts/analyzers/__init__.py
+  - scripts/ollama_manager.py
+  - scripts/build_ccpkg.py
+  - scripts/build_portable.py
+  - scripts/social_announcer.py
+  - scripts/platform_exporter.py
+  - scripts/hooks/pre_tool_offload.py
   - hooks/hooks.json
   - .claude-plugin/plugin.json
 ---
 
 ## Overview
 
-CodeClaw is developed using its own workflow: ideas are captured, evaluated, promoted to tasks, implemented on dedicated branches, and released through the gated pipeline.
+CodeClaw is developed through its own task, release, and documentation workflow. Changes start as ideas, become tasks, land on feature branches, and are promoted through the `develop` → `staging` → `main` release line.
 
 ## Local Development Setup
 
@@ -32,263 +35,125 @@ CodeClaw is developed using its own workflow: ideas are captured, evaluated, pro
 ```bash
 git clone https://github.com/dnviti/codeclaw.git
 cd codeclaw
-
-# Run Claude Code with the local plugin
 claude --plugin-dir .
 ```
 
 ### Requirements
 
-- **Python 3.12+** — All scripts use stdlib only (no pip install needed for core features)
-- **Claude Code CLI** — The host application
-- **Git** — For branch management and branch strategy
-- **`gh` CLI** (optional) — For GitHub Issues integration testing
+- Python 3.12+
+- Claude Code CLI
+- Git
+- `gh` CLI for GitHub issue and PR integration testing
 
-**Optional (for vector memory development):**
-```bash
-pip install lancedb onnxruntime tokenizers numpy pyarrow mcp
-```
+## Project Structure
 
-### Project Structure
-
-```
+```text
 codeclaw/
-├── .claude-plugin/
-│   ├── plugin.json              # Plugin manifest (name, version, skills path)
-│   └── marketplace.json         # Marketplace listing
-├── skills/                      # 9 Claude Code skills (SKILL.md each)
-│   ├── task/                    # Task management
-│   ├── idea/                    # Idea management
-│   ├── release/                 # Release pipeline
-│   ├── docs/                    # Documentation lifecycle
-│   ├── setup/                   # Project setup and configuration
-│   ├── update/                  # Plugin file updates
-│   ├── tests/                   # Test management
-│   ├── help/                    # Help and usage
-│   └── crazy/                   # [BETA] Autonomous project builder
-├── scripts/                     # Python automation (stdlib only)
-│   ├── task_manager.py          # Task/idea CRUD, hooks, platform sync
-│   ├── release_manager.py       # Version, changelog, state, platform release state
-│   ├── skill_helper.py          # Context, dispatch, branches
-│   ├── docs_manager.py          # Documentation lifecycle
-│   ├── agent_runner.py          # Multi-provider fleet runner
-│   ├── app_manager.py           # Port/process management
-│   ├── codebase_analyzer.py     # Static analysis reports
-│   ├── memory_builder.py        # Codebase summary generator
-│   ├── test_manager.py          # Test discovery, gaps, coverage
-│   ├── ollama_manager.py        # Local model routing + tool calling
-│   ├── vector_memory.py         # Semantic indexing and search
-│   ├── mcp_server.py            # Vector memory MCP server
-│   ├── memory_orchestrator.py   # Multi-backend memory coordination
-│   ├── sqlite_backend.py        # SQLite FTS5 + vec hybrid backend
-│   ├── memory_event_log.py      # Event-sourced memory for concurrent writes
-│   ├── config_lock.py            # Cross-platform file locking for config writes
-│   ├── memory_lock.py           # Distributed lock backends (file/SQLite/Redis)
-│   ├── conflict_judge.py        # LLM-as-judge conflict resolution
-│   ├── rlm_backend.py           # Recursive context processing
-│   ├── image_generator.py       # Multi-provider image generation
-│   ├── frontend_wizard.py       # Frontend design wizard
-│   ├── setup_labels.py          # Platform label creation
-│   ├── setup_protection.py      # Branch protection rules
-│   ├── adapters/                # Platform adapters (claude_code, opencode, openclaw)
-│   ├── chunkers/                # Text chunking for vector memory
-│   ├── embeddings/              # Embedding providers (local ONNX, API)
-│   ├── mcp_tools/               # MCP server tool definitions
-│   ├── social_platforms/        # Social media posting adapters
-│   ├── hooks/
-│   │   └── pre_tool_offload.py  # PreToolUse hook: Ollama routing
-│   └── analyzers/               # Static analysis subpackage
-│       ├── __init__.py          # File walking, classification
-│       ├── infrastructure.py    # Infrastructure analysis
-│       ├── features.py          # Feature analysis
-│       ├── quality.py           # Code quality analysis
-│       └── coverage.py          # Coverage snapshots
-├── templates/                   # CI/CD and config templates
-│   ├── github/workflows/        # 9 GitHub Actions templates
-│   ├── gitlab/                  # 4 GitLab CI templates
-│   ├── prompts/                 # Agentic fleet prompt templates
-│   └── CLAUDE.md                # CLAUDE.md template
-├── config/                      # Example configuration files
-│   ├── project-config.example.json
-│   ├── ollama-config.example.json
-│   ├── issues-tracker.example.json
-│   └── ...
-├── hooks/
-│   └── hooks.json               # PreToolUse + PostToolUse hook definitions
-├── docs/                        # Generated documentation (this directory)
-├── CLAUDE.md                    # Framework guidance
-└── README.md                    # Project documentation
+├── .claude-plugin/   # Plugin manifest and marketplace metadata
+├── config/           # Example JSON configuration files
+├── docs/             # Generated documentation
+├── hooks/            # Claude Code hook definitions
+├── scripts/          # Python automation entry points
+├── skills/           # Slash-command skill definitions
+└── templates/       # CI/CD and project scaffolding templates
 ```
+
+Active development scripts center on:
+- `common.py`, `config_lock.py`, `platform_adapter.py`, `platform_exporter.py`, `platform_utils.py`
+- `skill_helper.py`, `task_manager.py`, `release_manager.py`, `docs_manager.py`, `test_manager.py`, `quality_gate.py`
+- `build_ccpkg.py`, `build_portable.py`, `social_announcer.py`
+- `frontend_wizard.py`, `local_analyzers.py`, `ollama_manager.py`
 
 ## Coding Conventions
 
 ### Python Scripts
 
-- **Zero external dependencies** — All scripts use Python 3 stdlib only (optional packages for vector memory)
-- **JSON output** — Every script subcommand outputs JSON to stdout
-- **Cross-platform** — Use `platform.system()` for OS-specific behavior
-- **CLI via argparse** — Every script has a proper CLI with subcommands
-- **Idempotent operations** — Label creation, branch protection, etc. are safe to re-run
-- **Error handling** — Return JSON `{"error": "message"}` on failure; hooks always exit 0 (graceful degradation)
-- **Unicode safety** — Apply `unicodedata.normalize('NFKC', s)` before pattern matching on user-supplied strings
+- Zero external dependencies for the supported core flow
+- JSON output on stdout for machine-readable subcommands
+- `argparse`-based CLIs with explicit subcommands
+- Cross-platform behavior through `platform.system()` detection
+- Idempotent operations for setup, release, and configuration helpers
+- Graceful hook failure: hooks must never block Claude on errors
+- NFKC normalization before matching user-supplied command strings
 
-### Skills (SKILL.md)
+### Skills
 
-- Written in Markdown with structured headings
-- Define AI behavior declaratively
-- Reference scripts via `${CLAW_ROOT}/scripts/` paths
-- Use `$ARGUMENTS` placeholder for user input
-- Gates (AskUserQuestion) for user confirmation at critical decision points
+- Write skill instructions in Markdown with clear headings
+- Reference scripts with `${CLAW_ROOT}/scripts/` paths
+- Keep prompts aligned with the current release and docs workflow
 
-### Hook Development
+## Hook Development
 
-Two types of hooks are registered in `hooks/hooks.json`:
+Two hooks are registered in `hooks/hooks.json`:
 
-**PreToolUse** — fires before Claude executes a tool:
+**PreToolUse**
 - Handler: `scripts/hooks/pre_tool_offload.py`
-- Must always exit 0 (never block Claude on errors)
-- Outputs `{"action": "proceed"}` or `{"action": "offload", ...}`
-- Apply NFKC normalization to all user-supplied pattern matching
+- Evaluates whether a tool call should be offloaded to Ollama
+- Always exits 0 and falls back to `{"action": "proceed"}`
 
-**PostToolUse** — fires after Claude executes a tool:
-- Two handlers run: `task_manager.py hook` and `vector_memory.py hook`
-- Both receive `$CLAUDE_FILE_PATH` (the edited file path)
+**PostToolUse**
+- Handler: `scripts/task_manager.py hook "$CLAUDE_FILE_PATH"`
+- Correlates edited files with the current in-progress task
 
 To test hook behavior locally:
+
 ```bash
 # PostToolUse
 python3 scripts/task_manager.py hook "src/example.ts"
-python3 scripts/vector_memory.py hook "src/example.ts"
 
 # PreToolUse
 python3 scripts/hooks/pre_tool_offload.py Bash "git status"
-python3 scripts/hooks/pre_tool_offload.py Bash "git push"  # should be excluded
+python3 scripts/hooks/pre_tool_offload.py Bash "git push"
 ```
 
-### Task Format
-
-Tasks follow a strict plain-text format:
-
-```
-------------------------------------------------------------------------------
-[ ] AUTH-0001 — User Authentication System
-------------------------------------------------------------------------------
-  Priority: HIGH
-  Dependencies: None
-
-  DESCRIPTION:
-  Implement user registration and login.
-
-  TECHNICAL DETAILS:
-  Backend:
-    - POST /api/auth/register
-    - POST /api/auth/login
-
-  Files involved:
-    CREATE:  src/services/auth.service.ts
-    MODIFY:  src/app.ts
-```
-
-Key rules:
-- 78-dash separators
-- Em dash (`—`) in title line
-- 2-space indent for body
-- Status markers: `[ ]` todo, `[~]` progressing, `[x]` done, `[!]` blocked
-- Globally sequential codes: 3-5 uppercase letters + 4-digit number
+The retired hook is no longer part of the supported surface.
 
 ## Branch Strategy
 
 ```mermaid
 flowchart LR
-    FEAT["task/CODE branches"] -->|"PR → squash merge"| DEV["develop"]
+    FEAT["task/CODE branches"] -->|"PR merge"| DEV["develop"]
     DEV -->|"Release Stage 5"| STG["staging"]
     STG -->|"Release Stage 7"| MAIN["main"]
 ```
 
-- **Feature branches** — Created per-task as `task/<code>` branches from develop
-- **develop** — Active development; all feature PRs target here
-- **staging** — Pre-release validation; tagged `vX.X.X-staging`
-- **main** — Production releases with semantic version tags `vX.X.X`
+- Feature branches are created per task
+- `develop` receives feature work
+- `staging` is the pre-release validation branch
+- `main` holds production releases and tags
 
 ## Testing
 
-### Running Tests on Target Projects
-
-CodeClaw provides test management through the `/tests` skill and `test_manager.py`:
+### Running Tests
 
 ```bash
-# Discover test files
 python3 scripts/test_manager.py discover --root /path/to/project
-
-# Analyze coverage gaps
 python3 scripts/test_manager.py analyze-gaps --root /path/to/project
-
-# Get test suggestions ranked by priority
 python3 scripts/test_manager.py suggest --root /path/to/project
-
-# Run tests
 python3 scripts/test_manager.py run --root /path/to/project
 ```
 
 ### Coverage Tracking
 
 ```bash
-# Take a coverage snapshot
 python3 scripts/test_manager.py coverage snapshot --root /path/to/project
-
-# Compare snapshots for regressions
 python3 scripts/test_manager.py coverage compare --root /path/to/project
-
-# Check against threshold
 python3 scripts/test_manager.py coverage threshold-check --root /path/to/project --min-coverage 80
 ```
 
 ## Version Management
 
-The plugin version lives in two files:
-- `.claude-plugin/plugin.json` — `"version"` field
-- `.claude-plugin/marketplace.json` — `"version"` field in the plugins array
+The plugin version lives in:
+- `.claude-plugin/plugin.json`
+- `.claude-plugin/marketplace.json`
 
-During releases, the `/release continue` pipeline discovers all manifest files and bumps their version fields at Stage 7d with user confirmation. The `update-versions` command in `release_manager.py` handles this automatically.
-
-## Vector Memory Development
-
-The vector memory system (`scripts/vector_memory.py`) requires optional packages:
-
-```bash
-pip install lancedb onnxruntime tokenizers numpy pyarrow mcp
-```
-
-Key behaviors:
-- **Unified memory orchestrator** — Multi-backend coordination via `memory_orchestrator.py` (LanceDB + SQLite FTS5 + RLM)
-- **MCP server** — `mcp_server.py` provides semantic search, indexing, memory storage, and task context tools via stdio transport
-- **Garbage collection** — Run `python3 scripts/vector_memory.py gc --json` to prune stale entries
-- **Index location** — `.claude/memory/vectors` (gitignored via `.gitignore`)
-- **GPU path allowlist** — `deps_check.py` validates `LD_LIBRARY_PATH` entries against a configurable allowlist (`gpu_acceleration.gpu_path_allowlist`) to prevent config-injected paths from reaching ONNX Runtime
-- **Model download robustness** — `local_onnx.py` uses `urlopen` with configurable timeout, retry with exponential backoff, and integrity checks (file size, basic format validation)
-- **Config locking** — `config_lock.py` provides cross-platform file locking (`fcntl`/`msvcrt`) for atomic `project-config.json` writes during parallel agent execution
-- **Search log security** — Search query logging is opt-in with `0o600` permissions and configurable `retention_days` auto-purge
-
-Related test files:
-- `tests/test_config_lock.py` — Config locking tests
-- `tests/test_local_onnx.py` — Model download and ONNX inference tests
-- `tests/test_search_log_security.py` — Search log permission and retention tests
-
-## Ollama Integration Development
-
-The Ollama integration (`scripts/ollama_manager.py`) is zero-dependency for core routing but requires Ollama to be running for actual inference.
-
-Key design decisions:
-- **NFKC normalization** — All command strings are NFKC-normalized before exclude-pattern matching to prevent Unicode homoglyph bypass (e.g., fullwidth space U+3000 in `git　push`)
-- **Tool calling loop** — Full `/api/chat` loop: send tool call → parse `tool_calls` response → invoke tool → feed result → repeat until text response
-- **Offloading levels 0–10** — Each level enables a different category of tool calls; level 10 routes everything except always-excluded patterns (git push, rm -rf, sudo, etc.)
+During releases, Stage 7d updates manifest versions after user confirmation. The docs workflow uses manifest discovery and hash-based staleness only.
 
 ## Workflow for Contributing
 
-1. Create an idea: `/idea create [description]`
-2. Approve it: `/idea approve [ID]`
-3. Pick the task: `/task pick [CODE]`
-4. Implement on the task branch (vector memory indexes your changes in real time)
-5. Close the task: confirm via the task completion gate
-6. PR is created automatically
-7. Release: `/release continue X.X.X`
+1. Create or pick an idea
+2. Approve it into a task
+3. Pick the task branch
+4. Implement the change
+5. Verify and close the task
+6. Let `/release continue` promote the work through staging and main

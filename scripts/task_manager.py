@@ -714,163 +714,6 @@ def cmd_verify_files(args):
 
     print(json.dumps(report, indent=2))
 
-# ── Subcommand: semantic-explore ─────────────────────────────────────────────
-
-def _sanitize_query(text: str) -> str:
-    """Strip control characters from query text to avoid downstream issues."""
-    import unicodedata
-    return "".join(
-        ch for ch in text
-        if unicodedata.category(ch)[0] != "C" or ch in ("\n", "\t")
-    )
-
-
-def semantic_explore(task_code: str, root: Path) -> dict:
-    """Explore the codebase semantically for a task.
-
-    1. Parses the task description (from local files or platform issue).
-    2. Runs ``vector_memory.py search`` with the description as query.
-    3. Filters out files already listed in "Files involved".
-    4. Returns a ranked list of related files with relevance scores.
-
-    Args:
-        task_code: The task code (e.g. ``AUTH-0001``).
-        root: Project root directory (main repo root).
-
-    Returns:
-        dict with ``task_code``, ``query_used``, ``related_files`` list,
-        and ``files_involved`` (the already-known files from the task).
-    """
-    vm_script = _SCRIPT_DIR / "vector_memory.py"
-    result = {
-        "task_code": task_code,
-        "query_used": "",
-        "related_files": [],
-        "files_involved": [],
-        "skipped_reason": None,
-    }
-
-    # Validate task code format
-    if not TASK_CODE_RE.search(task_code):
-        result["skipped_reason"] = f"Invalid task code format: {task_code!r}"
-        return result
-
-    # Early-return if vector_memory.py is not available
-    if not vm_script.exists():
-        result["skipped_reason"] = "vector_memory.py not found"
-        return result
-
-    # --- 1. Parse task description ---
-    block, _fname = find_block_in_all(root, task_code, TASK_FILES)
-    description = ""
-    title = ""
-    files_involved: list[str] = []
-
-    if block:
-        title = block.get("title", "")
-        description = block.get("description", "")
-        tech_details = block.get("technical_details", "")
-        if tech_details:
-            description = f"{description}\n{tech_details}"
-        files_involved = block.get("files_create", []) + block.get("files_modify", [])
-    else:
-        # Platform-only: try to get the issue body via gh
-        try:
-            search_result = subprocess.run(
-                ["gh", "issue", "list", "--repo",
-                 _get_repo_slug(), "--search", task_code,
-                 "--json", "body,title", "--limit", "1"],
-                capture_output=True, text=True, timeout=30,
-            )
-            if search_result.returncode == 0 and search_result.stdout.strip():
-                issues = json.loads(search_result.stdout.strip())
-                if issues:
-                    title = issues[0].get("title", "")
-                    body = issues[0].get("body", "")
-                    description = body
-                    # Extract files involved from markdown body
-                    for line in body.splitlines():
-                        stripped = line.strip()
-                        if stripped.startswith("**MODIFY:**") or stripped.startswith("**CREATE:**"):
-                            path = stripped.split("**", 2)[-1].strip()
-                            if path:
-                                files_involved.append(path)
-        except Exception:
-            pass
-
-    if not description and not title:
-        result["skipped_reason"] = f"Could not find task {task_code} or extract description"
-        return result
-
-    # Build the search query from title + description (sanitized and truncated)
-    query = _sanitize_query(f"{title} {description}".strip())
-    # Limit query length to avoid excessively long embeddings
-    if len(query) > 1000:
-        query = query[:1000]
-    result["query_used"] = query
-    result["files_involved"] = files_involved
-
-    # --- 2. Run semantic search ---
-
-    try:
-        search_result = subprocess.run(
-            [
-                sys.executable, str(vm_script), "search",
-                query,
-                "--root", str(root),
-                "--top-k", "20",
-                "--json",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=60,
-        )
-        if search_result.returncode != 0:
-            stderr = search_result.stderr.strip()
-            if "No vector index found" in stderr or "Error" in stderr:
-                result["skipped_reason"] = "Vector index unavailable"
-            else:
-                result["skipped_reason"] = f"Search failed (exit {search_result.returncode})"
-            return result
-
-        raw_results = json.loads(search_result.stdout.strip()) if search_result.stdout.strip() else []
-    except subprocess.TimeoutExpired:
-        result["skipped_reason"] = "Semantic search timed out"
-        return result
-    except (json.JSONDecodeError, Exception):
-        result["skipped_reason"] = "Failed to parse search results"
-        return result
-
-    # --- 3. Filter and deduplicate ---
-    # Normalise files_involved for comparison
-    involved_normalised = {f.strip().lstrip("./") for f in files_involved}
-
-    seen_files: dict[str, dict] = {}  # file_path -> best entry
-    for entry in raw_results:
-        fpath = entry.get("file_path", "").strip().lstrip("./")
-        if not fpath:
-            continue
-        # Skip files already known from the task
-        if fpath in involved_normalised:
-            continue
-        # Keep the entry with the best (lowest) score per file
-        score = entry.get("score", 999.0)
-        if fpath not in seen_files or score < seen_files[fpath]["score"]:
-            seen_files[fpath] = {
-                "file_path": fpath,
-                "score": round(score, 4),
-                "chunk_type": entry.get("chunk_type", ""),
-                "name": entry.get("name", ""),
-                "language": entry.get("language", ""),
-            }
-
-    # Sort by score ascending (lower = more relevant)
-    ranked = sorted(seen_files.values(), key=lambda x: x["score"])
-    result["related_files"] = ranked
-
-    return result
-
-
 def _get_repo_slug() -> str:
     """Return 'owner/repo' slug from platform config or git remote."""
     try:
@@ -893,29 +736,6 @@ def _get_repo_slug() -> str:
         pass
     return ""
 
-
-def cmd_semantic_explore(args):
-    """CLI handler for the semantic-explore subcommand."""
-    root = get_main_repo_root()
-    code = args.code.upper()
-
-    result = semantic_explore(code, root)
-
-    if args.format == "text":
-        print(f"=== Semantic Exploration: {result['task_code']} ===")
-        if result.get("skipped_reason"):
-            print(f"  Skipped: {result['skipped_reason']}")
-        else:
-            print(f"  Query: {result['query_used'][:120]}...")
-            print(f"  Files involved (already known): {len(result['files_involved'])}")
-            print(f"  Additional related files found: {len(result['related_files'])}")
-            print()
-            for i, f in enumerate(result["related_files"], 1):
-                print(f"  [{i}] {f['file_path']}  "
-                      f"(score={f['score']:.4f}, {f['chunk_type']}: {f['name']})")
-        print("=" * 50)
-    else:
-        print(json.dumps(result, indent=2))
 
 # ── Subcommand: is-frontend-task ───────────────────────────────────────────
 
@@ -2161,88 +1981,6 @@ def cmd_create_patch_task(args):
         "title": args.title,
     }))
 
-# ── Subcommand: register-agent ─────────────────────────────────────────────
-
-def cmd_register_agent(args):
-    """Register an agent with the memory consistency protocol.
-
-    Used by ``/task pick all`` and ``/release`` stage 4 when spawning
-    parallel sub-agents. Each agent receives a unique ID and session.
-    """
-    main_root = get_main_repo_root()
-    task_code = getattr(args, "task_code", "") or ""
-    agent_type = getattr(args, "agent_type", "task") or "task"
-
-    try:
-        from memory_protocol import MemoryProtocol, generate_agent_id
-
-        protocol = MemoryProtocol(main_root)
-        agent_id = generate_agent_id(prefix=agent_type)
-        session = protocol.register_agent(
-            agent_id=agent_id,
-            agent_type=agent_type,
-            task_code=task_code,
-        )
-        print(json.dumps({
-            "success": True,
-            "agent_id": agent_id,
-            "session_id": session.session_id,
-            "agent_type": agent_type,
-            "task_code": task_code,
-            "env_vars": {
-                "CLAW_AGENT_ID": agent_id,
-                "CLAW_SESSION_ID": session.session_id,
-                "CLAW_AGENT_TYPE": agent_type,
-                "CLAW_TASK_CODE": task_code,
-            },
-        }))
-    except ImportError:
-        # memory_protocol not available — return stub values
-        import uuid as _uuid
-        fallback_id = f"{agent_type}-{str(_uuid.uuid4())[:8]}-{os.getpid()}"
-        print(json.dumps({
-            "success": True,
-            "agent_id": fallback_id,
-            "session_id": "",
-            "agent_type": agent_type,
-            "task_code": task_code,
-            "env_vars": {
-                "CLAW_AGENT_ID": fallback_id,
-                "CLAW_SESSION_ID": "",
-                "CLAW_AGENT_TYPE": agent_type,
-                "CLAW_TASK_CODE": task_code,
-            },
-            "note": "memory_protocol not available — running without coordination",
-        }))
-
-
-def cmd_deregister_agent(args):
-    """Deregister an agent session on completion."""
-    main_root = get_main_repo_root()
-    session_id = getattr(args, "session_id", "") or ""
-
-    if not session_id:
-        print(json.dumps({"success": False, "error": "session_id required"}))
-        return
-
-    try:
-        from memory_protocol import MemoryProtocol
-
-        protocol = MemoryProtocol(main_root)
-        protocol.deregister_agent(session_id)
-        print(json.dumps({
-            "success": True,
-            "session_id": session_id,
-            "status": "completed",
-        }))
-    except ImportError:
-        print(json.dumps({
-            "success": True,
-            "session_id": session_id,
-            "note": "memory_protocol not available — no-op",
-        }))
-
-
 # ── CLI Setup ────────────────────────────────────────────────────────────────
 
 def build_parser() -> argparse.ArgumentParser:
@@ -2303,13 +2041,6 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("verify-files", help="Check file existence for a task")
     p.add_argument("code", help="Task code (e.g., AUTH-0001)")
     p.set_defaults(func=cmd_verify_files)
-
-    # semantic-explore
-    p = sub.add_parser("semantic-explore",
-                        help="Explore codebase semantically for a task using vector search")
-    p.add_argument("code", help="Task code (e.g., AUTH-0001)")
-    p.add_argument("--format", choices=["json", "text"], default="json")
-    p.set_defaults(func=cmd_semantic_explore)
 
     # is-frontend-task
     p = sub.add_parser("is-frontend-task", help="Check if a task involves frontend work")
@@ -2399,21 +2130,6 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--source", required=True,
                     help="Source stage (e.g., code-optimize, security, test, merge-conflict)")
     p.set_defaults(func=cmd_create_patch_task)
-
-    # register-agent
-    p = sub.add_parser("register-agent",
-                        help="Register an agent with the memory consistency protocol")
-    p.add_argument("--task-code", default="", help="Associated task code")
-    p.add_argument("--agent-type", default="task",
-                    choices=["task", "scout", "release", "docs", "pr-analysis", "monitor"],
-                    help="Type of agent being spawned")
-    p.set_defaults(func=cmd_register_agent)
-
-    # deregister-agent
-    p = sub.add_parser("deregister-agent",
-                        help="Deregister an agent session on completion")
-    p.add_argument("--session-id", required=True, help="Session ID to deregister")
-    p.set_defaults(func=cmd_deregister_agent)
 
     return parser
 

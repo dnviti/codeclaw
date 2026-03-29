@@ -2,10 +2,9 @@
 """Test manager for the CodeClaw /tests skill.
 
 Provides test discovery, gap analysis, suggestion, execution,
-persistent coverage tracking with regression detection, semantic
-gap analysis, and test pattern discovery via vector memory.
-All output is JSON. Zero external dependencies — stdlib only
-(vector memory features degrade gracefully when deps are missing).
+persistent coverage tracking with regression detection, heuristic
+semantic gap analysis, and test pattern discovery.
+All output is JSON. Zero external dependencies — stdlib only.
 
 Usage:
     python3 test_manager.py discover --root /path/to/project
@@ -14,7 +13,6 @@ Usage:
     python3 test_manager.py run --root /path/to/project [--target file]
     python3 test_manager.py semantic-gaps --root /path/to/project
     python3 test_manager.py similar-tests --root /path/to/project --target file
-    python3 test_manager.py reindex-test --root /path/to/project --target file
     python3 test_manager.py coverage snapshot --root /path/to/project
     python3 test_manager.py coverage compare --root /path/to/project [--old FILE --new FILE]
     python3 test_manager.py coverage report --root /path/to/project
@@ -65,26 +63,6 @@ MAX_STDERR_TAIL_CHARS = 2000
 
 TEST_RE = re.compile("|".join(TEST_FILE_PATTERNS), re.IGNORECASE)
 FUNC_RE = re.compile("|".join(FUNCTION_PATTERNS), re.MULTILINE)
-
-# ── Design notes for planned semantic analysis features ──────────────────
-#
-# #25 - Repeated filesystem walk in semantic_gap_analysis:
-#   Cache the walk result in a local variable and reuse across analysis passes.
-#
-# #26 - Double iteration of semantic_risks:
-#   Double iteration: negligible impact on small risk lists (~10 items)
-#
-# #27 - LanceDB filter injection via f-string:
-#   Sanitize inputs with re.sub(r'[^a-zA-Z0-9_\-./]', '', value) before
-#   building LanceDB filter/where strings.
-#
-# #28 - Importing private _-prefixed APIs from vector_memory:
-#   Private API import: stable internal interface; will be promoted to
-#   public API in future refactor
-#
-# #29 - hook_file_changed receives absolute path:
-#   Absolute path: mitigated by path traversal containment check
-#   (is_relative_to) added in S-1 fix
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -424,7 +402,7 @@ def cmd_run(args) -> dict:
     if not test_command:
         return {
             "success": False,
-            "error": "No test command configured. Set TEST_COMMAND in CLAUDE.md.",
+            "error": "No test command configured. Set TEST_COMMAND in project-config.json.",
             "output": "",
         }
 
@@ -528,7 +506,6 @@ def cmd_coverage(args) -> dict:
 
 # ── Semantic Gap Analysis ────────────────────────────────────────────────────
 
-# High-risk semantic patterns to search for untested critical paths
 SEMANTIC_RISK_PATTERNS: list[dict[str, str]] = [
     {"query": "input validation sanitize", "category": "validation"},
     {"query": "authentication authorization login token", "category": "auth"},
@@ -542,201 +519,290 @@ SEMANTIC_RISK_PATTERNS: list[dict[str, str]] = [
     {"query": "parse deserialize decode unmarshal", "category": "parsing"},
 ]
 
+COMMON_STOPWORDS = {
+    "the", "and", "for", "with", "from", "this", "that", "into", "your",
+    "using", "use", "code", "file", "files", "test", "tests", "line",
+    "project", "source", "target", "data", "value", "values", "create",
+    "update", "get", "set", "run", "all", "any", "one", "two", "three",
+    "not", "only", "new", "old", "by", "or", "of", "in", "on", "to",
+}
 
-def _vmem_search(root: Path, query: str, top_k: int = 10,
-                 file_filter: str | None = None,
-                 type_filter: str | None = None) -> list[dict]:
-    """Run a semantic search against the vector memory index.
 
-    Returns a list of result dicts or an empty list if vector memory
-    is unavailable (missing deps, no index, etc.).
-    """
-    try:
-        # Import vector_memory utilities
-        from vector_memory import (
-            get_effective_config, _check_deps, _open_db,
-            _sanitize_filter_value, TABLE_NAME,
-        )
-        from contextlib import nullcontext
+def _tokenize_for_similarity(text: str) -> set[str]:
+    """Return a lower-cased token set for similarity scoring."""
+    tokens = set()
+    for raw in re.findall(r"[A-Za-z][A-Za-z0-9_]+", text.lower()):
+        token = raw.strip("_")
+        if len(token) < 3 or token in COMMON_STOPWORDS:
+            continue
+        tokens.add(token)
+    return tokens
 
-        config = get_effective_config(root)
-        if config.get("enabled") is False:
-            return []
 
-        ok, _ = _check_deps()
-        if not ok:
-            return []
+def _path_tokens(rel_path: str) -> set[str]:
+    """Tokenize a relative path for path-similarity scoring."""
+    tokens = set()
+    for part in Path(rel_path).parts:
+        if part in {".", ".."}:
+            continue
+        tokens.update(_tokenize_for_similarity(part))
+    return tokens
 
-        index_dir = root / config["index_path"]
-        if not (index_dir / "lancedb").exists():
-            return []
 
-        from embeddings import create_provider
+def _extract_import_tokens(content: str) -> set[str]:
+    """Extract import-related tokens from source text."""
+    tokens = set()
+    for line in content.splitlines():
+        s = line.strip()
+        if not s:
+            continue
+        if not any(marker in s for marker in ("import ", "from ", "require(", "using ", "include ")):
+            continue
+        for raw in re.findall(r"[A-Za-z][A-Za-z0-9_./:-]+", s):
+            token = raw.lower().strip("._-/")
+            if not token or token in COMMON_STOPWORDS or token in {"import", "from", "require", "using", "include", "export", "const", "let", "var"}:
+                continue
+            tokens.update(part for part in re.split(r"[./_-]+", token) if part and part not in COMMON_STOPWORDS)
+    return tokens
 
-        emb_config = {
-            "provider": config["embedding_provider"],
-            "model": config["embedding_model"],
-            "api_key_env": config["embedding_api_key_env"],
-        }
-        provider = create_provider(emb_config)
-        query_embedding = provider.embed([query])[0]
 
-        # Acquire read lock if available
-        lock = None
-        try:
-            from memory_lock import MemoryLock
-            agent_id = os.environ.get("CodeClaw_AGENT_ID", f"agent-{os.getpid()}")
-            lock = MemoryLock(index_dir, agent_id=agent_id)
-        except ImportError:
-            pass
+def _extract_symbol_tokens(content: str) -> set[str]:
+    """Extract function/class-ish symbol names from source text."""
+    tokens = set()
+    symbol_patterns = [
+        r"^\s*def\s+(\w+)",
+        r"^\s*function\s+(\w+)",
+        r"^\s*export\s+function\s+(\w+)",
+        r"^\s*(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s*)?\(",
+        r"^\s*fn\s+(\w+)",
+        r"^\s*func\s+(?:\(.*\)\s*)?(\w+)",
+    ]
+    for pattern in symbol_patterns:
+        for match in re.finditer(pattern, content, re.MULTILINE | re.IGNORECASE):
+            tokens.add(match.group(1).lower())
+    return tokens
 
-        _ctx = lock.read() if lock else nullcontext()
-        with _ctx:
-            db = _open_db(index_dir)
-            try:
-                table = db.open_table(TABLE_NAME)
-            except Exception:
-                return []
 
-            results = table.search(query_embedding)
+def _jaccard_score(left: set[str], right: set[str]) -> float:
+    """Return a basic Jaccard similarity score."""
+    if not left or not right:
+        return 0.0
+    overlap = len(left & right)
+    union = len(left | right)
+    return overlap / union if union else 0.0
 
-            if file_filter:
-                safe = _sanitize_filter_value(file_filter)
-                results = results.where(f"file_path LIKE '%{safe}%'")
-            if type_filter:
-                safe = _sanitize_filter_value(type_filter)
-                results = results.where(f"chunk_type = '{safe}'")
 
-            df = results.limit(top_k).to_pandas()
+def _test_framework_hints(content: str) -> set[str]:
+    """Infer test framework hints from file content."""
+    content_lower = content.lower()
+    hints = set()
+    if "pytest" in content_lower or "@pytest" in content_lower:
+        hints.add("pytest")
+    if "unittest" in content_lower:
+        hints.add("unittest")
+    if "expect(" in content_lower or "jest." in content_lower:
+        hints.add("jest")
+    if "describe(" in content_lower or "it(" in content_lower:
+        hints.add("bdd")
+    if "vitest" in content_lower:
+        hints.add("vitest")
+    return hints
 
-        records = []
-        for _, row in df.iterrows():
-            records.append({
-                "file_path": row.get("file_path", ""),
-                "name": row.get("name", ""),
-                "chunk_type": row.get("chunk_type", ""),
-                "language": row.get("language", ""),
-                "start_line": int(row.get("start_line", 0)),
-                "end_line": int(row.get("end_line", 0)),
-                "score": float(row.get("_distance", 0.0)),
-                "content": row.get("content", "")[:500],
-            })
-        return records
-    except Exception as exc:
-        # Graceful degradation: vector memory is optional.
-        # Log to stderr so failures are visible when debugging.
-        import logging
-        logging.getLogger(__name__).debug(
-            "Vector memory search unavailable: %s: %s",
-            type(exc).__name__, exc,
-        )
-        return []
+
+def _add_unique(lst: list[str], item: str) -> None:
+    """Append item to list only if not already present."""
+    if item not in lst:
+        lst.append(item)
+
+
+def _test_pattern_summary(test_content: str) -> dict:
+    """Summarize test style conventions from file content."""
+    patterns: dict[str, list[str]] = {
+        "frameworks": [],
+        "assertion_styles": [],
+        "mocking_libraries": [],
+        "naming_conventions": [],
+    }
+
+    if "assert " in test_content:
+        _add_unique(patterns["assertion_styles"], "plain assert")
+    if "assertEqual" in test_content or "self.assert" in test_content:
+        _add_unique(patterns["assertion_styles"], "unittest assert methods")
+    if "expect(" in test_content:
+        _add_unique(patterns["assertion_styles"], "expect()")
+    if "should." in test_content or "should(" in test_content:
+        _add_unique(patterns["assertion_styles"], "should-style")
+
+    if "unittest.mock" in test_content or "from mock" in test_content:
+        _add_unique(patterns["mocking_libraries"], "unittest.mock")
+    if "pytest-mock" in test_content or "mocker" in test_content:
+        _add_unique(patterns["mocking_libraries"], "pytest-mock")
+    if "jest.mock" in test_content or "jest.fn" in test_content:
+        _add_unique(patterns["mocking_libraries"], "jest")
+    if "sinon" in test_content:
+        _add_unique(patterns["mocking_libraries"], "sinon")
+    if "@patch" in test_content:
+        _add_unique(patterns["mocking_libraries"], "unittest.mock @patch")
+
+    if "import pytest" in test_content or "@pytest" in test_content:
+        _add_unique(patterns["frameworks"], "pytest")
+    if "import unittest" in test_content:
+        _add_unique(patterns["frameworks"], "unittest")
+    if "describe(" in test_content:
+        _add_unique(patterns["frameworks"], "describe/it (BDD)")
+    if "import { test" in test_content or "import { it" in test_content:
+        _add_unique(patterns["frameworks"], "vitest/jest")
+
+    return patterns
+
+
+def _score_test_candidate(target_rel: str, target_content: str, test_rel: str, test_content: str) -> tuple[float, dict]:
+    """Score how similar a test file is to the target source file."""
+    target_name_tokens = _tokenize_for_similarity(Path(target_rel).stem)
+    test_name_tokens = _tokenize_for_similarity(Path(test_rel).stem)
+    target_path_tokens = _path_tokens(target_rel)
+    test_path_tokens = _path_tokens(test_rel)
+    target_text_tokens = _tokenize_for_similarity(target_content)
+    test_text_tokens = _tokenize_for_similarity(test_content)
+    target_import_tokens = _extract_import_tokens(target_content)
+    test_import_tokens = _extract_import_tokens(test_content)
+    target_symbol_tokens = _extract_symbol_tokens(target_content)
+    test_symbol_tokens = _extract_symbol_tokens(test_content)
+
+    score = 0.0
+    reasons: list[str] = []
+
+    if find_matching_source(test_rel, [target_rel]) is not None:
+        score += 6.0
+        reasons.append("matching source/test naming")
+
+    stem_similarity = _jaccard_score(target_name_tokens, test_name_tokens)
+    if stem_similarity:
+        score += stem_similarity * 4.0
+        reasons.append("stem overlap")
+
+    path_similarity = _jaccard_score(target_path_tokens, test_path_tokens)
+    if path_similarity:
+        score += path_similarity * 2.0
+        reasons.append("path overlap")
+
+    keyword_similarity = _jaccard_score(target_text_tokens, test_text_tokens)
+    if keyword_similarity:
+        score += keyword_similarity * 4.0
+        reasons.append("keyword overlap")
+
+    import_similarity = _jaccard_score(target_import_tokens, test_import_tokens)
+    if import_similarity:
+        score += import_similarity * 3.0
+        reasons.append("import overlap")
+
+    symbol_similarity = _jaccard_score(target_symbol_tokens, test_symbol_tokens)
+    if symbol_similarity:
+        score += symbol_similarity * 3.0
+        reasons.append("symbol overlap")
+
+    target_frameworks = _test_framework_hints(target_content)
+    test_frameworks = _test_framework_hints(test_content)
+    if target_frameworks & test_frameworks:
+        score += 1.5
+        reasons.append("framework overlap")
+
+    if "tests" in Path(test_rel).parts:
+        score += 0.5
+
+    return score, {
+        "reasons": reasons,
+        "frameworks": sorted(test_frameworks),
+        "keywords": sorted((target_text_tokens | target_symbol_tokens | target_import_tokens) & (test_text_tokens | test_symbol_tokens | test_import_tokens))[:12],
+    }
 
 
 def semantic_gap_analysis(root: Path) -> dict:
-    """Query the vector store for high-risk untested code patterns.
-
-    Searches for error handling, validation logic, authentication,
-    payment processing, and other security-sensitive code semantically,
-    then cross-references with existing test coverage to identify
-    critical paths that lack tests.
-
-    Returns a dict with ``semantic_risks`` entries grouped by category.
-    """
+    """Heuristically find high-risk source files that lack test coverage."""
     root = root.resolve()
     gitignore = load_gitignore_patterns(root)
 
-    # Gather existing test files for cross-reference
-    test_files: list[str] = []
-    for rel, _fpath, ext, _size in walk_source_files(root, gitignore):
-        if ext not in SOURCE_EXTS:
+    coverage = analyze_test_coverage(root, gitignore)
+    covered_sources = {
+        entry["source"]
+        for entry in coverage.get("per_file", [])
+        if entry.get("has_test")
+    }
+
+    source_details: list[dict] = []
+    for rel, fpath, ext, size in walk_source_files(root, gitignore):
+        if ext not in SOURCE_EXTS or is_test_file(rel):
             continue
-        if is_test_file(rel):
-            test_files.append(rel)
+        content = read_file_safe(fpath)
+        if not content:
+            continue
+        source_details.append({
+            "path": rel,
+            "content": content,
+            "role": classify_file_role(rel),
+            "lines": len(content.splitlines()),
+            "size": size,
+        })
 
     risks: list[dict] = []
     categories_found: dict[str, int] = {}
 
-    for pattern_info in SEMANTIC_RISK_PATTERNS:
-        query = pattern_info["query"]
-        category = pattern_info["category"]
-
-        results = _vmem_search(root, query, top_k=15)
-        if not results:
+    for source in source_details:
+        if source["path"] in covered_sources:
             continue
 
-        for result in results:
-            file_path = result.get("file_path", "")
-            # Skip files that are themselves tests
-            if is_test_file(file_path):
-                continue
-            # Check if this source file has a matching test
-            has_test = find_matching_test(file_path, test_files) is not None
-            if not has_test:
-                risks.append({
-                    "file_path": file_path,
-                    "name": result.get("name", ""),
-                    "category": category,
-                    "chunk_type": result.get("chunk_type", ""),
-                    "start_line": result.get("start_line", 0),
-                    "end_line": result.get("end_line", 0),
-                    "score": result.get("score", 0.0),
-                    "content_preview": result.get("content", "")[:200],
-                })
-                categories_found[category] = categories_found.get(category, 0) + 1
+        text = f"{source['path']}\n{source['content']}".lower()
+        text_tokens = _tokenize_for_similarity(text)
+        path_tokens = _path_tokens(source["path"])
+        content_tokens = _tokenize_for_similarity(source["content"])
+        role = source["role"]
+        role_boost = 1.0 if role in {"server", "app", "api", "controller", "middleware", "service", "router"} else 0.0
 
-    # Deduplicate by (file_path, name) keeping best match (lowest distance)
-    seen: dict[tuple[str, str], dict] = {}
-    for risk in risks:
-        key = (risk["file_path"], risk["name"])
-        existing = seen.get(key)
-        if existing is None or risk["score"] < existing["score"]:
-            seen[key] = risk
-    unique_risks = sorted(seen.values(), key=lambda r: r["score"])
+        for pattern_info in SEMANTIC_RISK_PATTERNS:
+            query_tokens = _tokenize_for_similarity(pattern_info["query"])
+            matched_terms = sorted(query_tokens & (text_tokens | path_tokens | content_tokens))
+            if not matched_terms:
+                continue
+
+            score = len(matched_terms) + role_boost
+            risks.append({
+                "file_path": source["path"],
+                "category": pattern_info["category"],
+                "role": role,
+                "matched_terms": matched_terms,
+                "line_count": source["lines"],
+                "size": source["size"],
+                "score": round(score, 2),
+                "reason": (
+                    f"Uncovered {role or 'source'} file matches "
+                    f"{pattern_info['category']} heuristics: {', '.join(matched_terms)}"
+                ),
+                "content_preview": source["content"][:200],
+            })
+            categories_found[pattern_info["category"]] = categories_found.get(pattern_info["category"], 0) + 1
+
+    unique_risks: list[dict] = []
+    seen: set[tuple[str, str]] = set()
+    for risk in sorted(risks, key=lambda r: (-r["score"], r["file_path"], r["category"])):
+        key = (risk["file_path"], risk["category"])
+        if key in seen:
+            continue
+        seen.add(key)
+        unique_risks.append(risk)
 
     return {
         "semantic_risks": unique_risks,
         "total_risks": len(unique_risks),
         "categories": categories_found,
         "patterns_searched": len(SEMANTIC_RISK_PATTERNS),
-        "vector_memory_available": len(unique_risks) > 0 or _vmem_available(root),
+        "heuristic_analysis_available": True,
     }
 
 
-def _vmem_available(root: Path) -> bool:
-    """Check whether vector memory is available and has an index."""
-    try:
-        from vector_memory import get_effective_config, _check_deps
-        config = get_effective_config(root)
-        if config.get("enabled") is False:
-            return False
-        ok, _ = _check_deps()
-        if not ok:
-            return False
-        index_dir = root / config["index_path"]
-        return (index_dir / "lancedb").exists()
-    except Exception:
-        return False
-
-
 def find_similar_tests(target_file: str, root: Path) -> dict:
-    """Search for test files semantically similar to the target source file.
-
-    Before generating tests, discovers existing test files in the project
-    that cover similar domains, so the agent can replicate established
-    patterns, mocking strategies, and assertion styles.
-
-    Args:
-        target_file: Relative path to the source file being tested.
-        root: Project root directory.
-
-    Returns:
-        A dict with ``similar_tests`` listing relevant test files,
-        and ``patterns`` summarising discovered conventions.
-    """
+    """Find tests that are heuristically similar to a source file."""
     root = root.resolve()
 
-    # Read the target file to build a semantic query from its content
     target_path = root / target_file
     content = read_file_safe(target_path)
     if not content:
@@ -746,160 +812,53 @@ def find_similar_tests(target_file: str, root: Path) -> dict:
             "error": f"Could not read target file: {target_file}",
         }
 
-    # Build a search query from the file stem and extracted function names
-    stem = Path(target_file).stem
-    # Extract clean function/method names from the raw regex matches
-    name_re = re.compile(r'\b(?:def|function|fn|func)\s+(\w+)', re.IGNORECASE)
-    raw_matches = FUNC_RE.findall(content)
-    func_names_list: list[str] = []
-    for match in raw_matches[:15]:
-        m = name_re.search(match)
-        if m:
-            func_names_list.append(m.group(1))
-    func_names = " ".join(func_names_list[:10])
-    query = f"test {stem} {func_names}".strip()
-
-    # Search for test files semantically
-    results = _vmem_search(root, query, top_k=20, file_filter="test")
-
-    similar_tests: list[dict] = []
-    seen_files: set[str] = set()
-
-    for result in results:
-        fp = result.get("file_path", "")
-        if not is_test_file(fp):
+    gitignore = load_gitignore_patterns(root)
+    test_files: list[dict] = []
+    for rel, fpath, ext, _size in walk_source_files(root, gitignore):
+        if ext not in SOURCE_EXTS or not is_test_file(rel):
             continue
-        if fp in seen_files:
+        test_content = read_file_safe(fpath)
+        if not test_content:
             continue
-        seen_files.add(fp)
-        similar_tests.append({
-            "test_file": fp,
-            "name": result.get("name", ""),
-            "score": result.get("score", 0.0),
-            "content_preview": result.get("content", "")[:300],
+        score, meta = _score_test_candidate(target_file, content, rel, test_content)
+        test_files.append({
+            "test_file": rel,
+            "name": Path(rel).name,
+            "score": round(score, 4),
+            "content_preview": test_content[:300],
+            "frameworks": meta["frameworks"],
+            "keywords": meta["keywords"],
         })
 
-    # Analyze discovered patterns from similar test files
+    similar_tests = sorted(test_files, key=lambda item: (-item["score"], item["test_file"]))[:10]
+
     patterns: dict[str, list[str]] = {
         "frameworks": [],
         "assertion_styles": [],
         "mocking_libraries": [],
         "naming_conventions": [],
     }
-
     for test_info in similar_tests[:5]:
         test_path = root / test_info["test_file"]
         test_content = read_file_safe(test_path)
         if not test_content:
             continue
+        summary = _test_pattern_summary(test_content)
+        for key in patterns:
+            for item in summary[key]:
+                _add_unique(patterns[key], item)
 
-        # Detect assertion styles
-        if "assert " in test_content:
-            _add_unique(patterns["assertion_styles"], "plain assert")
-        if "assertEqual" in test_content or "self.assert" in test_content:
-            _add_unique(patterns["assertion_styles"], "unittest assert methods")
-        if "expect(" in test_content:
-            _add_unique(patterns["assertion_styles"], "expect()")
-        if "should." in test_content or "should(" in test_content:
-            _add_unique(patterns["assertion_styles"], "should-style")
-
-        # Detect mocking libraries
-        if "unittest.mock" in test_content or "from mock" in test_content:
-            _add_unique(patterns["mocking_libraries"], "unittest.mock")
-        if "pytest-mock" in test_content or "mocker" in test_content:
-            _add_unique(patterns["mocking_libraries"], "pytest-mock")
-        if "jest.mock" in test_content or "jest.fn" in test_content:
-            _add_unique(patterns["mocking_libraries"], "jest")
-        if "sinon" in test_content:
-            _add_unique(patterns["mocking_libraries"], "sinon")
-        if "@patch" in test_content:
-            _add_unique(patterns["mocking_libraries"], "unittest.mock @patch")
-
-        # Detect test frameworks
-        if "import pytest" in test_content or "@pytest" in test_content:
-            _add_unique(patterns["frameworks"], "pytest")
-        if "import unittest" in test_content:
-            _add_unique(patterns["frameworks"], "unittest")
-        if "describe(" in test_content:
-            _add_unique(patterns["frameworks"], "describe/it (BDD)")
-        if "import { test" in test_content or "import { it" in test_content:
-            _add_unique(patterns["frameworks"], "vitest/jest")
-
-        # Detect naming conventions
-        test_name = Path(test_info["test_file"]).name
-        if test_name.startswith("test_"):
-            _add_unique(patterns["naming_conventions"], "test_<module>.py")
-        elif test_name.endswith("_test.py"):
-            _add_unique(patterns["naming_conventions"], "<module>_test.py")
-        elif ".test." in test_name:
-            _add_unique(patterns["naming_conventions"], "<module>.test.<ext>")
-        elif ".spec." in test_name:
-            _add_unique(patterns["naming_conventions"], "<module>.spec.<ext>")
-
+    query_used = " ".join(sorted((_tokenize_for_similarity(content) | _path_tokens(target_file)))[:20])
     return {
-        "similar_tests": similar_tests[:10],
+        "similar_tests": similar_tests,
         "patterns": patterns,
         "target_file": target_file,
-        "query_used": query,
-        "vector_memory_available": len(similar_tests) > 0 or _vmem_available(root),
+        "query_used": query_used,
+        "heuristic_similarity_available": True,
     }
 
 
-def _add_unique(lst: list[str], item: str) -> None:
-    """Append item to list only if not already present."""
-    if item not in lst:
-        lst.append(item)
-
-
-def reindex_test(test_path: str, root: Path) -> dict:
-    """Incrementally index a newly created or modified test file.
-
-    Called after writing a test file so that subsequent scout or create
-    runs reflect the updated coverage in the vector index.
-
-    Args:
-        test_path: Relative path to the test file.
-        root: Project root directory.
-
-    Returns:
-        A dict indicating success/failure.
-    """
-    root = root.resolve()
-    abs_path = (root / test_path).resolve()
-
-    # Prevent path traversal outside project root
-    if not abs_path.is_relative_to(root):
-        return {
-            "success": False,
-            "error": f"Path escapes project root: {test_path}",
-        }
-
-    if not abs_path.exists():
-        return {"success": False, "error": f"File not found: {test_path}"}
-
-    try:
-        from vector_memory import hook_file_changed
-        hook_file_changed(str(abs_path))
-        return {
-            "success": True,
-            "file": test_path,
-            "message": f"Vector index updated for {test_path}",
-        }
-    except ImportError:
-        return {
-            "success": False,
-            "error": "Vector memory dependencies not available.",
-            "file": test_path,
-        }
-    except Exception as e:
-        return {
-            "success": False,
-            "error": str(e),
-            "file": test_path,
-        }
-
-
-# ── Subcommand wrappers for new semantic features ──────────────────────────
+# ── Subcommand wrappers for heuristic features ─────────────────────────────
 
 def cmd_semantic_gaps(args) -> dict:
     """CLI wrapper for semantic_gap_analysis."""
@@ -914,15 +873,6 @@ def cmd_similar_tests(args) -> dict:
     if not target:
         return {"error": "No target file specified. Use --target <file>."}
     return find_similar_tests(target, root)
-
-
-def cmd_reindex_test(args) -> dict:
-    """CLI wrapper for reindex_test."""
-    root = Path(args.root).resolve()
-    target = args.target
-    if not target:
-        return {"error": "No target file specified. Use --target <file>."}
-    return reindex_test(target, root)
 
 
 # ── CLI Entrypoint ──────────────────────────────────────────────────────────
@@ -953,7 +903,7 @@ def main():
 
     # semantic-gaps
     p_sgaps = sub.add_parser("semantic-gaps",
-                             help="Semantic gap analysis via vector memory")
+                             help="Heuristic gap analysis over source and test files")
     p_sgaps.add_argument("--root", default=".", help="Project root directory")
 
     # similar-tests
@@ -962,13 +912,6 @@ def main():
     p_sim.add_argument("--root", default=".", help="Project root directory")
     p_sim.add_argument("--target", required=True,
                        help="Source file to find similar tests for")
-
-    # reindex-test
-    p_reidx = sub.add_parser("reindex-test",
-                             help="Incrementally reindex a test file in vector memory")
-    p_reidx.add_argument("--root", default=".", help="Project root directory")
-    p_reidx.add_argument("--target", required=True,
-                         help="Test file to reindex")
 
     # coverage (with sub-commands)
     # Note: --root is added to each sub-sub-parser so argparse handles it
@@ -1011,7 +954,6 @@ def main():
         "run": cmd_run,
         "semantic-gaps": cmd_semantic_gaps,
         "similar-tests": cmd_similar_tests,
-        "reindex-test": cmd_reindex_test,
         "coverage": cmd_coverage,
     }
 

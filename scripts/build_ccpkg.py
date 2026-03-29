@@ -257,10 +257,7 @@ def collect_files() -> list[tuple[Path, str]]:
 
 
 def build_components(skills: list[dict[str, Any]], hooks: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Build the components array for the ccpkg manifest.
-
-    Components include skills, hooks, and agent runner entries.
-    """
+    """Build the components array for the ccpkg manifest."""
     components: list[dict[str, Any]] = []
 
     # Skills
@@ -284,17 +281,6 @@ def build_components(skills: list[dict[str, Any]], hooks: list[dict[str, Any]]) 
             "matcher": hook["matcher"],
             "handler_type": hook["type"],
             "command": hook["command"],
-        })
-
-    # Agent runner (scripts/agent_runner.py)
-    agent_runner = SCRIPTS_DIR / "agent_runner.py"
-    if agent_runner.exists():
-        components.append({
-            "type": "agent",
-            "name": "agent_runner",
-            "description": "Subagent orchestrator for parallel task execution",
-            "entry_point": "scripts/agent_runner.py",
-            "runtime": "python3",
         })
 
     return components

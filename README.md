@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/dnviti/claude-task-development-framework/releases/tag/v4.0.0"><img src="https://img.shields.io/badge/version-4.0.0-blue" alt="Version"></a>
+  <a href="https://github.com/dnviti/codeclaw/releases/tag/v4.0.5"><img src="https://img.shields.io/badge/version-4.0.5-blue" alt="Version"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="License"></a>
   <img src="https://img.shields.io/badge/python-3.12+-yellow" alt="Python">
   <img src="https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey" alt="Platform">
@@ -19,17 +19,15 @@
 
 ---
 
-CodeClaw gives your AI-assisted development workflow a structured backbone: ideas are captured, evaluated, promoted to tasks, implemented with quality gates, and tracked to completion — all through plain-text files and Claude Code slash commands. A gated release pipeline with parallel sub-agent orchestration enforces strict development rules from branch creation to production tagging.
+CodeClaw gives your AI-assisted development workflow a structured backbone: ideas are captured, evaluated, promoted to tasks, implemented with quality gates, and tracked to completion — all through plain-text files and Claude Code slash commands. A gated release pipeline enforces strict development rules from branch creation to production tagging.
 
 > 📖 **[Full Documentation](docs/index.md)** — Architecture, API reference, configuration, deployment, troubleshooting, and more.
 
 ## ✨ Features
 
 - 🔄 **Two-pipeline workflow** — separate idea evaluation from task execution
-- 🛠️ **8 streamlined skills** — unified slash commands (`/task`, `/idea`, `/release`, `/docs`, `/setup`, `/update`, `/tests`, `/help`)
-- 🚦 **Gated release pipeline** — 9 sequential stages with user-confirmed gates, feedback loops, parallel sub-agents, and mandatory local build verification before every push
-- 🤖 **Per-PR sub-agent analysis** — each PR gets an independent agent for code optimization, security scanning, fix application, and automated merge
-- 📡 **Post-tag CI monitoring** — parallel agents monitor remote CI after tagging, auto-fix failures, and move tags when needed (platform-only)
+- 🛠️ **9 streamlined skills** — unified slash commands (`/task`, `/idea`, `/release`, `/docs`, `/setup`, `/update`, `/tests`, `/help`, `/crazy`)
+- 🚦 **Gated release pipeline** — 9 sequential stages with user-confirmed gates, feedback loops, and mandatory local build verification before every push
 - 🏷️ **Explicit version bump gate** — all manifest files are discovered, verified, and updated with user confirmation before tagging
 - 🌿 **Three-branch strategy** — enforced `develop` → `staging` → `main` promotion path with mandatory staging validation
 - 🐳 **Docker tagging** — staging builds the `latest` tag, production builds `stable` + versioned tags
@@ -42,14 +40,13 @@ CodeClaw gives your AI-assisted development workflow a structured backbone: idea
 - 👤 **Human-in-the-loop** — AI assists, but you make every decision at every gate
 - ⚡ **Yolo mode** — append `yolo` to any command to auto-confirm all gates for fully autonomous execution
 
-### 🆕 What's New in v4.0.0
+### 🆕 What's New in v4.0.5
 
-- 🧠 **Unified memory orchestrator** — tandem multi-backend coordination (LanceDB + SQLite FTS5 + RLM)
-- 🔍 **Semantic intelligence** — /task, /idea, /docs, /tests, /help skills powered by vector search
+- 🧹 **Release cleanup** — 4.0.4 documentation and changelog corrections are now carried through the release line
+- 🌿 **Branch alignment** — `develop`, `staging`, and `main` now share the same release history and tree
+- 📝 **Docs simplification** — public docs and API reference no longer advertise retired legacy doc flows
 - 🤖 **[BETA] /crazy skill** — fully autonomous end-to-end project builder
-- 🖼️ **Image generation** — on-demand with 4 provider backends (DALL-E, Replicate, Stability AI, local)
 - 🎨 **Frontend design wizard** — template search, theme selection, color palette picker
-- 🔒 **Security hardened** — 209 findings analyzed, 133 fixes applied across 20 PRs by parallel sub-agents
 - 🐾 **Rebranded** — CTDF → CodeClaw with plugin id `claw`
 
 ## 📋 Prerequisites
@@ -83,7 +80,7 @@ claude --plugin-dir ./codeclaw
    /setup My Project Name
    ```
 
-   This creates the task/idea files (`to-do.txt`, `progressing.txt`, `done.txt`, `ideas.txt`, `idea-disapproved.txt`), configures the three-branch strategy, and adds framework guidance to your `CLAUDE.md`.
+   This creates the task/idea files (`to-do.txt`, `progressing.txt`, `done.txt`, `ideas.txt`, `idea-disapproved.txt`), configures the three-branch strategy, and writes project guidance to `project-context.md` while creating `AGENTS.md`.
 
 3. **Start using skills:**
 
@@ -133,10 +130,10 @@ flowchart TD
     S1["1. CREATE BRANCH<br>release/X.X.X from develop"]
     S2["2. TASK READINESS GATE<br>Verify all tasks complete<br>(blocks if tasks pending)"]
     S3["3. FETCH OPEN PRs<br>List PRs on release branch"]
-    S4["4. PER-PR SUB-AGENTS<br>(one agent per PR, parallel)<br>analyze → optimize → security →<br>comment → fix → merge → cleanup"]
+    S4["4. PER-PR REVIEW<br>Sequential review and fixes<br>analyze → optimize → security →<br>comment → fix → merge → cleanup"]
     S5["5. MERGE TO STAGING<br>develop → staging<br>Local build gate → push<br>Builds 'latest' Docker tag"]
     S6["6. INTEGRATION TESTS<br>Full test suite on staging"]
-    S7["7. MERGE TO MAIN + TAG<br>staging → main | Version bump gate |<br>Local build gate | Tag: vX.X.X |<br>CI monitoring (platform-only) |<br>Builds 'stable' + 'vX.X.X' Docker tags"]
+    S7["7. MERGE TO MAIN + TAG<br>staging → main | Version bump gate |<br>Local build gate | Tag: vX.X.X |<br>CI check (platform-only) |<br>Builds 'stable' + 'vX.X.X' Docker tags"]
     S8["8. USERS TESTING<br>Release is live"]
     S9["9. END<br>Cleanup, final report"]
 
@@ -157,7 +154,7 @@ flowchart TD
 
 ### 🔧 Stage 7 — Internal Flow Detail
 
-Stage 7 contains multiple sub-gates including version bumping, local build verification, and conditional CI monitoring with a tag-move self-healing loop.
+Stage 7 contains multiple sub-gates including version bumping, local build verification, and conditional CI checks with a tag-move recovery loop.
 
 ```mermaid
 flowchart TD
@@ -170,7 +167,7 @@ flowchart TD
     CI{"7f-bis. Platform<br>enabled?"}
     SKIP["Skip to 7g"]
     DISC{"CI workflows<br>found?"}
-    MON["7f-ter. Spawn monitor agents<br>(parallel, one per workflow)"]
+    MON["7f-ter. Inspect triggered workflows"]
     RES["7f-quater. Collect results"]
     FIX{"Any fix<br>applied?"}
     TM["7f-quinquies. TAG MOVE<br>delete tag → pull fix →<br>local build gate → re-tag →<br>delete + recreate release"]
@@ -189,7 +186,7 @@ flowchart TD
 
 | Stage | Issues go to | Then loops back to |
 |---|---|---|
-| 🤖 Per-PR Sub-Agent (unresolved) | Release Patches (RPAT) | Task Readiness Gate |
+| 🧾 PR Review (unresolved) | Release Patches (RPAT) | Task Readiness Gate |
 | 🔀 Merge to Staging | Release Patches (RPAT) | Task Readiness Gate |
 | 🧪 Integration Tests | Release Patches (RPAT) | Task Readiness Gate |
 | 🏗️ Local build pre-push (5 / 7) | RPAT task | Task Readiness Gate |
@@ -199,8 +196,8 @@ flowchart TD
 
 1. 🚦 **Stages are sequential and gated** — never skip a stage without explicit user override at a GATE.
 2. 🚫 **The release pipeline never implements tasks** — Stage 2 is a readiness gate that blocks if any tasks are pending. Users must implement tasks via `/task pick` (or `/task pick all`) before the release can proceed.
-3. 🤖 **Sub-agents run in parallel, one per PR** — each follows the full analyze → optimize → security → comment → fix → merge → cleanup sequence.
-4. 🔧 **Sub-agents fix what they can, escalate what they can't** — unresolved issues become RPAT tasks and loop back.
+3. 🧾 **Open PRs are reviewed sequentially** — each follows the full analyze → optimize → security → comment → fix → merge → cleanup sequence.
+4. 🔧 **Findings are fixed where possible, escalated where needed** — unresolved issues become RPAT tasks and loop back.
 5. 📝 **Every PR comment is structured** — findings and fixes are posted as separate, labeled comments for audit trail.
 6. 🔒 **Staging = Main minus public visibility** — if it wouldn't survive on main, it doesn't pass staging.
 7. 🏷️ **Tags are only created on the production branch** — after full pipeline through staging.
@@ -208,7 +205,7 @@ flowchart TD
 9. ✅ **Local build and tests must pass before any push** — catches regressions from version bump commits or post-merge changes.
 10. 🏷️ **Tags are moved, never recreated** — when post-tag CI fixes are needed: delete tag → pull fix → rebuild → re-tag → delete and recreate platform release.
 11. 📦 **Version fields in all manifests must be bumped before tagging** — explicit gate with user confirmation at Step 7d.
-12. 📡 **Remote CI monitoring is platform-only** — without a connected platform, local build success is the sole pre-release gate.
+12. 📡 **Remote CI checks are platform-only** — without a connected platform, local build success is the sole pre-release gate.
 
 ### 🌿 Branch Strategy
 
@@ -235,11 +232,10 @@ flowchart LR
 | Skill | Usage | Description |
 |-------|-------|-------------|
 | `/setup` | `/setup [project name]` | Initialize task/idea tracking, branches, CI/CD, and issues integration |
-| `/setup env` | `/setup env [section]` | Scan project to detect tech stack, dependencies, and commands; update CLAUDE.md |
+| `/setup env` | `/setup env [section]` | Scan project to detect tech stack, dependencies, and commands; update project-context.md |
 | `/setup init` | `/setup init [purpose]` | Full project scaffold: choose stack, configure git, adapt all skills |
 | `/setup branch-strategy` | `/setup branch-strategy` | Configure develop/staging/main branch strategy |
-| `/setup agentic-fleet` | `/setup agentic-fleet` | Set up AI-powered CI/CD pipelines for idea scouting and task implementation |
-| `/update` | `/update [category]` | Update CodeClaw-managed files (pipelines, scripts, prompts, skills, CLAUDE.md) to the latest plugin version |
+| `/update` | `/update [category]` | Update CodeClaw-managed files (pipelines, scripts, prompts, skills, project-context.md) to the latest plugin version |
 
 ### 📋 Task Management
 
@@ -272,7 +268,7 @@ flowchart LR
 |-------|-------|-------------|
 | `/release create` | `/release create X.X.X` | Create an empty release milestone for task scheduling |
 | `/release generate` | `/release generate` | Analyze pending tasks and auto-generate a release roadmap with milestones |
-| `/release continue` | `/release continue X.X.X` | Full 9-stage release pipeline with task readiness gate, parallel PR sub-agents, staging validation, and production tagging |
+| `/release continue` | `/release continue X.X.X` | Full 9-stage release pipeline with task readiness gate, staging validation, and production tagging |
 | `/release continue resume` | `/release continue resume` | Resume a release pipeline from the last saved stage |
 | `/release close` | `/release close X.X.X` | Finalize release: verify tasks, close milestone, cleanup |
 | `/release security-only` | `/release security-only` | Run security analysis alone on the current branch |
@@ -335,21 +331,9 @@ cp <plugin-dir>/config/issues-tracker.example.json .claude/issues-tracker.json
 # Edit .claude/issues-tracker.json with your repo and settings
 ```
 
-## 🤖 Agentic Fleet Pipelines
+## 🤖 Legacy Automation
 
-CodeClaw includes automated CI/CD pipelines that use Claude Code to perform idea scouting and task implementation without human intervention.
-
-| Pipeline | Trigger | What it does |
-|----------|---------|--------------|
-| 💡 **Idea Scout** | On release publish | Scans trends, documentation, and community sources to suggest new ideas |
-| ⚙️ **Task Implementation** | Cron-based schedule | Picks up pending tasks, implements them on dedicated branches, and opens PRs |
-| 📖 **Docs** | On release publish | Updates documentation based on code changes |
-
-Each pipeline uses a **three-agent architecture**: Orchestrator, Worker, and Memory Builder. Supports both **GitHub Actions** and **GitLab CI/CD** with multiple AI providers (Claude, OpenAI Codex, OpenClaw).
-
-```bash
-/setup agentic-fleet
-```
+The old setup automation and its associated pipeline templates are no longer part of the supported setup surface. Existing historical branches or docs may still mention them, but new projects should use the standard `/setup`, `/task`, `/docs`, and `/release` flows.
 
 ## 📄 Task Format
 
@@ -385,7 +369,7 @@ codeclaw/
 ├── .claude-plugin/
 │   ├── plugin.json              # 🧩 Plugin manifest
 │   └── marketplace.json         # 🏪 Marketplace definition
-├── skills/                      # 🛠️ 8 unified Claude Code skills
+├── skills/                      # 🛠️ 9 unified Claude Code skills
 │   ├── setup/                   # ⚙️ Initialize, configure, scaffold projects
 │   ├── update/                  # 🔄 Update CodeClaw-managed files
 │   ├── task/                    # 📋 Pick, create, continue, edit, status
@@ -393,36 +377,37 @@ codeclaw/
 │   ├── release/                 # 🚀 Release management (create, generate, continue, close, edit)
 │   ├── docs/                    # 📖 Documentation (generate, sync, reset, publish)
 │   ├── tests/                   # 🧪 Test coverage analysis and generation
-│   ├── help/                    # ❓ Semantic search over skills and documentation
+│   ├── help/                    # ❓ Search over skills and documentation
 │   └── crazy/                   # 🤖 [BETA] Autonomous project builder
 ├── scripts/                     # 🐍 Python automation scripts
 │   ├── task_manager.py          # Task/idea management CLI
 │   ├── release_manager.py       # Release automation CLI
 │   ├── docs_manager.py          # Documentation lifecycle CLI
 │   ├── skill_helper.py          # Skill dispatch and context resolution
-│   ├── vector_memory.py         # Semantic indexing and search
-│   ├── mcp_server.py            # Vector memory MCP server
-│   ├── memory_orchestrator.py   # Multi-backend memory coordination
-│   ├── sqlite_backend.py        # SQLite FTS5 + vec hybrid backend
-│   ├── memory_event_log.py      # Event-sourced memory for concurrent writes
-│   ├── memory_lock.py           # Distributed lock backends (file/SQLite/Redis)
-│   ├── conflict_judge.py        # LLM-as-judge conflict resolution
-│   ├── rlm_backend.py           # Recursive context processing
-│   ├── image_generator.py       # Multi-provider image generation
-│   ├── frontend_wizard.py       # Frontend design wizard
-│   └── ollama_manager.py        # Local model offloading
+   │   ├── test_manager.py          # Test discovery and gap analysis
+   │   ├── ollama_manager.py        # Local model offloading
+   │   ├── social_announcer.py      # Release announcement generator
+   │   ├── config_lock.py           # Atomic config writes
+   │   ├── platform_adapter.py      # Platform abstraction
+   │   ├── platform_exporter.py     # Export and sync helpers
+   │   ├── platform_utils.py        # Shared platform utilities
+   │   ├── quality_gate.py          # Local quality gate
+   │   ├── build_portable.py        # Portable archive builder
+   │   ├── frontend_wizard.py       # Frontend design wizard
+   │   └── build_ccpkg.py           # Package builder
 ├── templates/                   # 📝 CI/CD workflow templates
 ├── config/                      # ⚙️ Example configuration files
 ├── tests/                       # 🧪 Test suite
 ├── icons/                       # 🎨 Branding assets
-├── CLAUDE.md                    # 📋 Framework guidance
+├── project-context.md           # 📋 Project guidance
+├── AGENTS.md                    # 🧠 Project memory
 └── README.md                    # 📖 This file
 ```
 
 ## 💻 Cross-Platform Notes
 
 - 🐍 **Python command:** All scripts reference `python3`. On Windows where only `python` is available, CodeClaw auto-detects the correct command.
-- 🔌 **Port management:** `app_manager.py` automatically uses the correct OS tools — `lsof`/`ss` on Unix, `netstat`/`taskkill` on Windows.
+- 🔌 **Port management:** Use `lsof`/`ss` on Unix or `netstat`/`taskkill` on Windows when you need to inspect open ports.
 - 🔍 **File search:** `task_manager.py find-files` provides cross-platform file discovery.
 
 ## 🔧 Managing the Plugin

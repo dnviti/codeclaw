@@ -82,7 +82,7 @@ Configure via `.claude/issues-tracker.json`.
 ### Tips
 
 - Add `yolo` to any command to auto-approve all gates: `/task pick all yolo`
-- Use `/task pick all` to implement all pending release tasks in parallel via subagents
+- Use `/task pick all` to implement all pending release tasks sequentially in dependency order
 - Use `/release resume` to continue a release pipeline from where it left off
 - Run `/setup env` to regenerate the platform instructions file after changing your project structure
 
@@ -96,28 +96,20 @@ When invoked with a query (`/help how do I create a task`), provide a targeted e
 
 Extract the user's question from the dispatch `remaining_args`.
 
-### Step 2: Semantic search (primary)
+### Step 2: Keyword search
 
-Attempt to find relevant skills and documentation using vector-based semantic search. This enables matching by meaning rather than exact keywords — e.g., "how do I check what needs to be done" would semantically match `/task status` even though "check" and "done" are not in a keyword list.
+Search the available skills and docs using keyword matching. This keeps the flow deterministic and works without any external index.
 
-1. Call the `semantic_search` MCP tool with:
-   - `query`: the user's question
-   - `file_globs`: `["skills/*/SKILL.md", "docs/**/*.md"]`
-   - `top_k`: 5
-2. If the vector store is unavailable (error response or empty results), fall through to Step 2b (keyword fallback).
-3. If results are returned, extract the matched skill names and relevant documentation sections. Rank semantic matches by score (lower `_distance` = better match).
+1. Look for direct matches in:
+   - Skill names: task, idea, release, setup, docs, update, tests, help, crazy
+   - Flow names: pick, create, continue, status, scout, approve, generate, sync
+   - Concepts: branch, milestone, yolo, docs, release, testing
+2. Check the current docs pages for matching terms and exact command names.
+3. Prefer the most specific skill or docs section over a generic match.
 
-**Staleness check:** After receiving semantic search results, check the index freshness. Run:
-```
-python3 ${CLAW_ROOT}/scripts/vector_memory.py status --root <project_root> --json
-```
-Parse the JSON output and check `last_indexed`. If the index is older than 30 minutes from the current time, append this note to your response:
+### Step 2b: Fallback expansion
 
-> **Note:** The semantic index was last updated at `{last_indexed}`. Results may not reflect very recent changes. Run `/setup env` or `python3 scripts/vector_memory.py index` to refresh.
-
-### Step 2b: Keyword fallback
-
-If semantic search is unavailable or returned no results, fall back to keyword matching.
+If no direct keyword match is found, broaden the search to neighboring concepts and explain the closest relevant command.
 
 Compare the query keywords against:
 - Skill names: task, idea, release, setup, docs, update, tests, help
@@ -126,7 +118,7 @@ Compare the query keywords against:
 
 ### Step 3: Merge and explain
 
-If both semantic and keyword results are available, merge them with semantic matches ranked higher (they capture intent better). Deduplicate by skill name.
+If multiple keyword matches are available, merge them by relevance and deduplicate by skill name.
 
 Provide a concise, actionable answer that includes:
 1. **Which skill to use** — name and brief description

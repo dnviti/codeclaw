@@ -79,11 +79,7 @@ jobs:
 
       - name: Syntax check core scripts
         run: |
-          ${{ steps.py.outputs.cmd }} -m py_compile scripts/release_manager.py
-          ${{ steps.py.outputs.cmd }} -m py_compile scripts/task_manager.py
-          ${{ steps.py.outputs.cmd }} -m py_compile scripts/skill_helper.py
-          ${{ steps.py.outputs.cmd }} -m py_compile scripts/vector_memory.py
-          ${{ steps.py.outputs.cmd }} -m py_compile scripts/mcp_server.py
+          ${{ steps.py.outputs.cmd }} -m compileall -q scripts
 
       - name: Run tests
         run: |

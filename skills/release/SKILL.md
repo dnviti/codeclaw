@@ -207,7 +207,7 @@ Verifies that all tasks assigned to this release are complete before proceeding.
 >
 > To implement these tasks, exit the release pipeline and use:
 > - `/task pick [CODE]` — pick up and implement a specific task
-> - `/task pick all` — pick up and implement all pending release tasks at once (parallel by default)
+> - `/task pick all` — pick up and implement all pending release tasks sequentially in dependency order
 >
 > Once all tasks are done, re-run `/release continue X.X.X` (or `/release continue resume`) to continue.
 
@@ -229,101 +229,33 @@ PM list-pr base="<CTX.config.development_branch>" state="open"
 
 **3b.** Present: "Found N open PRs:" with number, title, author, branch for each.
 
-**3c. GATE:** "Spawn per-PR analysis agents" / "Skip PR analysis (proceed to merge)" / "Abort release".
+**3c. GATE:** "Review PRs sequentially" / "Skip PR analysis (proceed to merge)" / "Abort release".
 
 **Exit condition:** PR list fetched → proceed.
 
 ---
 
-#### Stage 4 — Per-PR Sub-Agent Analysis (Parallel)
+#### Stage 4 — Per-PR Review and Merge
 
-**For each open PR, spawn an independent sub-agent.** All sub-agents run in parallel — one per PR. Each sub-agent executes the following steps sequentially on its assigned PR:
+Review each open PR sequentially. Keep the review, comment, fix, and merge trail on the PR itself.
 
-Present before spawning: "Spawning N sub-agents (one per PR). Each will: analyze → optimize → security scan → comment → fix → comment fixes → merge → cleanup."
+For each PR:
 
-GATE: "Proceed with N agents" / "Abort release".
+1. Read the diff and confirm the intent.
+2. Analyze for performance bottlenecks, unnecessary complexity, dead code, redundant operations, dependency bloat, and project standards.
+3. Analyze for injection vulnerabilities, auth flaws, secret exposure, insecure dependencies, input validation gaps, and OWASP Top 10 issues.
+4. Run the local quality gate on the PR's changed files:
+`python3 ${CLAW_ROOT}/scripts/quality_gate.py --root <PROJECT_ROOT> --files <changed_files_from_diff> --verify-command '{VERIFY_COMMAND}' --json`
+5. Post a structured comment on the PR separating optimization findings from security findings with severity for each.
+6. Apply fixes for issues you can safely resolve and push the fix commits.
+7. Post a follow-up comment documenting what changed and listing unresolved issues.
+8. Merge the PR into its target branch using `{PLATFORM_CLI} pr merge {NUMBER} --squash --delete-branch` when it is ready.
 
-**Execution mode:** If `$CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` = `"1"`, use Agent Teams mode. Otherwise skip to standard subagent mode.
-
-**── Agent Teams mode ──**
-
-Create team `"claw-pr-analysis-{VERSION}"` via `TeamCreate` with `description: "PR analysis for release {VERSION}"`. Create `TaskCreate` entries for each PR, plus `"Cross-PR security audit"`. Spawn teammates (`team_name: "claw-pr-analysis-{VERSION}"`):
-
-| Teammate | Count | Config |
-|----------|-------|--------|
-| `pr-analyst-{NUMBER}` | 1 per PR | `mode: "bypassPermissions"` |
-| `security-auditor` | 1 | `mode: "bypassPermissions"` |
-
-PR analyst prompt (`name: "pr-analyst-{NUMBER}"`):
-
-```
-"You are pr-analyst-{NUMBER} on team claw-pr-analysis-{VERSION}. Analyze PR #{NUMBER} ({TITLE}).
-1. Claim task via TaskUpdate
-2. Read the PR diff, understand changes and intent
-3. Analyze: performance bottlenecks, unnecessary complexity, dead code, redundant ops, dependency bloat, project standards
-4. Security scan: injection, auth flaws, secret exposure, insecure deps, input validation, OWASP Top 10
-5. Run quality gate: `python3 ${CLAW_ROOT}/scripts/quality_gate.py --root <PROJECT_ROOT> --files <changed_files> --verify-command '{VERIFY_COMMAND}' --json`
-6. Post structured comment on PR via `{PLATFORM_CLI} pr comment {NUMBER}` (optimization + security findings by severity)
-7. Apply fixes for all identified issues. Push fix commits
-8. Post follow-up comment documenting fixes and unresolved issues
-9. SendMessage to security-auditor: 'PR #{NUMBER} analyzed. Findings: [summary]'
-10. Wait for security-auditor cross-check approval
-11. Merge: `{PLATFORM_CLI} pr merge {NUMBER} --squash --delete-branch`
-12. TaskUpdate completed. SendMessage to team lead: {{ pr_number, findings_count, fixes_applied, unresolved[], merged: bool }}"
-```
-
-Security auditor prompt (`name: "security-auditor"`):
-
-```
-"You are security-auditor on team claw-pr-analysis-{VERSION}. Cross-validate security findings across all PRs.
-1. Claim 'Cross-PR security audit' task via TaskUpdate
-2. Wait for pr-analyst SendMessage notifications with findings
-3. For each PR's findings:
-   a. Validate reported vulnerabilities are real (no false positives)
-   b. Check for cross-PR security implications (e.g., one PR opens a vector that another doesn't close)
-   c. Check for systemic patterns (same vulnerability type across multiple PRs)
-   d. If critical issues missed by analyst → SendMessage to analyst: 'Additional finding for PR #{NUMBER}: [details]'
-4. After all PRs reviewed: SendMessage approval to each analyst
-5. TaskUpdate completed. SendMessage to team lead: {{ total_findings_validated, false_positives_caught, cross_pr_issues[], systemic_patterns[] }}"
-```
-
-After all teammates complete → `SendMessage {type: "shutdown_request"}` to all → `TeamDelete`. Continue to step 4a (collect results).
-
-**── Standard subagent mode (default) ──**
-
-For each PR, spawn Agent with `mode: "bypassPermissions"`:
-
-```
-prompt: "You are a PR analysis agent for release {VERSION}. Process PR #{NUMBER} ({TITLE}) on branch {HEAD_BRANCH}.
-
-Execute these steps IN ORDER:
-
-**Step 1 — Analyze Changes:** Read the PR diff. Understand which files changed, what features were added/modified, and the intent.
-
-**Step 2 — Code Optimize:** Analyze for: performance bottlenecks, unnecessary complexity, dead code, redundant operations, dependency bloat, adherence to project standards. Produce a findings list.
-
-**Step 3 — Security Analysis:** Analyze for: injection vulnerabilities, authentication/authorization flaws, secret exposure, insecure dependencies, input validation gaps, OWASP Top 10. Produce a findings list.
-
-**Step 3.5 — Local Quality Gate:** Run the local quality gate on the PR's changed files:
-`python3 ${{CLAW_ROOT}}/scripts/quality_gate.py --root <PROJECT_ROOT> --files <changed_files_from_diff> --verify-command '{VERIFY_COMMAND}' --json`
-Parse the JSON result. Merge any findings from the quality gate into the optimization and security findings lists. If `passed` is `false` and blocking findings remain after auto-fix iterations, include them in the Step 4 comment as a separate **Quality Gate** section.
-
-**Step 4 — Comment Findings on PR:** Post a structured comment on PR #{NUMBER} using `{PLATFORM_CLI} pr comment {NUMBER}` separating optimization findings from security findings with severity for each.
-
-**Step 5 — Apply Fixes:** Implement fixes for all identified issues. Push fix commits to the PR branch. For issues requiring human judgment, flag as UNRESOLVED.
-
-**Step 6 — Comment Fixes on PR:** Post a follow-up comment documenting what was fixed and listing unresolved issues.
-
-**Step 7 — Close PR + Merge:** Merge PR into {DEVELOPMENT_BRANCH} using: `{PLATFORM_CLI} pr merge {NUMBER} --squash --delete-branch`
-
-Report: {{findings_count, fixes_applied, unresolved_issues[], merged: bool}}"
-```
-
-**4a.** Collect results from all sub-agents.
+**4a.** Collect results from all reviewed PRs.
 
 **4b.** Present consolidated report: PR number, findings count, fixes applied, unresolved issues, merge status.
 
-**4c.** If unresolved issues exist: create RPAT tasks via `TM create-patch-task --source "pr-analysis" --title "..." --release X.X.X --description "..."` for each.
+**4c.** If unresolved issues exist: create RPAT tasks via `TM create-patch-task --source "pr-review" --title "..." --release X.X.X --description "..."` for each.
 
 **4d.** Check loop counter per [Loop Counter](#loop-counter) rules.
 
@@ -331,7 +263,7 @@ Report: {{findings_count, fixes_applied, unresolved_issues[], merged: bool}}"
 
 **4f. GATE (all resolved):** "All PRs processed. Proceed to Merge to Staging" / "Abort release".
 
-**Exit condition:** All sub-agents completed, all PRs merged → "ALL PRs DONE".
+**Exit condition:** All open PRs reviewed and handled → proceed to Stage 5.
 
 ---
 
@@ -372,7 +304,7 @@ git push origin <tag_prefix>X.X.X-staging
 
 **6b.** Run full test suite on staging branch. Present pass/fail count + coverage.
 
-**6c.** Optional — spawn Agent for coverage gap analysis.
+**6c.** Optional — run local coverage gap analysis on the changed files.
 
 **6d.** On failures: create RPAT tasks with `TM create-patch-task --source "integration-test"`. Check [Loop Counter](#loop-counter).
 
@@ -436,47 +368,16 @@ Present: "Found N workflows triggered by tag push."
 
 If no workflows are found, skip to `7g` with: "No CI workflows triggered — proceeding."
 
-**7f-ter.** Spawn one monitoring agent per workflow (all in parallel):
+**7f-ter.** Inspect each workflow run sequentially:
 
-**Execution mode:** If `$CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` = `"1"`, use Agent Teams mode. Otherwise skip to standard subagent mode.
-
-**── Agent Teams mode ──**
-
-Create team `"claw-ci-monitor-{VERSION}"` via `TeamCreate` with `description: "CI monitoring for release {VERSION}"`. Create `TaskCreate` entries for each workflow. Spawn teammates (`team_name: "claw-ci-monitor-{VERSION}"`):
-
-| Teammate | Count | Config |
-|----------|-------|--------|
-| `ci-monitor-{RUN_ID}` | 1 per workflow | `mode: "bypassPermissions"` |
-
-CI monitor prompt (`name: "ci-monitor-{RUN_ID}"`):
-
-```
-"You are ci-monitor-{RUN_ID} on team claw-ci-monitor-{VERSION}. Monitor CI run {RUN_ID} ('{WORKFLOW_NAME}').
-1. Claim task via TaskUpdate
-2. Poll `{PLATFORM_CLI} run view {RUN_ID} --repo {REPO} --json status,conclusion` every 30s until completed
-3. If success: TaskUpdate completed. SendMessage to team lead: {{ workflow: '{WORKFLOW_NAME}', conclusion: 'success' }}
-4. If failure:
-   a. Get logs: `{PLATFORM_CLI} run view {RUN_ID} --repo {REPO} --log-failed`
-   b. Identify root cause and fix relevant files
-   c. Commit to {DEVELOPMENT_BRANCH}, push, open PR to {PRODUCTION_BRANCH}, merge
-   d. TaskUpdate completed. SendMessage to team lead: {{ workflow: '{WORKFLOW_NAME}', conclusion: 'fixed', root_cause, fix_description, pr_url }}"
-```
-
-After all teammates complete → `SendMessage {type: "shutdown_request"}` to all → `TeamDelete`. Continue to step 7f-quater (collect results).
-
-**── Standard subagent mode (default) ──**
-
-For each workflow run, spawn Agent with `mode: "bypassPermissions"`:
-```
-prompt: "Monitor CI run {RUN_ID} ('{WORKFLOW_NAME}') in repo {REPO}.
-1. Poll `{PLATFORM_CLI} run view {RUN_ID} --repo {REPO} --json status,conclusion` every 30s until completed.
-2. If success: report and exit.
+For each workflow run:
+1. Poll `{PLATFORM_CLI} run view {RUN_ID} --repo {REPO} --json status,conclusion` until completed.
+2. If success: record the result and continue.
 3. If failure:
    a. Get logs: `{PLATFORM_CLI} run view {RUN_ID} --repo {REPO} --log-failed`
    b. Identify root cause and fix the relevant file(s).
    c. Commit to {DEVELOPMENT_BRANCH}, push, open PR to {PRODUCTION_BRANCH}, merge.
-   d. Report: { workflow, conclusion, root_cause, fix_description, pr_url }"
-```
+   d. Record the fix details and PR URL.
 
 Where `{PLATFORM_CLI}` is `gh` for GitHub or `glab` for GitLab, derived from `CTX.platform.platform`.
 
@@ -592,18 +493,6 @@ If "Yes": execute `PM close-milestone title="vX.X.X"`. On failure, warn but cont
 
 **9c.** Clear state: `RM release-state-clear`
 
-**9d.** Run vector memory garbage collection to clean up stale entries, orphaned agent sessions, and compact the index:
-```bash
-python3 ${CLAW_ROOT}/scripts/vector_memory.py gc --json
-```
-On failure, warn but do not block — GC is best-effort cleanup.
-
-**9d-ter.** Deregister all agent sessions spawned during this release:
-```bash
-TM deregister-agent --session-id <SESSION_ID>
-```
-for every agent session created during Stage 4 sub-agent spawning.
-
 **9e.** Final report table:
 
 | Stage | Status |
@@ -611,7 +500,7 @@ for every agent session created during Stage 4 sub-agent spawning.
 | 1. Create Branch | Branch created |
 | 2. Task Readiness Gate | All tasks verified complete |
 | 3. Fetch Open PRs | N PRs found |
-| 4. Per-PR Analysis | N PRs analyzed (M findings, K fixed) |
+| 4. Per-PR Review | N PRs reviewed (M findings, K fixed) |
 | 5. Merge Staging | Clean/Conflict resolved |
 | 6. Integration Tests | All passed |
 | 7. Merge Main + Tag | <prefix>X.X.X |
@@ -619,13 +508,13 @@ for every agent session created during Stage 4 sub-agent spawning.
 | 8.5. Announce | N platforms posted / skipped |
 | 9. End | Pipeline cleared |
 
-Total loop iterations: N | Patch tasks created: N | Subagents spawned: N
+Total loop iterations: N | Patch tasks created: N | PRs reviewed: N
 
 ### Feedback Loop Summary
 
 | Stage | Issues go to | Then loops back to |
 |---|---|---|
-| Per-PR Sub-Agent (unresolved) | Release Patches (RPAT) | Task Readiness Gate (Stage 2) |
+| Per-PR Review (unresolved) | Release Patches (RPAT) | Task Readiness Gate (Stage 2) |
 | Merge to Staging | Release Patches (RPAT) | Task Readiness Gate (Stage 2) |
 | Integration Tests | Release Patches (RPAT) | Task Readiness Gate (Stage 2) |
 | Local build pre-push (5 / 7) | RPAT task | Task Readiness Gate (Stage 2) |
@@ -735,8 +624,8 @@ Also update local `releases.json` via `RM release-plan-set-status` or direct edi
 
 1. **Stages are sequential and gated** — never skip unless user explicitly chooses via GATE (or yolo auto-selects).
 2. **The release pipeline NEVER implements tasks.** Stage 2 is a readiness gate only. If tasks are pending, the pipeline stops and directs the user to `/task pick` (or `/task pick all`). Task implementation is always the user's responsibility via the `/task pick` skill.
-3. **Sub-agents run in parallel, one per PR.** Each follows the full analyze → optimize → security → comment → fix → comment → merge → cleanup sequence.
-4. **Sub-agents fix what they can, escalate what they can't.** Unresolved issues become RPAT tasks and loop back to Stage 2.
+3. **Open PRs are reviewed sequentially.** Each follows the full analyze → optimize → security → comment → fix → merge → cleanup sequence.
+4. **Findings are fixed where possible, escalated where needed.** Unresolved issues become RPAT tasks and loop back to Stage 2.
 5. **Every PR comment is structured.** Findings and fixes are posted as separate, labeled comments for audit trail.
 6. **Task branches are preserved for PRs.** After PR merge, the source branch is deleted by the merge command.
 7. **Staging = Main minus public visibility.** If it wouldn't survive on main, it doesn't pass staging.

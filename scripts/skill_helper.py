@@ -193,14 +193,14 @@ def parse_blocks(filepath: Path) -> list[dict]:
     return blocks
 
 
-# ── CLAUDE.md Parser ───────────────────────────────────────────────────────
+# ── Project Context Parser ────────────────────────────────────────────────
 
-def claude_md_info(root: Path) -> dict:
-    """Return metadata about CLAUDE.md."""
-    claude_md = root / "CLAUDE.md"
-    if not claude_md.exists():
+def project_context_info(root: Path) -> dict:
+    """Return metadata about project-context.md."""
+    project_context = root / "project-context.md"
+    if not project_context.exists():
         return {"exists": False, "lines": 0, "has_claw_section": False}
-    content = claude_md.read_text(encoding="utf-8")
+    content = project_context.read_text(encoding="utf-8")
     lines = content.splitlines()
     return {
         "exists": True,
@@ -471,65 +471,6 @@ def detect_tag_prefix() -> str:
     return "v"
 
 
-def _detect_mcp_server_status(root: Path) -> dict:
-    """Detect MCP server availability and status.
-
-    Checks whether the MCP server script exists, whether the ``mcp``
-    Python package is installed, and whether the server is configured
-    as enabled in project config.
-    """
-    scripts_dir = _SCRIPT_DIR
-    mcp_script = scripts_dir / "mcp_server.py"
-
-    status: dict = {
-        "available": mcp_script.exists(),
-        "status": "stopped",
-        "sdk_installed": False,
-        "enabled": False,
-    }
-
-    if not mcp_script.exists():
-        status["status"] = "not_installed"
-        return status
-
-    # Check if mcp SDK is installed
-    try:
-        result = subprocess.run(
-            [sys.executable, str(mcp_script), "--check"],
-            capture_output=True, text=True, timeout=10,
-        )
-        if result.returncode == 0:
-            check_data = json.loads(result.stdout.strip())
-            status["sdk_installed"] = check_data.get("mcp_sdk", False)
-        else:
-            status["sdk_installed"] = False
-    except Exception:
-        status["sdk_installed"] = False
-
-    # Check project config for mcp_server.enabled
-    for cfg_name in [
-        root / ".claude" / "project-config.json",
-        root / "config" / "project-config.json",
-    ]:
-        if cfg_name.exists():
-            try:
-                data = json.loads(cfg_name.read_text(encoding="utf-8"))
-                mcp_cfg = data.get("mcp_server", {})
-                status["enabled"] = mcp_cfg.get("enabled", False)
-                break
-            except (json.JSONDecodeError, OSError):
-                pass
-
-    if status["sdk_installed"] and status["enabled"]:
-        status["status"] = "ready"
-    elif status["sdk_installed"]:
-        status["status"] = "disabled"
-    else:
-        status["status"] = "no_sdk"
-
-    return status
-
-
 # ════════════════════════════════════════════════════════════════════════════
 # Subcommand: context
 # ════════════════════════════════════════════════════════════════════════════
@@ -597,26 +538,6 @@ def cmd_context(_args) -> dict:
         "test_framework": cfg.get("test_framework", ""),
     }
 
-    # ── memory_agents ──
-    memory_agents = {
-        "active_agents": 0,
-        "pending_conflicts": 0,
-    }
-    try:
-        from memory_protocol import MemoryProtocol
-        protocol = MemoryProtocol(root)
-        proto_status = protocol.get_status()
-        memory_agents["active_agents"] = proto_status.get("active_agents", 0)
-        memory_agents["pending_conflicts"] = proto_status.get("pending_conflicts", 0)
-    except (ImportError, Exception):
-        pass
-
-    # ── vector_memory ──
-    vector_memory = _get_vector_memory_status(root)
-
-    # ── mcp_server ──
-    mcp_server = _detect_mcp_server_status(root)
-
     # ── os_info ──
     try:
         from platform_utils import detect_python_cmd, get_shell_info
@@ -638,45 +559,10 @@ def cmd_context(_args) -> dict:
         "platform": platform,
         "branches": branches,
         "release_config": release_config,
-        "memory_agents": memory_agents,
-        "vector_memory": vector_memory,
-        "mcp_server": mcp_server,
+        "project_context": project_context_info(root),
         "os_info": os_info,
         "submodules": submodules,
     }
-
-
-def _get_vector_memory_status(root: Path) -> dict:
-    """Get vector memory status for context JSON (non-fatal)."""
-    try:
-        from vector_memory import get_effective_config, load_stored_manifest, INDEX_META
-        from deps_check import check_vector_memory_deps
-        import json as _json
-
-        config = get_effective_config(root)
-        if not config.get("enabled"):
-            return {"status": "disabled"}
-
-        ok, missing = check_vector_memory_deps()
-        if not ok:
-            return {"status": "disabled", "reason": f"missing deps: {', '.join(missing)}"}
-
-        index_dir = root / config["index_path"]
-        meta_path = index_dir / INDEX_META
-        if not meta_path.exists():
-            return {"status": "not_indexed", "enabled": True}
-
-        meta = _json.loads(meta_path.read_text(encoding="utf-8"))
-        stored = load_stored_manifest(index_dir)
-        return {
-            "status": "indexed" if stored else "stale",
-            "enabled": True,
-            "last_indexed": meta.get("last_indexed", "unknown"),
-            "file_count": meta.get("file_count", 0),
-            "embedding_model": meta.get("embedding_model", ""),
-        }
-    except Exception:
-        return {"status": "disabled"}
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -806,8 +692,6 @@ def dispatch_setup(parts: list[str]) -> dict:
         return {"flow": "init", "task_code": "", "remaining_args": " ".join(rest)}
     elif first in ("branch-strategy", "branch_strategy"):
         return {"flow": "branch-strategy", "task_code": "", "remaining_args": " ".join(rest)}
-    elif first in ("agentic-fleet", "agentic_fleet"):
-        return {"flow": "agentic-fleet", "task_code": "", "remaining_args": " ".join(rest)}
     else:
         return {"flow": "standard", "task_code": "", "remaining_args": " ".join(parts)}
 
@@ -873,7 +757,7 @@ def dispatch_release(parts: list[str]) -> dict:
 
 def dispatch_update(parts: list[str]) -> dict:
     """Dispatch for the update skill."""
-    valid = {"all", "pipelines", "agentic", "scripts", "prompts", "skills", "claude-md"}
+    valid = {"all", "pipelines", "scripts", "prompts", "skills", "claude-md"}
     if not parts:
         return {"flow": "all", "task_code": "", "remaining_args": ""}
     first = parts[0].lower()
@@ -965,7 +849,7 @@ def cmd_dispatch(args) -> dict:
 # ════════════════════════════════════════════════════════════════════════════
 
 def cmd_check_project_state(_args) -> dict:
-    """Return project file existence and CLAUDE.md status."""
+    """Return project file existence and project-context.md status."""
     root = get_main_repo_root()
 
     existing = [f for f in ALL_FILES if (root / f).exists()]
@@ -979,7 +863,7 @@ def cmd_check_project_state(_args) -> dict:
     return {
         "existing_files": existing,
         "missing_files": missing,
-        "claude_md": claude_md_info(root),
+        "project_context": project_context_info(root),
         "releases_json": {"exists": releases_json.exists(), "active": uses_local},
         "git_initialized": git_init,
     }
@@ -1334,7 +1218,7 @@ def main():
     p_dispatch.add_argument("--args", default="", help="Raw arguments string")
 
     # check-project-state
-    sub.add_parser("check-project-state", help="Return project file existence and CLAUDE.md status")
+    sub.add_parser("check-project-state", help="Return project file existence and project-context.md status")
 
     # create-project-files
     p_create = sub.add_parser("create-project-files", help="Create missing task/idea files")

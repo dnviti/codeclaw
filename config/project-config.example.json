@@ -16,160 +16,25 @@
   "changelog_file": "",
   "tag_prefix": "",
   "github_repo_url": "",
-  "development_branch": "",
-  "staging_branch": "",
-  "production_branch": "",
+  "development_branch": "develop",
+  "staging_branch": "staging",
+  "production_branch": "main",
   "release_branch": "",
   "show_generated_footer": true,
   "python_command": "",
-  "memory_consistency": {
-    "gc_ttl_days": 30,
-    "max_index_size_mb": 500,
-    "conflict_strategy": "auto",
-    "enable_versioned_reads": false,
-    "auto_resolve": {
-      "enabled": false,
-      "strategy": "single-judge",
-      "provider": "ollama",
-      "confidence_threshold": 0.8,
-      "num_votes": 3,
-      "max_auto_resolve_per_run": 10,
-      "model": ""
-    }
-  },
-  "vector_memory": {
-    "enabled": false,
-    "auto_index": false,
-    "embedding_provider": "local",
-    "embedding_model": "all-MiniLM-L6-v2",
-    "embedding_api_key_env": "",
-    "chunk_size": 2000,
-    "index_path": ".claude/memory/vectors",
-    "batch_size": 64,
-    "include_patterns": [],
-    "exclude_patterns": [],
-    "lock_backend": {
-      "type": "file",
-      "sqlite_path": ".claude/memory/locks/lock.db",
-      "redis_url": "redis://localhost:6379",
-      "redis_key_prefix": "claw:",
-      "timeout": 30,
-      "auto_renew_interval": 10,
-      "_comment": "Lock backend for multi-agent coordination. Types: file (default, single-machine), sqlite (networked filesystems), redis (distributed, requires pip install redis)"
-    },
-    "backend": "lancedb",
-    "sqlite": {
-      "enabled": false,
-      "hybrid_weight_vector": 0.7,
-      "hybrid_weight_text": 0.3,
-      "db_path": ".claude/memory/sqlite/memory.db"
-    },
-    "gpu_acceleration": {
-      "mode": "auto",
-      "log_provider": true,
-      "lib_paths": [],
-      "gpu_path_allowlist": [],
-      "_comment": "GPU mode auto-detected during /setup. Values: auto (detect at runtime), gpu (require GPU), cpu (force CPU). lib_paths: auto-discovered GPU library directories injected into LD_LIBRARY_PATH/PATH at runtime. gpu_path_allowlist: restrict which directories may be added to LD_LIBRARY_PATH from config. Empty list = use built-in defaults (system lib dirs, CUDA, ROCm, pip site-packages). Set explicit paths/globs to override. Package mapping: nvidia=onnxruntime-gpu, amd=onnxruntime-rocm, apple=onnxruntime-silicon, windows=onnxruntime-directml, none=onnxruntime"
-    },
-    "search_log": {
-      "enabled": false,
-      "path": ".claude/memory/search_log.jsonl",
-      "include_content": false,
-      "max_size_mb": 10,
-      "retention_days": 30,
-      "_privacy_notice": "When enabled, search queries and result metadata are written to disk in plaintext. This may include sensitive data such as code patterns, file paths, and search terms. Logs are created with 0o600 permissions and auto-purged after retention_days."
-    },
-    "event_sourcing": {
-      "enabled": false,
-      "compact_interval_seconds": 300,
-      "max_segment_size_mb": 10,
-      "auto_compact_on_search": true
-    },
-    "rlm": {
-      "enabled": false,
-      "provider": "ollama",
-      "max_depth": 3,
-      "max_context_mb": 10,
-      "aggregation": "map-reduce",
-      "timeout_seconds": 120
-    },
-    "orchestrator": {
-      "backends": [
-        "lancedb"
-      ],
-      "routing_weights": {
-        "lancedb": 1.0,
-        "sqlite": 0.8,
-        "rlm": 0.6
-      },
-      "fallback_chain": [
-        "lancedb",
-        "sqlite",
-        "rlm"
-      ],
-      "query_routing": {
-        "exact": "sqlite",
-        "semantic": "lancedb",
-        "deep": "rlm"
-      },
-      "rrf_k": 60
-    }
-  },
-  "mcp_server": {
-    "enabled": false,
-    "transport": "stdio",
-    "auto_start": false,
-    "_comment": "Vector memory MCP is opt-in. Enable via /setup. Requires: pip install \"mcp>=1.0\" \"lancedb>=0.5.0,<1.0\" \"sentence-transformers>=2.7.0,<3.0\""
-  },
   "social_announce": {
     "platforms": {
-      "bluesky": {
-        "enabled": false
-      },
-      "mastodon": {
-        "enabled": false
-      },
-      "discord": {
-        "enabled": false
-      },
-      "slack": {
-        "enabled": false
-      }
+      "bluesky": { "enabled": false },
+      "mastodon": { "enabled": false },
+      "discord": { "enabled": false },
+      "slack": { "enabled": false }
     },
     "clipboard_platforms": [
-      {
-        "name": "twitter",
-        "enabled": false,
-        "max_length": 280,
-        "post_url": "https://twitter.com/compose/tweet"
-      },
-      {
-        "name": "linkedin",
-        "enabled": false,
-        "max_length": 3000,
-        "post_url": "https://www.linkedin.com/feed/"
-      },
-      {
-        "name": "reddit",
-        "enabled": false,
-        "max_length": 10000,
-        "post_url": ""
-      },
-      {
-        "name": "hackernews",
-        "enabled": false,
-        "max_length": 2000,
-        "post_url": "https://news.ycombinator.com/submit"
-      }
+      { "name": "twitter", "enabled": false, "max_length": 280, "post_url": "https://twitter.com/compose/tweet" },
+      { "name": "linkedin", "enabled": false, "max_length": 3000, "post_url": "https://www.linkedin.com/feed/" },
+      { "name": "reddit", "enabled": false, "max_length": 10000, "post_url": "" },
+      { "name": "hackernews", "enabled": false, "max_length": 2000, "post_url": "https://news.ycombinator.com/submit" }
     ]
-  },
-  "image_generation": {
-    "enabled": false,
-    "provider": "local",
-    "api_key_env": "",
-    "default_size": "1024x1024",
-    "default_style": "natural",
-    "output_dir": "assets/generated"
   },
   "ollama": {
     "enabled": false,

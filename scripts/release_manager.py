@@ -1911,7 +1911,7 @@ def build_parser() -> argparse.ArgumentParser:
     # full-context
     p = sub.add_parser("full-context", help="Return all release-related context in a single call")
     p.add_argument("--tag-prefix", default="auto",
-                    help="Git tag prefix (default: auto-detect from CLAUDE.md or existing tags)")
+                    help="Git tag prefix (default: auto-detect from project config or existing tags)")
     p.set_defaults(func=cmd_full_context)
 
     # coverage-gate

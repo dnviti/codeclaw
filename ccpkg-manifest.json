@@ -2,7 +2,7 @@
   "ccpkg_version": "1.0.0",
   "name": "claw",
   "version": "0.0.0-template",
-  "description": "Project-agnostic task and release management framework with 8 streamlined skills: /task, /idea, /release, /docs, /setup, /update, /tests, /help. Features a gated release pipeline with automatic subagent orchestration.",
+  "description": "Project-agnostic task and release management framework with 8 streamlined skills: /task, /idea, /release, /docs, /setup, /update, /tests, /help. Features a gated release pipeline with sequential task review and cleanup.",
   "author": {
     "name": "dnviti"
   },
@@ -17,7 +17,7 @@
     "release",
     "ci-cd",
     "release-pipeline",
-    "subagents",
+    "sequential",
     "staging",
     "testing",
     "test-coverage"

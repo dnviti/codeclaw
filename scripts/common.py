@@ -2,8 +2,8 @@
 """Shared utilities for CodeClaw scripts.
 
 Centralises functions that were previously duplicated across multiple scripts:
-find_project_root, get_main_repo_root, parse_claude_md, output_json,
-get_latest_tag, and git_run.
+find_project_root, get_main_repo_root, output_json, get_latest_tag, and
+git_run.
 
 Zero external dependencies — stdlib only.
 """
@@ -15,8 +15,6 @@ import sys
 from pathlib import Path
 
 # ── Constants ──────────────────────────────────────────────────────────────
-
-CLAUDE_MD_VAR_RE = re.compile(r'^([A-Z_]+)\s*=\s*"?([^"#]*)"?\s*(?:#.*)?$')
 
 # SKILL.md frontmatter parsing
 FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)
@@ -64,28 +62,6 @@ def find_project_root() -> Path:
 def get_main_repo_root() -> Path:
     """Return the main repository root directory."""
     return find_project_root()
-
-
-# ── CLAUDE.md Parser ───────────────────────────────────────────────────────
-
-def parse_claude_md(root: Path) -> dict[str, str]:
-    """Extract key=value pairs from the bash code block in CLAUDE.md."""
-    claude_md = root / "CLAUDE.md"
-    if not claude_md.exists():
-        return {}
-    content = claude_md.read_text(encoding="utf-8")
-    # Find the first ```bash ... ``` block
-    m = re.search(r"```bash\n(.*?)```", content, re.DOTALL)
-    if not m:
-        return {}
-    pairs: dict[str, str] = {}
-    for line in m.group(1).splitlines():
-        vm = CLAUDE_MD_VAR_RE.match(line)
-        if vm:
-            val = vm.group(2).strip().strip('"')
-            if val:
-                pairs[vm.group(1)] = val
-    return pairs
 
 
 # ── Tag Helpers ────────────────────────────────────────────────────────────
@@ -152,14 +128,10 @@ def parse_skill_md(skill_path: Path) -> dict | None:
 
 # ── Unified Config Loader ─────────────────────────────────────────────────
 
-_CLAUDE_MD_WARNED: set[str] = set()
-
-
 def load_config(root: Path | None = None) -> dict[str, str]:
-    """Load project configuration, merging project-config.json with CLAUDE.md fallback.
+    """Load project configuration from project-config.json.
 
-    Primary source: project-config.json (checked at .claude/, config/, root).
-    Fallback: CLAUDE.md bash block key=value pairs (deprecated).
+    Config is checked at .claude/, config/, and the repository root.
     All keys are normalized to lowercase.
     """
     if root is None:
@@ -171,20 +143,6 @@ def load_config(root: Path | None = None) -> dict[str, str]:
     for k, v in pc.items():
         if isinstance(v, str) and v:
             merged[k] = v
-
-    # Fallback to CLAUDE.md bash block for any missing keys
-    md_vars = parse_claude_md(root)
-    for k_upper, v in md_vars.items():
-        k_lower = k_upper.lower()
-        if k_lower not in merged and v:
-            if k_lower not in _CLAUDE_MD_WARNED:
-                print(
-                    f"[codeclaw] Config key '{k_lower}' read from CLAUDE.md"
-                    " — migrate to project-config.json",
-                    file=sys.stderr,
-                )
-                _CLAUDE_MD_WARNED.add(k_lower)
-            merged[k_lower] = v
 
     return merged
 

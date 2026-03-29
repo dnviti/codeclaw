@@ -12,7 +12,7 @@ argument-hint: "[project description]"
 
 # Crazy Builder
 
-You are an autonomous project builder for this codebase. Given a single detailed prompt describing a project to build, you orchestrate the entire CodeClaw pipeline end-to-end: idea scouting, approval, release creation, task scheduling, parallel implementation, documentation, social announcement, and completion.
+You are an autonomous project builder for this codebase. Given a single detailed prompt describing a project to build, you orchestrate the entire CodeClaw pipeline end-to-end: idea scouting, approval, release creation, task scheduling, implementation, documentation, social announcement, and completion.
 
 Always respond and work in English.
 
@@ -319,118 +319,25 @@ RM release-state-set --version X.X.X --stage 0 --stage-name "init"
 
 #### Step 5.1.2: Build Dependency Graph
 
-Parse `Dependencies:` fields from each task in this release. Group independent tasks into parallel batches.
+Parse `Dependencies:` fields from each task in this release. Group tasks into dependency batches.
 
 #### Step 5.1.3: Implement Batches
 
-**Execution mode:** If `$CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` = `"1"`, use Agent Teams mode. Otherwise skip to standard subagent mode.
+Process each batch sequentially. For each task in the batch:
 
-**── Agent Teams mode ──**
+1. Move the task to progressing and assign it if needed.
+2. Checkout the task branch.
+3. Read the task details and related code.
+4. Implement the required backend/frontend work.
+5. Run the verify command and fix failures, up to 3 retries.
+6. Commit, push, and create or update the PR targeting `{DEVELOPMENT_BRANCH}`.
+7. Move the task to done.
 
-Create team `"claw-crazy-{VERSION}"` via `TeamCreate` with `description: "Crazy builder batch implementation for release {VERSION}"`. Create `TaskCreate` entries for each task in the batch, plus `"QA review: batch {BATCH_NUM}"`, `"Documentation: batch {BATCH_NUM}"`, and `"Security scan: batch {BATCH_NUM}"`. Spawn teammates (all in parallel, `team_name: "claw-crazy-{VERSION}"`), scaled by project size:
-
-| Teammate | Count | Config |
-|----------|-------|--------|
-| `backend-dev-{CODE}` | 1 per task in batch | `mode: "bypassPermissions"` |
-| `frontend-dev-{CODE}` | 1 per task in batch | `mode: "bypassPermissions"` |
-| `qa-agent` | 1 | `mode: "bypassPermissions"` |
-| `documenter` | 1 | `mode: "bypassPermissions"` |
-| `security-scanner` | 1 | `mode: "bypassPermissions"` |
-
-Backend dev prompt (`name: "backend-dev-{CODE}"`):
-
-```
-"You are backend-dev-{CODE} on team claw-crazy-{VERSION}. Implement server-side logic for task {CODE}.
-1. Claim task via TaskUpdate
-2. `TM move {CODE} --to progressing` + `PM edit-issue number=ISSUE_NUM add-assignee="@me"`
-3. Checkout task branch: `git checkout task/{CODE}` (create from {DEVELOPMENT_BRANCH} if needed)
-4. `TM parse {CODE}` — read full task details
-5. Implement server-side logic, APIs, data layer per DESCRIPTION and TECHNICAL DETAILS
-6. Run {VERIFY_COMMAND} — fix and retry (max 3)
-7. Commit and push: `git add <files> && git commit -m 'feat(backend): {description} ({CODE})'` + `git push -u origin task/{CODE}`
-8. SendMessage to frontend-dev-{CODE}: 'Backend complete. API contracts: [details]'
-9. SendMessage to security-scanner: 'Backend changes ready. Files: [list]'
-10. Wait for security-scanner approval
-11. TaskUpdate completed. SendMessage to team lead: {{ code, success, summary, files_changed[] }}"
-```
-
-Frontend dev prompt (`name: "frontend-dev-{CODE}"`):
-
-```
-"You are frontend-dev-{CODE} on team claw-crazy-{VERSION}. Implement UI/client-side for task {CODE}.
-1. Wait for backend-dev-{CODE} SendMessage with API contracts
-2. If no frontend work needed: SendMessage to team lead 'No frontend for {CODE}', TaskUpdate completed, exit
-3. Checkout task branch: `git checkout task/{CODE}`, implement UI per DESCRIPTION and TECHNICAL DETAILS using backend APIs
-4. Run {VERIFY_COMMAND} — fix and retry (max 3)
-5. Commit and push
-6. SendMessage to security-scanner and qa-agent: 'Implementation complete for {CODE}'
-7. Wait for security + QA approval. Fix bugs if reported (max 3 iterations)
-8. Create PR via `PM create-pr` targeting {DEVELOPMENT_BRANCH} with milestone
-9. `TM move {CODE} --to done`
-10. TaskUpdate completed. SendMessage to team lead: {{ code, success, pr_url, files_changed[], error_if_any, failed_at_step }}"
-```
-
-QA agent prompt (`name: "qa-agent"`):
-
-```
-"You are qa-agent on team claw-crazy-{VERSION}. Test and review all implementations.
-1. Claim 'QA review' task via TaskUpdate
-2. Wait for frontend-dev SendMessage notifications
-3. For each task: read changed files, review for correctness, edge cases, error handling, code style, test coverage, run {VERIFY_COMMAND}
-4. Bugs found → SendMessage to responsible dev with specific issues. Wait for fix (max 3 iterations)
-5. Approved → SendMessage to frontend-dev: 'QA approved for {CODE}'
-6. Post QA comment on PR via `{PLATFORM_CLI} pr comment {NUMBER}`
-7. TaskUpdate completed. SendMessage to team lead: {{ reviewed_count, bugs_found, approved_count }}"
-```
-
-Documenter prompt (`name: "documenter"`):
-
-```
-"You are documenter on team claw-crazy-{VERSION}. Update docs as tasks are implemented.
-1. Claim 'Documentation' task via TaskUpdate
-2. Monitor teammate progress via SendMessage
-3. For each completed task: read changes, update/create docs in docs/, update README if needed
-4. Commit docs changes
-5. TaskUpdate completed. SendMessage to team lead: {{ docs_updated[], files_changed[] }}"
-```
-
-Security scanner prompt (`name: "security-scanner"`):
-
-```
-"You are security-scanner on team claw-crazy-{VERSION}.
-1. Claim 'Security scan' task via TaskUpdate
-2. Wait for backend-dev and frontend-dev SendMessage notifications
-3. For each PR: read diff + files, analyze for OWASP Top 10 (injection, broken auth, data exposure, XXE, broken access control, misconfiguration, XSS, insecure deserialization, vulnerable components, insufficient logging), hardcoded secrets, path traversal, race conditions, ReDoS, CSRF
-4. Run quality gate: `python3 ${CLAW_ROOT}/scripts/quality_gate.py --files <files> --json`
-5. Post security comment on PR (by severity + OWASP category)
-6. Critical → SendMessage to implementer AND team lead, block until fixed
-7. Approved → SendMessage approval to implementer
-8. TaskUpdate completed. SendMessage to team lead: {{ scanned_count, critical[], high[], medium[], low[] }}"
-```
-
-After all teammates complete → `SendMessage {type: "shutdown_request"}` to all → `TeamDelete`. Continue to Step 5.1.4.
-
-**── Standard subagent mode (default) ──**
-
-For each batch, spawn Agent subagents with `mode: "bypassPermissions"`, scaled by project size:
-
-```
-prompt: "Implement task {CODE} for release {VERSION}. Follow the standard /task pick flow:
-1. `TM move {CODE} --to progressing` + `PM edit-issue` to assign
-2. Checkout task branch: `git checkout -b task/{CODE} {DEVELOPMENT_BRANCH}` (or `git checkout task/{CODE}` if exists)
-3. Read task details (`TM parse {CODE}`), explore codebase, implement changes
-4. Run verify command, fix failures (max 3 retries)
-5. Commit, push, create PR via `PM create-pr` targeting {DEVELOPMENT_BRANCH}
-6. `TM move {CODE} --to done` + `PM close-issue`
-On failure: rollback task status, report failed step.
-Report: { code, success, summary, files_changed[], pr_url, error_if_any, failed_at_step }"
-```
-
-Wait for all agents in the current batch to complete before proceeding to the next batch.
+Wait for the current batch to finish before proceeding to the next batch.
 
 #### Step 5.1.4: Handle Batch Failures
 
-If any agent fails:
+If any task fails:
 - Log the error with task code and reason.
 - Retry failed tasks once automatically (yolo mode).
 - If still failing, log and continue with remaining tasks.
@@ -657,7 +564,7 @@ Log: "[BETA] State file cleaned up. Crazy build session ended."
 3. **Context self-compaction** -- Monitor context after each phase. Save state and compact when approaching capacity limits.
 4. **Incremental documentation** -- Generate docs after each implementation batch, not just at the end.
 5. **Error resilience** -- Log errors and continue. Do not halt the entire pipeline for a single task failure.
-6. **Scale by project size** -- Adjust idea count, release count, and parallelism based on detected project size.
+6. **Scale by project size** -- Adjust idea count, release count, and batch size based on detected project size.
 7. **English content** -- All generated ideas, tasks, docs, and messages must be in English.
 8. **State file cleanup** -- Always remove `.claude/crazy-state.json` at the end of Phase 9 (success or partial).
 9. **Respect platform mode** -- Follow the same platform-only / dual-sync / local-only conventions as all other skills.

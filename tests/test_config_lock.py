@@ -41,7 +41,7 @@ def config_dir(tmp_path):
     """Provide a temporary directory with a sample config file."""
     config_path = tmp_path / "project-config.json"
     config_path.write_text(
-        json.dumps({"vector_memory": {"enabled": False}}, indent=2) + "\n",
+        json.dumps({"project_context": "sample context"}, indent=2) + "\n",
         encoding="utf-8",
     )
     return tmp_path
@@ -61,7 +61,7 @@ class TestLockedConfigRead:
 
     def test_read_existing_file(self, config_path):
         data = locked_config_read(config_path)
-        assert data == {"vector_memory": {"enabled": False}}
+        assert data == {"project_context": "sample context"}
 
     def test_read_nonexistent_file(self, tmp_path):
         data = locked_config_read(tmp_path / "nonexistent.json")
@@ -86,7 +86,7 @@ class TestLockedConfigWrite:
     """Tests for locked_config_write."""
 
     def test_write_new_data(self, config_path):
-        new_data = {"vector_memory": {"enabled": True}, "new_key": "value"}
+        new_data = {"project_context": "updated context", "new_key": "value"}
         result = locked_config_write(config_path, new_data)
         assert result is True
 
@@ -130,15 +130,15 @@ class TestLockedConfigUpdate:
     """Tests for locked_config_update."""
 
     def test_update_existing_key(self, config_path):
-        def enable_vm(cfg):
-            cfg["vector_memory"]["enabled"] = True
+        def update_context(cfg):
+            cfg["project_context"] = "updated context"
             return cfg
 
-        result = locked_config_update(config_path, enable_vm)
+        result = locked_config_update(config_path, update_context)
         assert result is True
 
         written = json.loads(config_path.read_text(encoding="utf-8"))
-        assert written["vector_memory"]["enabled"] is True
+        assert written["project_context"] == "updated context"
 
     def test_update_adds_new_key(self, config_path):
         def add_key(cfg):
@@ -151,7 +151,7 @@ class TestLockedConfigUpdate:
         written = json.loads(config_path.read_text(encoding="utf-8"))
         assert written["new_section"]["setting"] == 42
         # Original key should still be present
-        assert "vector_memory" in written
+        assert "project_context" in written
 
     def test_update_nonexistent_file_creates_it(self, tmp_path):
         config_path = tmp_path / "new-config.json"

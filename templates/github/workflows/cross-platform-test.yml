@@ -55,11 +55,6 @@ jobs:
         shell: bash
         run: ${{ steps.detect-python.outputs.cmd }} scripts/platform_utils.py
 
-      # ── app_manager.py check-ports ───────────────────────────────
-      - name: Smoke test — app_manager check-ports
-        shell: bash
-        run: ${{ steps.detect-python.outputs.cmd }} scripts/app_manager.py check-ports 3000 8080
-
       # ── skill_helper.py context ──────────────────────────────────
       - name: Smoke test — skill_helper context
         shell: bash

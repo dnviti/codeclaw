@@ -325,15 +325,7 @@ install_claude_code() {
     step "Setting up Claude Code plugin structure..."
     place_dir "$SCRIPT_DIR/.claude-plugin" "$TARGET_DIR/.claude-plugin"
 
-    # Install CLAUDE.md template if not present
-    if [ ! -f "$TARGET_DIR/CLAUDE.md" ]; then
-        if [ -f "$SCRIPT_DIR/templates/CLAUDE.md" ]; then
-            step "Installing CLAUDE.md template..."
-            place_file "$SCRIPT_DIR/templates/CLAUDE.md" "$TARGET_DIR/CLAUDE.md"
-        fi
-    else
-        info "CLAUDE.md already exists, skipping"
-    fi
+    # project-context.md is created by the setup skill when needed.
 }
 
 install_opencode() {

@@ -94,7 +94,7 @@ jobs:
             label=$(echo "$label" | xargs)  # trim whitespace
             if [ -n "$label" ]; then
               gh issue edit "$ISSUE_NUMBER" --add-label "$label" 2>/dev/null || \
-                echo "  Label '$label' not found — create it with setup_labels.py"
+                echo "  Label '$label' not found — create it in the repository UI"
             fi
           done
 
