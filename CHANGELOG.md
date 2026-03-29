@@ -7,6 +7,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.0.5] - 2026-03-29
+
+### Added
+- make CodeClaw platform-agnostic — remove CLAUDE.md coupling
+- add mandatory Agent Teams sections to all 9 skills
+- enforce CLAUDE.md as authoritative source of truth across all skills
+
+### Fixed
+- remove hardcoded isolation worktree from Agent Teams role tables
+
+## [4.0.4] - 2026-03-28
+
+### Added
+- Make CodeClaw platform-agnostic: remove CLAUDE.md coupling from all 9 skills
+- Add `load_config()` to common.py merging project-config.json with CLAUDE.md fallback
+- Add `skills.sh` as canonical platform-agnostic installer
+- Extract Agent Teams documentation to `docs/agent-teams.md`
+- Add `development_branch`, `staging_branch`, `production_branch` to project-config.example.json
+
+### Changed
+- Replace `${CLAUDE_PLUGIN_ROOT}` with `${CLAW_ROOT}` across all files
+- Replace "CLAUDE.md IS LAW" with "Project configuration is authoritative" in all skills
+- Remove mandatory Agent Teams sections from all 9 skills
+- Default install platform changed from claude-code to generic
+- Update skill_helper.py, release_manager.py, test_manager.py to use load_config()
+- Mark CLAUDE.md template as optional
+
+## [4.0.3] - 2026-03-25
+
+### Added
+- Comprehensive local code quality gate with auto stack detection (QLTY-0001)
+
+### Changed
+- Refactor project structure and enhance agent memory management
+- Consolidate shared utilities into `scripts/common.py`
+- Condense skill shorthand tables and yolo definition into CLAUDE.md
+
+## [4.0.2] - 2026-03-20
+
+### Added
+- enable worktrees by default with shared memory integration (VMEM-0052) (#224)
+- auto-create GPU env vars and retry before fallback to CPU (VMEM-0001) (#204)
+- log vector search query results to file (VMEM-0051) (#202)
+
+### Fixed
+- add cross-platform file locking for config writes (RPAT-0001) (#215)
+- add download timeout and integrity checks for model fetching (RPAT-0004) (#217)
+- add GPU path allowlist for config-loaded library paths (RPAT-0002) (#218)
+- validate and auto-download embedding model on config change (VMEM-0050) (#200)
+- use single release branch when worktrees disabled (BRNCH-0001) (#188)
+- detect silent GPU-to-CPU fallback and auto-configure paths (FIX-0047) (#189)
+- worktree-aware root resolution for memory subsystem (VMEM-0002) (#191)
+- enforce singleton release state issue and prevent duplicates (FIX-0048) (#187)
+- disable agent worktree isolation when project worktrees are disabled (FIX-0049) (#192)
+
+### Security
+- add search log security controls and privacy documentation (RPAT-0003) (#216)
 ## [4.0.1] - 2026-03-19
 
 ### Added
