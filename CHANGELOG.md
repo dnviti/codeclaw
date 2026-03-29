@@ -16,7 +16,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - remove hardcoded isolation worktree from Agent Teams role tables
-
 ## [4.0.4] - 2026-03-28
 
 ### Added
