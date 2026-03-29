@@ -395,22 +395,45 @@ class SQLiteLockBackend(LockBackend):
 
     def _initialize_db(self):
         """Create the lock table if it doesn't exist."""
-        # Permissions: standard umask applies; for shared environments, configure umask externally
-        conn = sqlite3.connect(str(self._db_path), timeout=5)
-        # WAL permissions: acceptable for single-user CLI; document umask configuration for shared deployments
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS lock_holders (
-                id INTEGER PRIMARY KEY CHECK (id = 1),
-                agent_id TEXT NOT NULL,
-                session_id TEXT NOT NULL DEFAULT '',
-                pid INTEGER NOT NULL,
-                acquired_at REAL NOT NULL,
-                acquired_iso TEXT NOT NULL
-            )
-        """)
-        conn.commit()
-        conn.close()
+        # SQLite schema setup may race with other processes/threads. Retry a
+        # few times to avoid transient ``database is locked`` failures.
+        attempts = 5
+
+        for attempt in range(attempts):
+            conn = None
+            try:
+                # Permissions: standard umask applies; for shared environments,
+                # configure umask externally
+                conn = sqlite3.connect(str(self._db_path), timeout=5)
+                # WAL permissions: acceptable for single-user CLI; document umask
+                # configuration for shared deployments
+                conn.execute("PRAGMA journal_mode=WAL")
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS lock_holders (
+                        id INTEGER PRIMARY KEY CHECK (id = 1),
+                        agent_id TEXT NOT NULL,
+                        session_id TEXT NOT NULL DEFAULT '',
+                        pid INTEGER NOT NULL,
+                        acquired_at REAL NOT NULL,
+                        acquired_iso TEXT NOT NULL
+                    )
+                """)
+                conn.commit()
+                return
+            except sqlite3.OperationalError as exc:
+                if conn is not None:
+                    try:
+                        conn.close()
+                    except Exception:
+                        pass
+                    conn = None
+                if "database is locked" in str(exc).lower() and attempt < attempts - 1:
+                    time.sleep((attempt + 1) * 0.05)
+                    continue
+                raise
+            finally:
+                if conn is not None:
+                    conn.close()
 
     def acquire(self, exclusive: bool = True, timeout: float = DEFAULT_TIMEOUT) -> bool:
         """Acquire the SQLite lock via BEGIN EXCLUSIVE transaction."""
@@ -453,6 +476,11 @@ class SQLiteLockBackend(LockBackend):
                 return True
 
             except sqlite3.OperationalError:
+                if conn is not None:
+                    try:
+                        conn.close()
+                    except Exception:
+                        pass
                 elapsed = time.monotonic() - start
 
                 if elapsed > DEADLOCK_THRESHOLD and not deadlock_warned:
