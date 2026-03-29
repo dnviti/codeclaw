@@ -58,22 +58,7 @@ SECTION_HEADER_RE = re.compile(r"^\s+SECTION\s+([A-Z])\s+—\s+(.+)$")
 
 # ── Project Root Detection ──────────────────────────────────────────────────
 
-from common import find_project_root, get_main_repo_root, load_project_config
-
-def is_in_worktree() -> bool:
-    """Return True if CWD is inside a git worktree (not the main repo)."""
-    try:
-        common = subprocess.run(
-            ["git", "rev-parse", "--git-common-dir"],
-            capture_output=True, text=True, check=True,
-        ).stdout.strip()
-        git_dir = subprocess.run(
-            ["git", "rev-parse", "--git-dir"],
-            capture_output=True, text=True, check=True,
-        ).stdout.strip()
-        return Path(common).resolve() != Path(git_dir).resolve()
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        return False
+from common import get_main_repo_root, load_project_config
 
 
 # Frontend file extensions and directory patterns that indicate a frontend task
@@ -417,75 +402,6 @@ def find_section_range(filepath: Path, section_letter: str) -> tuple[int, int] |
     content_start = target["line_number"] + 3  # skip =, title, =
     return (content_start, next_section_line)
 
-# ── Subcommand: worktree-info ──────────────────────────────────────────────
-
-def cmd_worktree_info(args):
-    """Return worktree detection and listing as JSON."""
-    in_wt = is_in_worktree()
-    main_root = get_main_repo_root()
-    wt_root = find_project_root()
-
-    # Current branch
-    try:
-        branch = subprocess.run(
-            ["git", "branch", "--show-current"],
-            capture_output=True, text=True, check=True,
-        ).stdout.strip()
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        branch = ""
-
-    # Extract task code from branch name (e.g. task/auth-0001 → AUTH-0001)
-    task_code = ""
-    if branch.startswith("task/"):
-        suffix = branch[5:]  # e.g. "auth-0001"
-        m = TASK_CODE_RE.search(suffix.upper())
-        if m:
-            task_code = suffix.upper()
-
-    # List all worktrees
-    worktrees = []
-    try:
-        result = subprocess.run(
-            ["git", "worktree", "list", "--porcelain"],
-            capture_output=True, text=True, check=True,
-            cwd=str(main_root),
-        )
-        current_wt = {}
-        for line in result.stdout.splitlines():
-            if line.startswith("worktree "):
-                if current_wt:
-                    worktrees.append(current_wt)
-                current_wt = {"path": line[9:]}
-            elif line.startswith("branch refs/heads/"):
-                br = line[18:]
-                current_wt["branch"] = br
-                # Extract task code from branch
-                if br.startswith("task/"):
-                    suffix_upper = br[5:].upper()
-                    m2 = TASK_CODE_RE.search(suffix_upper)
-                    if m2:
-                        current_wt["task_code"] = suffix_upper
-        if current_wt:
-            worktrees.append(current_wt)
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        pass
-
-    # Filter to only .worktrees/ entries (not the main repo itself)
-    wt_entries = [
-        w for w in worktrees
-        if ".worktrees" in w.get("path", "")
-    ]
-
-    result = {
-        "in_worktree": in_wt,
-        "worktree_root": str(wt_root) if in_wt else str(main_root),
-        "main_root": str(main_root),
-        "current_branch": branch,
-        "task_code": task_code,
-        "worktrees": wt_entries,
-    }
-    print(json.dumps(result, indent=2))
-
 # ── Subcommand: platform-config ────────────────────────────────────────────
 
 def cmd_platform_config(args):
@@ -773,7 +689,7 @@ def cmd_duplicates(args):
 
 def cmd_verify_files(args):
     main_root = get_main_repo_root()
-    source_root = find_project_root()  # worktree root for source file checks
+    source_root = get_main_repo_root()
     code = args.code.upper()
 
     block, fname = find_block_in_all(main_root, code, TASK_FILES)
@@ -1471,7 +1387,7 @@ def cmd_hook(args):
 
 def cmd_find_files(args):
     """Cross-platform file search using pathlib glob."""
-    root = find_project_root()  # use worktree root for source code search
+    root = get_main_repo_root()
     patterns = [p.strip() for p in args.patterns.split(",") if p.strip()]
     results = []
 
@@ -2245,209 +2161,6 @@ def cmd_create_patch_task(args):
         "title": args.title,
     }))
 
-# ── Subcommand: remove-worktree ───────────────────────────────────────────
-
-def _is_worktree_enabled_tm(root: Path) -> bool:
-    """Check whether worktree-based task isolation is enabled in project config.
-
-    Mirror of skill_helper._is_worktree_enabled for use in task_manager.
-    """
-    for cfg_name in [
-        root / ".claude" / "project-config.json",
-        root / "config" / "project-config.json",
-    ]:
-        if cfg_name.exists():
-            try:
-                data = json.loads(cfg_name.read_text(encoding="utf-8"))
-                return bool(data.get("worktrees", {}).get("enabled", False))
-            except (json.JSONDecodeError, OSError):
-                pass
-    return False
-
-
-def _is_shared_release_branch(branch_name: str) -> bool:
-    """Return True if the branch follows the shared release/<version> pattern.
-
-    Note: Since v4.0.3, worktree-disabled mode uses dedicated task/<code>
-    branches instead of shared release branches.  This helper is kept for
-    backward compatibility with older release branches that may still exist.
-    """
-    return bool(re.match(r"^release/\d+\.\d+\.\d+$", branch_name))
-
-
-def cmd_remove_worktree(args):
-    """Remove a task worktree and optionally its branch."""
-    main_root = get_main_repo_root()
-    code_lower = args.task_code.lower()
-    wt_path = os.path.join(str(main_root), ".worktrees", "task", code_lower)
-    branch_name = f"task/{code_lower}"
-
-    worktree_removed = False
-    branch_removed = False
-    merged_to_develop = False
-    merge_warning = ""
-    shared_release_branch = False
-
-    # Must run from main_root (can't be inside the worktree being removed)
-    cwd = str(main_root)
-
-    # When worktrees are disabled, tasks use dedicated task/<code> branches
-    # (same naming as worktree mode). No worktree directory to remove, but
-    # the branch merge and PR preservation logic still applies.
-    # Legacy: if a shared release/<version> branch is detected, preserve it.
-    if not _is_worktree_enabled_tm(main_root):
-        try:
-            current_branch_result = subprocess.run(
-                ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-                capture_output=True, text=True, check=True, cwd=cwd,
-                timeout=DEFAULT_GIT_TIMEOUT_SECONDS,
-            )
-            current = current_branch_result.stdout.strip()
-            if _is_shared_release_branch(current):
-                shared_release_branch = True
-                branch_name = current
-        except (subprocess.CalledProcessError, FileNotFoundError):
-            pass
-
-        if shared_release_branch:
-            # Legacy: shared release branch — preserve it.
-            result = {
-                "success": True,
-                "worktree_removed": False,
-                "branch_removed": False,
-                "merged_to_develop": False,
-                "shared_release_branch": True,
-                "branch_preserved": branch_name,
-                "path": wt_path,
-            }
-            print(json.dumps(result))
-            return
-
-    # Merge task branch into development branch before removing worktree
-    no_merge = getattr(args, "no_merge_to_develop", False)
-    if not no_merge:
-        # Detect development branch: project config release_branch → fallback "develop"
-        proj_cfg = load_project_config()
-        dev_branch = proj_cfg.get("release_branch", "").strip() or "develop"
-
-        # Guard: reject branch names that look like flags (e.g. "--something")
-        if dev_branch.startswith("-"):
-            print(
-                f"Warning: skipping merge — dev_branch value {dev_branch!r} looks invalid",
-                file=sys.stderr,
-            )
-        else:
-            # Verify task branch exists before attempting merge
-            branch_check = subprocess.run(
-                ["git", "branch", "--list", branch_name],
-                capture_output=True, text=True, cwd=cwd, timeout=DEFAULT_GIT_TIMEOUT_SECONDS,
-            )
-            branch_exists = bool(branch_check.stdout.strip())
-
-            if branch_exists:
-                try:
-                    # Detect current branch
-                    current_branch_result = subprocess.run(
-                        ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-                        capture_output=True, text=True, check=True, cwd=cwd, timeout=DEFAULT_GIT_TIMEOUT_SECONDS,
-                    )
-                    original_branch = current_branch_result.stdout.strip()
-                    need_switch = original_branch != dev_branch
-
-                    stashed = False
-                    if need_switch:
-                        # Stash dirty state if needed (includes untracked files)
-                        status_result = subprocess.run(
-                            ["git", "status", "--porcelain"],
-                            capture_output=True, text=True, cwd=cwd, timeout=DEFAULT_GIT_TIMEOUT_SECONDS,
-                        )
-                        if status_result.stdout.strip():
-                            subprocess.run(
-                                ["git", "stash", "--include-untracked"],
-                                capture_output=True, text=True, check=True, cwd=cwd, timeout=DEFAULT_GIT_TIMEOUT_SECONDS,
-                            )
-                            stashed = True
-                        subprocess.run(
-                            ["git", "checkout", dev_branch],
-                            capture_output=True, text=True, check=True, cwd=cwd, timeout=DEFAULT_GIT_TIMEOUT_SECONDS,
-                        )
-
-                    # Perform the merge
-                    merge_result = subprocess.run(
-                        ["git", "merge", "--no-ff", branch_name,
-                         "-m", f"chore: merge {branch_name} into {dev_branch} (local)"],
-                        capture_output=True, text=True, cwd=cwd, timeout=DEFAULT_GIT_TIMEOUT_SECONDS,
-                    )
-
-                    if merge_result.returncode == 0:
-                        merged_to_develop = True
-                    else:
-                        merge_warning = merge_result.stderr.strip() or merge_result.stdout.strip()
-                        # Abort failed merge to leave repo in clean state
-                        subprocess.run(
-                            ["git", "merge", "--abort"],
-                            capture_output=True, text=True, cwd=cwd, timeout=DEFAULT_GIT_TIMEOUT_SECONDS,
-                        )
-                        print(f"Warning: could not merge {branch_name} into {dev_branch}: {merge_warning}",
-                              file=sys.stderr)
-
-                    # Restore original branch and stash
-                    if need_switch:
-                        subprocess.run(
-                            ["git", "checkout", original_branch],
-                            capture_output=True, text=True, cwd=cwd, timeout=DEFAULT_GIT_TIMEOUT_SECONDS,
-                        )
-                        if stashed:
-                            pop_result = subprocess.run(
-                                ["git", "stash", "pop"],
-                                capture_output=True, text=True, cwd=cwd, timeout=DEFAULT_GIT_TIMEOUT_SECONDS,
-                            )
-                            if pop_result.returncode != 0:
-                                pop_err = pop_result.stderr.strip() or pop_result.stdout.strip()
-                                print(f"Warning: stash pop failed: {pop_err}", file=sys.stderr)
-                except (subprocess.CalledProcessError, FileNotFoundError) as exc:
-                    merge_warning = str(exc)
-                    print(f"Warning: merge step failed: {merge_warning}", file=sys.stderr)
-
-    # Try normal remove first, then force
-    try:
-        subprocess.run(
-            ["git", "worktree", "remove", wt_path],
-            capture_output=True, text=True, check=True, cwd=cwd,
-        )
-        worktree_removed = True
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        try:
-            subprocess.run(
-                ["git", "worktree", "remove", "--force", wt_path],
-                capture_output=True, text=True, check=True, cwd=cwd,
-            )
-            worktree_removed = True
-        except (subprocess.CalledProcessError, FileNotFoundError):
-            pass
-
-    # Optionally remove the branch
-    if args.remove_branch:
-        try:
-            subprocess.run(
-                ["git", "branch", "-D", branch_name],
-                capture_output=True, text=True, check=True, cwd=cwd,
-            )
-            branch_removed = True
-        except (subprocess.CalledProcessError, FileNotFoundError):
-            pass
-
-    result = {
-        "success": True,
-        "worktree_removed": worktree_removed,
-        "branch_removed": branch_removed,
-        "merged_to_develop": merged_to_develop,
-        "path": wt_path,
-    }
-    if merge_warning:
-        result["merge_warning"] = merge_warning
-    print(json.dumps(result))
-
 # ── Subcommand: register-agent ─────────────────────────────────────────────
 
 def cmd_register_agent(args):
@@ -2537,10 +2250,6 @@ def build_parser() -> argparse.ArgumentParser:
         description="Task and idea manager CLI for codeclaw",
     )
     sub = parser.add_subparsers(dest="command", required=True)
-
-    # worktree-info
-    p = sub.add_parser("worktree-info", help="Return worktree detection and listing")
-    p.set_defaults(func=cmd_worktree_info)
 
     # platform-config
     p = sub.add_parser("platform-config", help="Return platform tracker configuration")
@@ -2690,15 +2399,6 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--source", required=True,
                     help="Source stage (e.g., code-optimize, security, test, merge-conflict)")
     p.set_defaults(func=cmd_create_patch_task)
-
-    # remove-worktree
-    p = sub.add_parser("remove-worktree", help="Remove a task worktree and optionally its branch")
-    p.add_argument("--task-code", required=True, help="Task code (e.g., AUTH-0001)")
-    p.add_argument("--remove-branch", action="store_true", default=False,
-                    help="Also delete the task branch")
-    p.add_argument("--no-merge-to-develop", action="store_true", default=False,
-                    help="Skip merging the task branch into the development branch before removal")
-    p.set_defaults(func=cmd_remove_worktree)
 
     # register-agent
     p = sub.add_parser("register-agent",

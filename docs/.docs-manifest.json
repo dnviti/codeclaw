@@ -141,10 +141,6 @@
           "path": "tests/test_search_log_security.py",
           "hash": ""
         },
-        {
-          "path": "tests/test_worktree_memory.py",
-          "hash": ""
-        }
       ],
       "generated_at": "2026-03-20T00:33:58.665126Z"
     },

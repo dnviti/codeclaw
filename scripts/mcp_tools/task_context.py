@@ -15,7 +15,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from mcp_tools import SCRIPTS_DIR as _SCRIPT_DIR, resolve_main_repo_root
+from mcp_tools import SCRIPTS_DIR as _SCRIPT_DIR
 
 TASK_CODE_RE = re.compile(r"^[A-Z]{3,5}-\d{4}$")
 SEPARATOR = "-" * 78
@@ -24,23 +24,13 @@ STATUS_MAP = {"[ ]": "todo", "[~]": "progressing", "[x]": "done", "[!]": "blocke
 
 
 def _find_project_root(root_hint: str) -> Path:
-    """Resolve project root, following git worktrees to the main repo.
-
-    Delegates to the shared ``resolve_main_repo_root`` helper and falls
-    back to a directory-walk when git is unavailable.
-    """
-    resolved = resolve_main_repo_root(root_hint)
-    # If the shared helper already found a repo root, return it
-    if (resolved / ".claude").is_dir() or (resolved / ".git").exists():
-        return resolved
-
-    # Fallback: walk up from the hint directory
+    """Resolve project root by walking up from the hint directory."""
     p = Path(root_hint).resolve()
     while p != p.parent:
         if (p / ".claude").is_dir() or (p / ".git").exists():
             return p
         p = p.parent
-    return resolved
+    return Path(root_hint).resolve()
 
 
 def _parse_task_from_files(root: Path, task_id: str) -> dict | None:

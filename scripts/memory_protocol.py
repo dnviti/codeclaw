@@ -34,29 +34,11 @@ if str(_SCRIPT_DIR) not in sys.path:
 
 # ── Constants ────────────────────────────────────────────────────────────────
 
-# Relative paths — callers must resolve against the *main* repository root
-# (not a worktree root) via get_main_repo_root() or _find_project_root()
-# so that sessions and conflicts are shared across all worktrees.
+# Relative paths — callers must resolve against the project repository root.
 DEFAULT_SESSIONS_DIR = ".claude/memory/sessions"
 DEFAULT_CONFLICTS_DIR = ".claude/memory/conflicts"
 
 AGENT_TYPES = ("task", "scout", "release", "docs", "pr-analysis", "monitor")
-
-
-def _resolve_worktree_root(root: Path) -> Path:
-    """Resolve root through git worktrees to the main repository.
-
-    Delegates to ``mcp_tools.resolve_main_repo_root()`` — the single
-    canonical implementation — so that bug fixes and enhancements only
-    need to be applied in one place.
-
-    Falls back to ``Path(root).resolve()`` when the import is unavailable.
-    """
-    try:
-        from mcp_tools import resolve_main_repo_root
-        return resolve_main_repo_root(str(root))
-    except ImportError:
-        return Path(root).resolve()
 
 
 ENTRY_CATEGORIES = ("factual", "additive", "opinion")
@@ -156,7 +138,7 @@ class SessionRegistry:
     """
 
     def __init__(self, root: Path):
-        root = _resolve_worktree_root(root)
+        root = Path(root).resolve()
         self.sessions_dir = root / DEFAULT_SESSIONS_DIR
         self.sessions_dir.mkdir(parents=True, exist_ok=True)
 
@@ -358,7 +340,7 @@ class ConflictResolver:
     """
 
     def __init__(self, root: Path):
-        self.root = _resolve_worktree_root(root)
+        self.root = Path(root).resolve()
         self.conflicts_dir = self.root / DEFAULT_CONFLICTS_DIR
         self.conflicts_dir.mkdir(parents=True, exist_ok=True)
 
@@ -626,7 +608,7 @@ class MemoryProtocol:
     """
 
     def __init__(self, root: Path, lock_backend: Optional[dict] = None):
-        self.root = _resolve_worktree_root(root)
+        self.root = Path(root).resolve()
         self.registry = SessionRegistry(self.root)
         self.resolver = ConflictResolver(self.root)
         self.lock_backend_config = lock_backend or {}

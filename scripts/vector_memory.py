@@ -142,34 +142,11 @@ def _get_cached_provider(emb_config: dict):
 # ── Configuration ────────────────────────────────────────────────────────────
 
 def _find_project_root() -> Path:
-    """Find project root, resolving through git worktrees to the main repo.
+    """Find project root by looking for .claude/ or .git/ markers.
 
-    Uses a single ``git rev-parse --git-common-dir --git-dir`` call to detect
-    if the current working directory is inside a worktree.  When it is, the
-    main repository root is returned so that vector memory storage is shared
-    across all worktrees instead of being isolated per-worktree.
-
-    Falls back to the legacy directory-walk approach when git is unavailable.
+    Walks up from the current working directory until a project root marker
+    is found.  Falls back to cwd if no marker is found.
     """
-    import subprocess as _sp
-    try:
-        result = _sp.run(
-            ["git", "rev-parse", "--git-common-dir", "--git-dir"],
-            capture_output=True, text=True, check=True,
-        )
-        lines = result.stdout.strip().splitlines()
-        if len(lines) >= 2:
-            common_path = Path(lines[0]).resolve()
-            git_dir_path = Path(lines[1]).resolve()
-            if common_path != git_dir_path:
-                # Inside a worktree — common dir is <main-repo>/.git
-                return common_path.parent
-            # Not a worktree — git dir is <repo>/.git, return its parent
-            return git_dir_path.parent
-    except (FileNotFoundError, _sp.CalledProcessError):
-        pass
-
-    # Fallback: walk up directories looking for .claude/ or .git/
     d = Path.cwd()
     while d != d.parent:
         if (d / ".claude").is_dir() or (d / ".git").exists():
@@ -1831,13 +1808,6 @@ Examples:
     vm.add_argument("--model", default=None,
                     help="Model name to validate (default: from config)")
 
-    # ── verify-worktree-sharing ──
-    vws = sub.add_parser("verify-worktree-sharing",
-                         help="Verify vector memory is shared across worktrees")
-    vws.add_argument("--root", default=".", help="Project root directory")
-    vws.add_argument("--json", dest="json_output", action="store_true",
-                     help="Output as JSON")
-
     # ── hook (internal) ──
     hk = sub.add_parser("hook", help="Internal: incremental update hook")
     hk.add_argument("file_path", help="Path to the changed file")
@@ -1866,117 +1836,8 @@ Examples:
         cmd_conflicts(args)
     elif args.command == "validate-model":
         cmd_validate_model(args)
-    elif args.command == "verify-worktree-sharing":
-        cmd_verify_worktree_sharing(args)
     elif args.command == "hook":
         hook_file_changed(args.file_path)
-
-
-def cmd_verify_worktree_sharing(args):
-    """Verify that vector memory resolves to a shared location across worktrees."""
-    import subprocess as _sp
-
-    root = Path(args.root).resolve()
-    if not (root / ".git").exists() and not (root / ".git").is_file():
-        print(f"Warning: {root} does not appear to be a git repository", file=sys.stderr)
-    main_root = _find_project_root()
-    config = load_config(main_root)
-    index_path = main_root / config.get("index_path", ".claude/memory/vectors")
-    worktree_shared = config.get("worktree_shared", True)
-
-    # Check current environment
-    try:
-        result = _sp.run(
-            ["git", "rev-parse", "--git-common-dir", "--git-dir"],
-            capture_output=True, text=True, check=True,
-            cwd=str(root),
-        )
-        lines = result.stdout.strip().splitlines()
-        common = Path(lines[0]).resolve() if len(lines) >= 1 else None
-        git_dir = Path(lines[1]).resolve() if len(lines) >= 2 else None
-        in_worktree = common is not None and git_dir is not None and common != git_dir
-    except (_sp.CalledProcessError, FileNotFoundError):
-        in_worktree = False
-        common = None
-        git_dir = None
-
-    # List all worktrees
-    worktrees = []
-    try:
-        wt_result = _sp.run(
-            ["git", "worktree", "list", "--porcelain"],
-            capture_output=True, text=True, check=True,
-            cwd=str(main_root),
-        )
-        current = {}
-        for line in wt_result.stdout.splitlines():
-            if line.startswith("worktree "):
-                current = {"path": line.split(" ", 1)[1]}
-            elif line.startswith("branch "):
-                current["branch"] = line.split(" ", 1)[1]
-            elif line == "":
-                if current:
-                    worktrees.append(current)
-                current = {}
-        if current:
-            worktrees.append(current)
-    except (_sp.CalledProcessError, FileNotFoundError):
-        pass
-
-    report = {
-        "main_root": str(main_root),
-        "current_dir": str(root),
-        "in_worktree": in_worktree,
-        "worktree_shared_config": worktree_shared,
-        "index_path": str(index_path),
-        "index_exists": index_path.exists(),
-        "worktree_count": len(worktrees),
-        "all_share_memory": True,
-        "worktrees": [],
-    }
-
-    for wt in worktrees:
-        wt_path = Path(wt["path"])
-        # Check if this worktree would resolve to the main repo's memory
-        try:
-            r = _sp.run(
-                ["git", "rev-parse", "--git-common-dir"],
-                capture_output=True, text=True, check=True,
-                cwd=wt["path"],
-            )
-            resolved = Path(r.stdout.strip()).resolve().parent
-            shares = resolved == main_root.resolve()
-        except (_sp.CalledProcessError, FileNotFoundError, OSError):
-            shares = wt_path.resolve() == main_root.resolve()
-
-        # Check if worktree has a LOCAL memory dir (bad — should use shared)
-        local_mem = wt_path / ".claude" / "memory" / "vectors"
-        has_local = local_mem.exists() and wt_path.resolve() != main_root.resolve()
-
-        report["worktrees"].append({
-            "path": str(wt_path),
-            "branch": wt.get("branch", "unknown"),
-            "shares_memory": shares,
-            "has_local_memory": has_local,
-        })
-        if not shares or has_local:
-            report["all_share_memory"] = False
-
-    if getattr(args, "json_output", False):
-        print(json.dumps(report, indent=2))
-    else:
-        status = "PASS" if report["all_share_memory"] else "WARN"
-        print(f"Worktree Memory Sharing: {status}")
-        print(f"  Main root: {report['main_root']}")
-        print(f"  Index path: {report['index_path']} ({'exists' if report['index_exists'] else 'missing'})")
-        print(f"  Config worktree_shared: {report['worktree_shared_config']}")
-        print(f"  Worktrees: {report['worktree_count']}")
-        if report["worktrees"]:
-            for wt in report["worktrees"]:
-                flag = "OK" if wt["shares_memory"] and not wt["has_local_memory"] else "WARN"
-                print(f"    [{flag}] {wt['branch']} — {wt['path']}")
-                if wt["has_local_memory"]:
-                    print(f"         WARNING: has local memory dir (should use shared)")
 
 
 if __name__ == "__main__":
