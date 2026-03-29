@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.0.5] - 2026-03-29
+
+### Added
+- make CodeClaw platform-agnostic — remove CLAUDE.md coupling
+- add mandatory Agent Teams sections to all 9 skills
+- enforce CLAUDE.md as authoritative source of truth across all skills
+
+### Fixed
+- remove hardcoded isolation worktree from Agent Teams role tables
 ## [4.0.4] - 2026-03-28
 
 ### Added
@@ -54,7 +63,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 - add search log security controls and privacy documentation (RPAT-0003) (#216)
-
 ## [4.0.1] - 2026-03-19
 
 ### Added

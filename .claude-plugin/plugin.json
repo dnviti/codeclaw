@@ -1,6 +1,6 @@
 {
   "name": "claw",
-  "version": "4.0.4",
+  "version": "4.0.5",
   "description": "Project-agnostic task and release management framework with 8 streamlined skills: /task, /idea, /release, /docs, /setup, /update, /tests, /help. Features a gated release pipeline with automatic subagent orchestration.",
   "author": {
     "name": "dnviti"
