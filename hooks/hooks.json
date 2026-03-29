@@ -29,10 +29,6 @@
           {
             "type": "command",
             "command": "python3 ${CLAW_ROOT:-${CLAUDE_PLUGIN_ROOT}}/scripts/task_manager.py hook \"$CLAUDE_FILE_PATH\""
-          },
-          {
-            "type": "command",
-            "command": "python3 ${CLAW_ROOT:-${CLAUDE_PLUGIN_ROOT}}/scripts/vector_memory.py hook \"$CLAUDE_FILE_PATH\""
           }
         ]
       }

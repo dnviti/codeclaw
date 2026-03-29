@@ -7,7 +7,7 @@ source-files:
   - README.md
   - .claude-plugin/plugin.json
   - .claude-plugin/marketplace.json
-  - CLAUDE.md
+  - AGENTS.md
   - config/project-config.example.json
   - config/ollama-config.example.json
   - config/issues-tracker.example.json
@@ -27,11 +27,6 @@ This guide walks you through installing CodeClaw, setting up your first project,
 | `gh` CLI (optional) | GitHub Issues integration, PR management, and branch protection setup |
 | `glab` CLI (optional) | GitLab Issues integration |
 | [Ollama](https://ollama.ai) (optional) | Local model integration for tool call offloading |
-
-**Optional: Vector memory dependencies (for semantic search and MCP):**
-```bash
-pip install lancedb onnxruntime tokenizers numpy pyarrow mcp
-```
 
 ## Installation
 
@@ -67,15 +62,15 @@ This creates:
 - **Task files** — `to-do.txt`, `progressing.txt`, `done.txt`
 - **Idea files** — `ideas.txt`, `idea-disapproved.txt`
 - **Branch strategy** — Configures `develop`, `staging`, `main` branches
-- **CLAUDE.md** — Adds framework guidance with project-specific variables
-- **`.claude/project-config.json`** — Project configuration including vector memory and social announce settings
+- **Project context** — Adds framework guidance with project-specific variables in `project-context.md`
+- **AGENTS.md** — Adds persistent project memory for all agents
+- **`.claude/project-config.json`** — Project configuration including social announce settings
 
 The setup wizard guides you through:
 1. Project name and context
 2. Branch strategy configuration
-3. Vector memory setup (enables semantic search via MCP)
-4. Social media announcement configuration (for release announcements)
-5. Ollama local model integration (optional)
+3. Social media announcement configuration (for release announcements)
+4. Ollama local model integration (optional)
 
 ### 2. Configure Issues Integration (Optional)
 
@@ -113,17 +108,12 @@ cp <plugin-dir>/config/ollama-config.example.json .claude/ollama-config.json
 # Set "enabled": true and configure offloading.level (0-10)
 ```
 
-### 4. Set Up Branch Protection (Optional)
+### 4. Optional Repository Hardening
 
-```bash
-python3 scripts/setup_protection.py --branch main --required-reviews 1
-```
+Configure branch protection and labels directly in GitHub/GitLab if you want them. CodeClaw no longer ships dedicated helper scripts for these one-off settings.
 
-### 5. Create Platform Labels (Optional)
-
-```bash
-python3 scripts/setup_labels.py
-```
+- Protect `main` with required reviews and status checks when using platform sync.
+- Create any labels you need from the repository UI.
 
 ## Your First Workflow
 
@@ -179,16 +169,16 @@ After implementing the task, confirm completion via the `/task pick` gate to:
 /release continue 1.0.0
 ```
 
-The 9-stage release pipeline runs:
+ The 9-stage release pipeline runs:
 1. Create release branch
 2. Verify all tasks are complete
 3. Fetch open PRs
-4. Analyze each PR with parallel sub-agents (optimize, security scan, fix, merge)
+4. Review each PR sequentially (optimize, security scan, fix, merge)
 5. Merge to staging + local build gate + staging tag
 6. Run integration tests
-7. Merge to main + version bump + tag + CI monitoring + docs sync
+7. Merge to main + version bump + tag + CI check + docs sync
 8. Users testing
-9. Cleanup (close milestone, clear state, GC vector memory)
+9. Cleanup (close milestone, clear state)
 
 ## Quick Reference
 
@@ -218,6 +208,6 @@ Yolo mode never auto-confirms destructive operations (e.g., `/docs reset`) or "A
 
 ## Next Steps
 
-- Read [Configuration](configuration.md) for detailed settings including Ollama, vector memory, and social announce
+- Read [Configuration](configuration.md) for detailed settings including Ollama and social announce
 - Read [Architecture](architecture.md) for system design details including the PreToolUse hook and release state sync
 - Read [Development](development.md) for contributing guidelines

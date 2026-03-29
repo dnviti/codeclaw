@@ -10,7 +10,7 @@ The archive contains:
   - Configuration templates (config/)
   - Bootstrap installers (install.sh, install.ps1)
   - manifest.json with version, file list, and checksums
-  - CLAUDE.md template, .claude-plugin metadata
+  - AGENTS.md / project-context.md guidance, .claude-plugin metadata
   - docs/ directory for reference
 
 Usage:

@@ -264,9 +264,9 @@ def generate_report(manifest: dict) -> str:
     """Generate a human-readable Markdown coverage report from a manifest.
 
     If the manifest contains a ``semantic_risks`` section (populated by
-    semantic gap analysis), it is included as an additional section in the
-    report highlighting high-risk untested code paths discovered via vector
-    memory semantic search.
+    heuristic semantic gap analysis), it is included as an additional section
+    in the report highlighting high-risk untested code paths discovered via
+    local code-pattern matching.
     """
     lines: list[str] = []
     summary = manifest.get("summary", {})
@@ -300,12 +300,12 @@ def generate_report(manifest: dict) -> str:
             )
         lines.append("")
 
-    # Semantic risks section (from vector memory gap analysis)
+    # Semantic risks section (from heuristic semantic gap analysis)
     semantic_risks = manifest.get("semantic_risks", [])
     if semantic_risks:
         lines.append("## Semantic Risk Analysis\n")
         lines.append(
-            "> High-risk untested code paths discovered via semantic search. "
+            "> High-risk untested code paths discovered via local semantic heuristics. "
             "These are source code sections matching critical patterns "
             "(validation, auth, error handling, etc.) that have no "
             "corresponding test file.\n"

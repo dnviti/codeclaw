@@ -43,20 +43,17 @@ def _get_social_config() -> dict[str, Any]:
 
 
 def _load_project_description() -> str:
-    """Load project description from CLAUDE.md or project-config.json."""
+    """Load project description from project config or project-context.md."""
     root = get_main_repo_root()
-    # Try project_context from config
     config = load_project_config()
     desc = config.get("project_context", "")
     if desc:
         return desc
 
-    # Try CLAUDE.md
-    claude_md = root / "CLAUDE.md"
-    if claude_md.exists():
+    context_md = root / "project-context.md"
+    if context_md.exists():
         try:
-            text = claude_md.read_text(encoding="utf-8")
-            # Extract first paragraph after first heading
+            text = context_md.read_text(encoding="utf-8")
             lines = text.split("\n")
             in_content = False
             paragraphs = []

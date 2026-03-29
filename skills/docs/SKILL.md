@@ -139,16 +139,10 @@ GATE: "Proceed with documentation generation" / "Adjust scope" / "Cancel"
 - `configuration.md` ← config files, .env examples, environment schemas
 - `api-reference.md` ← route, controller, handler, API client files
 - `deployment.md` ← CI/CD configs, Dockerfiles, infra files, scripts
-- `development.md` ← test files, lint configs, CLAUDE.md, CONTRIBUTING.md
+- `development.md` ← test files, lint configs, AGENTS.md, CONTRIBUTING.md
 - `troubleshooting.md` ← error handling code, logging, health check files
 
-After role classification, perform semantic discovery for each section to find cross-cutting source files (logging, error handling, middleware, utilities) that don't fit a single role but are essential to the documentation:
-
-```bash
-DM semantic-discover --section <section_name> --top-k 10
-```
-
-Parse `discovered_files` from the result and read those files alongside the role-classified ones. These are files semantically related to the section's topic that the static role classification missed.
+Use only the role-classified source files returned by `DM discover` when assembling each section. The docs workflow is now manifest-driven and does not perform semantic re-indexing.
 
 **5b. Write the section** following [Documentation Standards](#documentation-standards) and the `visual_richness_level` selected in Step 2.5.
 
@@ -168,18 +162,10 @@ All tiers include:
 - Concrete code examples, exact file paths, real command names
 - Write each file to `docs/<section>.md` using the Write tool
 
-**5b-bis. Re-index documentation** — after writing all sections, trigger incremental re-indexing so the vector index includes the latest documentation content:
-
-```bash
-DM reindex-docs
-```
-
-This ensures that subsequent `/docs sync` runs and release pipeline GC (Stage 9d-bis) operate on an up-to-date index.
-
-**5c. Track source files** — record which source files contributed to each section for the manifest. Include both role-classified and semantically discovered sources.
+**5b. Track source files** — record which source files contributed to each section for the manifest.
 
 **6.** Generate `index.md`:
-- Project title and description (from README/CLAUDE.md)
+- Project title and description (from README/AGENTS.md)
 - Table of contents linking all sections
 - Quick-start commands
 - Technology stack summary
@@ -231,15 +217,7 @@ DM diff-since-tag --tag <latest_tag>
 
 Use `affected_sections` to supplement staleness data.
 
-**2c.** Supplement hash-based staleness with semantic similarity. Collect all changed source files from step 2 (and 2b if applicable), then run:
-
-```bash
-DM semantic-staleness --changed-files '["path/to/changed.py", ...]'
-```
-
-This detects when a change to a utility module affects a documentation section even if the utility is not in that section's tracked source list. Merge the `affected_sections` result with the staleness data from step 2.
-
-**3.** If all sections are `current` (including after semantic staleness check) → "Documentation is up to date. No changes needed." **STOP.**
+**3.** If all sections are `current` after hash-based and tag-based checks → "Documentation is up to date. No changes needed." **STOP.**
 
 **4.** Present stale sections:
 
@@ -263,11 +241,6 @@ GATE: "Update stale sections" / "Update all" / "Cancel"
 **6.** Update manifest:
 ```bash
 DM init-manifest --sections-json '[...]'
-```
-
-**6b.** Re-index updated documentation into vector memory:
-```bash
-DM reindex-docs
 ```
 
 **7.** Present report:

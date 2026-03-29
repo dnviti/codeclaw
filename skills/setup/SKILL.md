@@ -1,8 +1,8 @@
 ---
 name: setup
-description: "Initialize and configure projects: create task/idea files, detect tech stack, scaffold new projects, configure branch strategy, set up agentic fleet pipelines, or export skills to other AI coding platforms."
+description: "Initialize and configure projects: create task/idea files, detect tech stack, scaffold new projects, configure branch strategy, or export skills to other AI coding platforms."
 disable-model-invocation: true
-argument-hint: "[project name] [env [section]] [init [purpose]] [branch-strategy] [agentic-fleet] [platform [target]]"
+argument-hint: "[project name] [env [section]] [init [purpose]] [branch-strategy] [platform [target]]"
 ---
 
 > **Project configuration is authoritative.** Before executing, run `SH context` to load project configuration. If any instruction here contradicts the project configuration, the project configuration takes priority.
@@ -34,7 +34,6 @@ Route based on `flow` in the JSON result:
 - `env` -> [Env Flow](#env-flow)
 - `init` -> [Init Flow](#init-flow)
 - `branch-strategy` -> [Branch Strategy Flow](#branch-strategy-flow)
-- `agentic-fleet` -> [Agentic Fleet Flow](#agentic-fleet-setup)
 - `platform` -> [Platform Export Flow](#platform-export-flow)
 - `standard` -> [Standard Setup Flow](#standard-setup-flow)
 
@@ -107,7 +106,7 @@ STOP.
    cp ${CLAW_ROOT}/config/issues-tracker.example.json .claude/issues-tracker.json
    ```
 3. Update config with repo, platform, enabled=true, sync based on choice.
-4. Run label setup: `python3 ${CLAW_ROOT}/scripts/setup_labels.py`
+4. If you want labels, create them directly in the repository UI after setup. CodeClaw no longer ships a dedicated label helper.
 
 ### Step 4: Branch Strategy
 
@@ -149,13 +148,7 @@ STOP.
 
 **Skip if "Local only" or "No CI/CD" was chosen.**
 
-Use `AskUserQuestion`:
-- **"Yes, protect main branch"**
-- **"No, skip protection"**
-
-STOP.
-
-**If "Yes":** Run `python3 ${CLAW_ROOT}/scripts/setup_protection.py --branch main --required-reviews 1 --status-checks "Lint, Test & Build"`
+If branch protection is desired, configure `main` protection directly in the repository host UI with required reviews and status checks. CodeClaw no longer ships a branch-protection helper.
 
 ### Step 7: Tech Stack Detection
 
@@ -191,15 +184,9 @@ Store the preference. If "Full pipeline", ensure branch strategy includes stagin
 
 Then proceed to Step 9.
 
-### Step 9: Agentic Fleet (Optional)
+### Step 9: Optional Automation
 
-Use `AskUserQuestion`:
-- **"Yes, set up AI-powered automation"**
-- **"No, skip"**
-
-STOP.
-
-**If "Yes":** Run the [Agentic Fleet Setup](#agentic-fleet-setup) flow inline, then return for Step 10.
+Optional CI/CD automation setup is no longer part of the supported setup flow. Skip directly to Step 10.
 
 ### Step 9.5: Local Model — Ollama (Optional)
 
@@ -296,185 +283,7 @@ STOP.
    - `ollama.model`: selected model name
    - `ollama.offloading_level`: chosen level (0-10)
 
-Then return here for Step 9.7.
-
-### Step 9.7: Vector Memory MCP (Optional — opt-in)
-
-**9.7a. Gitignore hardening (unconditional — always runs):**
-
-Before asking the user about vector memory, ensure `.gitignore` contains the required entries. This runs regardless of the user's choice:
-
-```bash
-# Append .claude/memory/ if not already present
-grep -qxF '.claude/memory/' .gitignore 2>/dev/null || echo '.claude/memory/' >> .gitignore
-
-# Append .mcp.json if not already present (contains machine-specific absolute paths)
-grep -qxF '.mcp.json' .gitignore 2>/dev/null || echo '.mcp.json' >> .gitignore
-```
-
-**9.7b. GATE — ask the user:**
-
-Use `AskUserQuestion`:
-- **"Yes, enable vector memory MCP (recommended)"** — proceed to 9.7c (full automated install)
-- **"No, keep disabled"** — set `vector_memory.enabled = false`, `mcp_server.enabled = false` in `.claude/project-config.json` and skip to Step 10
-
-**9.7c. Automated installation sequence (when user enables):**
-
-1. **Detect GPU hardware and install correct ONNX Runtime variant:**
-
-   First, detect the user's GPU hardware:
-   ```bash
-   python3 ${CLAW_ROOT}/scripts/deps_check.py detect-gpu
-   ```
-
-   Parse the JSON result to get `vendor`, `vram_gb`, `recommended_package`, and `gpu_mode`.
-
-   Present the detection result:
-   > **GPU Detection:**
-   > - **Vendor:** `<vendor>` (nvidia / amd / apple / none)
-   > - **VRAM:** `<vram_gb>` GB
-   > - **Recommended package:** `<recommended_package>`
-   > - **Mode:** `<gpu_mode>` (gpu / cpu)
-
-   If `vendor` is `"none"` and `gpu_mode` is `"cpu"`:
-   > No GPU detected. ONNX Runtime will use CPU-only mode.
-
-   **Install all Python packages** in one command, using the detected ONNX Runtime variant:
-
-   ```bash
-   pip install "mcp>=1.0" "lancedb>=0.5.0,<1.0" "sentence-transformers>=2.7.0,<3.0" "<recommended_package>"
-   ```
-
-   Where `<recommended_package>` is the value from the GPU detection (e.g., `onnxruntime-gpu` for NVIDIA, `onnxruntime-rocm` for AMD, `onnxruntime-silicon` for Apple Silicon, `onnxruntime-directml` for Windows, or `onnxruntime` for CPU-only).
-
-   If `pip install` fails, display:
-   > **Action required:** Install vector memory dependencies manually:
-   > ```
-   > pip install "mcp>=1.0" "lancedb>=0.5.0,<1.0" "sentence-transformers>=2.7.0,<3.0" "<recommended_package>"
-   > ```
-   > Then re-run: `python3 ${CLAW_ROOT}/scripts/vector_memory.py index --force-init`
-
-   Do NOT continue with remaining sub-steps if pip fails — skip to Step 10 with a warning.
-
-   **After install, discover GPU library paths and auto-configure:**
-
-   ```bash
-   python3 ${CLAW_ROOT}/scripts/deps_check.py discover-gpu-libs
-   ```
-
-   Parse the JSON result. If `paths` is non-empty:
-   - Auto-inject the discovered paths into the current process environment before verification
-   - Store the paths for later persistence in project-config.json (see step 2 below)
-
-   **Verify GPU provider is available (with auto-fix):**
-
-   ```bash
-   python3 ${CLAW_ROOT}/scripts/deps_check.py verify-gpu --auto-fix
-   ```
-
-   - If `available` is `true`: report the active GPU provider(s). Note whether `auto_fixed` was needed.
-   - If `available` is `false` and a GPU was detected: warn that GPU provider failed to load and falling back to CPU mode. Set `gpu_mode` to `"cpu"` for the config update below. Display the `fix_command` from the discovery output so the user can manually fix their environment.
-
-2. **Update project config:**
-
-   Read `.claude/project-config.json` (or create from template if missing):
-   ```bash
-   mkdir -p .claude
-   [ -f .claude/project-config.json ] || cp ${CLAW_ROOT}/config/project-config.example.json .claude/project-config.json
-   ```
-
-   Set the following fields in `.claude/project-config.json`:
-   - `vector_memory.enabled = true`
-   - `vector_memory.auto_index = true`
-   - `vector_memory.gpu_acceleration.mode` = `<gpu_mode>` from GPU detection (`"gpu"` or `"cpu"`)
-   - `vector_memory.gpu_acceleration.log_provider = true`
-   - `vector_memory.gpu_acceleration.lib_paths` = `<paths>` array from `discover-gpu-libs` output (e.g., `["/path/to/site-packages/nvidia/cublas/lib", ...]`). Set to `[]` if no paths were discovered or on macOS. These paths are auto-injected by `local_onnx.py` at runtime before creating the ONNX session, ensuring GPU libraries are found without manual `LD_LIBRARY_PATH`/`PATH` configuration.
-   - `mcp_server.enabled = true`
-   - `mcp_server.auto_start = true`
-
-3. **Generate `.mcp.json` at repository root:**
-
-   Resolve the actual paths and write `.mcp.json` to the project root directory:
-   ```json
-   {
-     "mcpServers": {
-       "claw-vector-memory": {
-         "command": "python3",
-         "args": [
-           "<RESOLVED_PATH_TO_CLAW_SCRIPTS>/mcp_server.py",
-           "--root", "<RESOLVED_PROJECT_ROOT>"
-         ],
-         "env": {
-           "CLAW_PROJECT_ROOT": "<RESOLVED_PROJECT_ROOT>"
-         }
-       }
-     }
-   }
-   ```
-
-   Where:
-   - `<RESOLVED_PATH_TO_CLAW_SCRIPTS>` = the absolute path to the CodeClaw `scripts/` directory (resolve `${CLAW_ROOT}/scripts`)
-   - `<RESOLVED_PROJECT_ROOT>` = the absolute path to the current project root (resolve `.`)
-
-4. **Build initial vector index:**
-
-   ```bash
-   python3 ${CLAW_ROOT}/scripts/vector_memory.py index --force-init --root .
-   ```
-
-   - If the index succeeds, report: "Vector memory index built successfully."
-   - If it fails with exit code 2 (missing deps), show the install message above.
-   - If it fails for any other reason, show the error and continue setup.
-
-5. **Verify MCP server starts:**
-
-   ```bash
-   python3 ${CLAW_ROOT}/scripts/mcp_server.py --check
-   ```
-
-   - If `{"mcp_sdk": true}` → report: "MCP server ready. It will start automatically via `.mcp.json` when your AI assistant connects."
-   - If fails → log warning: "MCP SDK check failed. The server may not start automatically. You can install manually with: `pip install mcp`"
-
-Then return here for Step 10.
-
-### Step 9.6: Memory Configuration (Optional)
-
-Use `AskUserQuestion`:
-- **"Use defaults (recommended)"** — proceed to next step with default memory settings unchanged
-- **"Customize memory settings"** — proceed below
-
-STOP.
-
-**If "Customize":**
-
-Ask the following questions **one at a time** (each is a separate `AskUserQuestion` STOP):
-
-1. **GC TTL:** "How many days before stale memory entries are garbage collected? (default: 30)"
-   - Collect free-text integer input. Store as `gc_ttl_days`.
-
-2. **Conflict strategy:** "How should memory conflicts between agents be resolved?"
-   - **"Auto (recommended)"** — `conflict_strategy: "auto"`
-   - **"Latest wins"** — `conflict_strategy: "latest-wins"`
-   - **"Manual review"** — `conflict_strategy: "manual"`
-
-3. **Vector memory embedding provider:** "Which embedding provider should be used for semantic search?"
-   - **"Local — sentence-transformers (no API key needed, recommended)"** — `embedding_provider: "local"`
-   - **"OpenAI"** — `embedding_provider: "openai"`
-   - **"Voyage AI"** — `embedding_provider: "voyage"`
-
-   If "OpenAI" or "Voyage AI": ask "Enter the environment variable name that holds your API key (e.g. `OPENAI_API_KEY`):" and store as `embedding_api_key_env`.
-
-After collecting all inputs, write to `.claude/project-config.json`:
-- Under `memory_consistency`: set `gc_ttl_days` and `conflict_strategy`
-- Under `vector_memory`: set `embedding_provider` and `embedding_api_key_env` (if provided)
-
-If `.claude/project-config.json` does not exist, copy from example first:
-```bash
-mkdir -p .claude
-cp ${CLAW_ROOT}/config/project-config.example.json .claude/project-config.json
-```
-
-Then return here for Step 9.8.
+The retired auxiliary setup has been removed from this flow. Proceed directly to social posting configuration or skip to Step 10.
 
 ### Step 9.8: Social Posting Configuration (Optional)
 
@@ -522,7 +331,7 @@ STOP.
    - In the `social_announce.clipboard_platforms` array, find the object whose `"name"` matches the selected platform (e.g. `"twitter"`, `"linkedin"`, `"reddit"`, `"hackernews"`) and set its `"enabled": true`
    - No credentials needed
 
-5. Ensure `.claude/project-config.json` exists (copy from example if not — see Step 9.6), then update the `social_announce` section using the Edit or Write tool.
+5. Ensure `.claude/project-config.json` exists (copy from the example config if not), then update the `social_announce` section using the Edit or Write tool.
 
 6. Inform: "Social announcement configuration saved. Platforms will be used during `/release` pipeline (Stage 8.5)."
 
@@ -533,32 +342,13 @@ Then return here for Step 10.
 Based on all answers collected:
 
 1. Create task/idea files: `SH create-project-files --project-name "<NAME>"`
-2. Create/update platform instructions file (see Step 11)
+2. Create/update project context file (see Step 11)
 3. Create AGENTS.md with project memory (see Step 11b — always, no prompt)
 4. Create branches (from Step 4)
 
-### Step 11: Create/Update platform instructions file
+### Step 11: Create/Update project context file
 
-Detect the platform to determine which instructions file to create:
-- **Claude Code:** Create/update `CLAUDE.md`
-- **Generic/other:** Create/update `AGENTS.md`
-
-**If the platform instructions file does not exist**, create it by copying the template:
-
-```bash
-# For Claude Code:
-cp ${CLAW_ROOT}/templates/CLAUDE.md ./CLAUDE.md
-# For Generic/other:
-cp ${CLAW_ROOT}/templates/AGENTS.md ./AGENTS.md
-```
-
-Then apply any detected values (branch strategy, release config, etc.) to the newly created file.
-
-**If CLAUDE.md exists but does NOT contain `<!-- CodeClaw:START -->`**, extract the framework section (from `<!-- CodeClaw:START -->` to `<!-- CodeClaw:END -->`) from `${CLAW_ROOT}/templates/CLAUDE.md` and append it at the end of the existing file.
-
-**If CLAUDE.md exists and already contains `<!-- CodeClaw:START -->`**, skip.
-
-**Ensure CLAUDE.md contains `@AGENTS.md`** (if CLAUDE.md is the target): If the file does not already contain the line `@AGENTS.md`, add it after the first heading/description line.
+Create or update `project-context.md` with the detected values (branch strategy, release config, tech stack hints, and any setup notes that should travel with the project). Keep the file platform-agnostic and avoid platform-specific instruction files.
 
 ### Step 11b: Create AGENTS.md (Always)
 
@@ -576,7 +366,7 @@ Then populate the **Project Overview** section with a brief description based on
 
 ### Step 12: Final Report
 
-Present a summary covering: project name, platform (tracking mode, repository, labels), branch strategy table (name + status per branch), CI/CD (pipelines, protection, files), task files created, Platform instructions file status, AGENTS.md status, release workflow, agentic fleet status.
+Present a summary covering: project name, platform (tracking mode, repository, labels), branch strategy table (name + status per branch), CI/CD (pipelines, protection, files), task files created, Platform instructions file status, AGENTS.md status, release workflow, and any remaining manual configuration.
 
 **Next Steps** (include only applicable items): fill platform instructions file sections, review pipeline files, replace CI placeholders, verify platform labels, customize `to-do.txt`, use `/task create` and `/idea create`, add API key secret.
 
@@ -753,7 +543,7 @@ Update Development Commands with all detected values (same format as Env Step 4)
 
 #### 6c. Generate Makefile and Scripts
 
-Generate `Makefile` with targets: `dev`, `stop`, `restart`, `install`, `build`, `test`, `lint`, `verify` — using detected commands and `app_manager.py` for port management.
+Generate `Makefile` with targets: `dev`, `stop`, `restart`, `install`, `build`, `test`, `lint`, `verify` — using detected commands and standard cross-platform port-management commands.
 
 Generate `scripts/dev.sh` (Bash) and `scripts/dev.ps1` (PowerShell) for cross-platform dev server lifecycle.
 
@@ -779,14 +569,13 @@ STOP.
 3. Ask for repository (free-text) — STOP.
 4. Update config with repo, platform, enabled=true.
 5. Ask sync mode: **"Platform-only"** / **"Dual sync"** — STOP.
-6. Run: `python3 ${CLAW_ROOT}/scripts/setup_labels.py`
+6. If labels are needed, create them directly in the repository UI. CodeClaw no longer ships a label helper.
 7. Report the setup.
 
-### Init Step 9: CI/CD & Branch Protection Setup (Optional)
+### Init Step 9: CI/CD Setup (Optional)
 
 Use `AskUserQuestion`:
-- **"Yes, set up CI/CD and branch protection"**
-- **"CI/CD only (no branch protection)"**
+- **"Yes, set up CI/CD"**
 - **"No, skip CI/CD setup"**
 
 STOP.
@@ -799,22 +588,8 @@ STOP.
    - **GitLab:** `${CLAW_ROOT}/templates/gitlab/.gitlab-ci.yml` to project root
 3. Customize templates: replace `[CI_RUNTIME_SETUP]`, `[INSTALL_COMMAND]`, `[LINT_COMMAND]`, `[TEST_COMMAND]`, `[BUILD_COMMAND]`, `[CI_IMAGE]` with actual values.
 4. Copy additional templates (if issues tracker enabled): `issue-triage.yml`, `status-guard.yml`, `CODEOWNERS`.
-
-5. **Agentic Fleet (Optional):** Use `AskUserQuestion`:
-   - **"Idea Scout only"** / **"Task Implementation only"** / **"Both"** / **"No, skip"**
-   STOP.
-
-   If selected:
-   - Copy `memory_builder.py` to `.claude/scripts/`
-   - Copy appropriate pipeline templates per platform
-   - If Task Implementation: ask cron interval (**"Every 4/6/8/12/24 hours"** / **"Custom"**) — STOP. Replace `__AGENTIC_TASK_CRON__` in template.
-   - For GitLab: instruct user to add `include:` directives if `.gitlab-ci.yml` exists.
-   - Warn: "Add `ANTHROPIC_API_KEY` as a repository secret / CI/CD masked variable."
-
-**If branch protection also selected:**
-
-6. Run: `python3 ${CLAW_ROOT}/scripts/setup_protection.py --branch main --required-reviews 1 --status-checks "Lint, Test & Build"`
-7. Report full CI/CD and protection setup.
+5. If branch protection is desired, configure `main` protection directly in the repository host UI after the workflows are in place.
+6. Report the CI/CD setup.
 
 ---
 
@@ -857,90 +632,9 @@ Present: branch table (name + Created/Already existed for each), platform instru
 
 ---
 
-## Agentic Fleet Setup
+## Legacy Automation Note
 
-Activated when `$ARGUMENTS` contains `agentic-fleet`. Configures CI/CD pipelines for AI-driven idea scouting and task implementation. Both pipelines are fully headless.
-
-### Step A1: Detect Platform
-
-`TM platform-config`
-
-If no config, use `AskUserQuestion`: **"GitHub"** / **"GitLab"**. STOP.
-
-### Step A1.5: Select AI Provider
-
-Use `AskUserQuestion`:
-- **"Claude Code (Recommended)"** — uses CLAUDE.md, plugin skills
-- **"OpenAI Codex CLI"** — uses AGENTS.md, raw prompts
-- **"OpenClaw"** — raw prompts
-
-STOP. Store provider: `claude`, `openai`, or `openclaw`.
-
-### Step A2: Select Pipelines
-
-Use `AskUserQuestion`:
-- **"Idea Scout only"** / **"Task Implementation only"** / **"Docs only"** / **"All"** / **"Custom"** / **"Cancel"**
-
-STOP.
-
-### Step A3: Configure Cron (Task Implementation only)
-
-Skip if only Idea Scout or Docs selected.
-
-Use `AskUserQuestion`:
-- **"Every 4 hours"** — `0 */4 * * *`
-- **"Every 6 hours"** — `0 */6 * * *`
-- **"Every 8 hours"** — `0 */8 * * *`
-- **"Every 12 hours"** — `0 */12 * * *`
-- **"Every 24 hours"** — `0 0 * * *`
-- **"Custom"** — ask for cron expression
-
-STOP.
-
-### Step A4: Copy Pipeline Templates
-
-Based on platform and selected pipelines:
-
-**GitHub:** `mkdir -p .github/workflows`
-- Idea Scout: `cp ${CLAW_ROOT}/templates/github/workflows/agentic-fleet.yml .github/workflows/`
-- Task Implementation: `cp ${CLAW_ROOT}/templates/github/workflows/agentic-task.yml .github/workflows/` then `sed -i 's|__AGENTIC_TASK_CRON__|<cron>|' .github/workflows/agentic-task.yml`
-- Docs: `cp ${CLAW_ROOT}/templates/github/workflows/agentic-docs.yml .github/workflows/`
-
-**GitLab:** Copy corresponding `.gitlab-ci.yml` files from `${CLAW_ROOT}/templates/gitlab/`. If `.gitlab-ci.yml` exists, instruct user to add `include:` directives.
-
-### Step A5: Copy Scripts, Prompts, and Skills
-
-```bash
-mkdir -p .claude/scripts .claude/prompts .claude/skills/idea-scout .claude/skills/docs
-cp ${CLAW_ROOT}/scripts/memory_builder.py .claude/scripts/memory_builder.py
-cp ${CLAW_ROOT}/scripts/codebase_analyzer.py .claude/scripts/codebase_analyzer.py
-cp ${CLAW_ROOT}/scripts/agent_runner.py .claude/scripts/agent_runner.py
-cp ${CLAW_ROOT}/templates/prompts/agentic-task-prompt.md .claude/prompts/agentic-task-prompt.md
-cp ${CLAW_ROOT}/templates/prompts/agentic-docs-prompt.md .claude/prompts/agentic-docs-prompt.md
-cp ${CLAW_ROOT}/skills/idea-scout/SKILL.md .claude/skills/idea-scout/SKILL.md
-cp ${CLAW_ROOT}/skills/docs/SKILL.md .claude/skills/docs/SKILL.md
-```
-
-### Step A5.5: Create Provider Configuration
-
-Create `.claude/agentic-provider.json`:
-
-**claude:**
-```json
-{"provider":"claude","model":{"task":"claude-opus-4-6","scout":"claude-sonnet-4-6","docs":"claude-sonnet-4-6"},"budget":{"task":15,"scout":5,"docs":5},"auto_pr":true}
-```
-
-For openai/openclaw, adjust `provider`, `model`, and `budget` fields per the example configs in `${CLAW_ROOT}/config/agentic-provider.example.json`.
-
-AGENTS.md is already created in Step 11b. If the provider is `openai` or `openclaw`, ensure AGENTS.md contains the same key sections as CLAUDE.md (the template already handles this).
-
-### Step A6: Verify Files
-
-Confirm all copied files exist — pipeline files, scripts, prompts, skills, and provider config.
-
-### Step A7: Report
-
-Present: AI provider, enabled pipelines (with triggers and models), platform, all created file paths, required configuration (API key secret, `AGENTIC_PROVIDER` variable, optional `AGENTIC_AUTO_PR`), and how to change provider later (edit `.claude/agentic-provider.json`).
+The old setup automation has been retired from the supported setup surface. Existing branches may still contain historical references, but new setup runs should skip those steps and continue with the standard project and branch configuration flows.
 
 ---
 

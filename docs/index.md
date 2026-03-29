@@ -11,7 +11,7 @@ source-files:
 
 # CodeClaw
 
-A project-agnostic task and idea management plugin for Claude Code with 8 streamlined skills: `/task`, `/idea`, `/release`, `/docs`, `/setup`, `/update`, `/tests`, `/help`. Features a gated release pipeline with automatic subagent orchestration — all through plain-text files and slash commands.
+A project-agnostic task and idea management plugin for Claude Code with 9 streamlined skills: `/task`, `/idea`, `/release`, `/docs`, `/setup`, `/update`, `/tests`, `/help`, and `/crazy`. It features a gated release pipeline and keeps the workflow rooted in plain-text files and slash commands.
 
 ## Table of Contents
 
@@ -21,10 +21,9 @@ A project-agnostic task and idea management plugin for Claude Code with 8 stream
 | [Getting Started](getting-started.md) | Installation, prerequisites, first run |
 | [Configuration](configuration.md) | Config files, environment variables, feature flags |
 | [API Reference](api-reference.md) | Skills, script CLIs, hooks |
-| [Deployment](deployment.md) | CI/CD pipelines, Docker, agentic fleet |
+| [Deployment](deployment.md) | CI/CD pipelines, Docker, release automation |
 | [Development](development.md) | Contributing, local dev, testing, conventions |
 | [Troubleshooting](troubleshooting.md) | Common errors, debugging, FAQ |
-| [MCP Vector Memory](mcp-vector-memory.md) | Semantic search, MCP server, embedding providers, multi-agent coordination |
 | [LLM Context](llm-context.md) | Consolidated reference for LLM/bot consumption |
 
 ## Quick Start
@@ -52,9 +51,7 @@ A project-agnostic task and idea management plugin for Claude Code with 8 stream
 | Version Control | Git (branches, tags) |
 | Platform | GitHub Actions / GitLab CI/CD |
 | AI Providers | Claude, OpenAI Codex, OpenClaw |
-| MCP Server | Vector memory semantic search (stdio transport) |
 | Data Format | Plain-text files (`.txt`) + JSON configs |
-| Vector Memory | LanceDB + sentence-transformers (optional) |
 
 ## Supported Platforms
 
@@ -77,34 +74,34 @@ A project-agnostic task and idea management plugin for Claude Code with 8 stream
 | `/idea` | Idea lifecycle: create, approve, disapprove, refactor, scout, edit |
 | `/release` | Release pipeline: create, generate, continue, close, security-only, test-only, edit |
 | `/docs` | Documentation: generate, sync, reset, publish |
-| `/setup` | Project initialization, configuration, scaffolding, branch strategy, agentic fleet |
+| `/setup` | Project initialization, configuration, scaffolding, branch strategy |
 | `/update` | Update CodeClaw-managed files |
 | `/tests` | Test discovery, gaps, coverage, execution |
-| `/help` | Semantic search over skills and documentation |
+| `/help` | Search over skills and documentation |
 | `/crazy` | **[BETA]** Fully autonomous project builder |
 
-## Feature Highlights (v4.0.0)
+## Feature Highlights (v4.0.5)
 
-- **Unified memory orchestrator** — Tandem multi-backend coordination (LanceDB + SQLite FTS5 + RLM)
-- **Semantic intelligence** — `/task`, `/idea`, `/docs`, `/tests`, `/help` skills powered by vector search
+- **Release cleanup** — 4.0.4 documentation and changelog corrections are carried through the release line
+- **Branch alignment** — `develop`, `staging`, and `main` share the same release history and tree
+- **Docs simplification** — Public docs no longer advertise retired legacy flows
 - **[BETA] /crazy skill** — Fully autonomous end-to-end project builder
-- **Image generation** — On-demand with 4 provider backends (DALL-E, Replicate, Stability AI, local)
 - **Frontend design wizard** — Template search, theme selection, color palette picker
-- **Security hardened** — 209 findings analyzed, 133 fixes applied across 20 PRs by parallel sub-agents
+- **Security hardened** — release cleanup and validation checks continue to catch issues across the pipeline
 - **Rebranded** — CTDF to CodeClaw with plugin id `claw`
-- **Gated release pipeline** — 9 sequential stages with parallel sub-agent PR analysis, CI monitoring, and mandatory local build verification
+- **Gated release pipeline** — 9 sequential stages with mandatory local build verification
 
 ## Key Design Principles
 
 1. **Project-agnostic** — Works with any language, framework, or tech stack
-2. **Zero dependencies** — All scripts use Python 3 stdlib only (vector memory and MCP are optional)
+2. **Zero dependencies** — All supported core scripts use Python 3 stdlib only
 3. **Human-in-the-loop** — AI assists, but users decide at every gate
 4. **Plain-text first** — Tasks and ideas in simple `.txt` files
 5. **Cross-platform** — Linux, macOS, Windows with auto OS detection
 
 ## Version
 
-Current plugin version: **4.0.0**
+Current plugin version: **4.0.5**
 
 Repository: [github.com/dnviti/codeclaw](https://github.com/dnviti/codeclaw)
 

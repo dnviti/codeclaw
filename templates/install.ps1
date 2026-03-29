@@ -241,16 +241,7 @@ function Install-ClaudeCode {
     Write-Step "Setting up Claude Code plugin structure..."
     Place-Directory (Join-Path $ScriptRoot ".claude-plugin") (Join-Path $TargetDir ".claude-plugin")
 
-    $claudeMd = Join-Path $TargetDir "CLAUDE.md"
-    if (-not (Test-Path $claudeMd)) {
-        $templateMd = Join-Path $ScriptRoot "templates" "CLAUDE.md"
-        if (Test-Path $templateMd) {
-            Write-Step "Installing CLAUDE.md template..."
-            Place-File $templateMd $claudeMd
-        }
-    } else {
-        Write-Info "CLAUDE.md already exists, skipping"
-    }
+    # project-context.md is created by the setup skill when needed.
 }
 
 function Install-OpenCode {
@@ -543,7 +534,7 @@ function Main {
     Write-Host ""
     Write-Info "Next steps:"
     Write-Info "  1. Review configuration in config/"
-    Write-Info "  2. Customize your CLAUDE.md (or platform equivalent)"
+    Write-Info "  2. Customize your project-context.md (or platform equivalent)"
     Write-Info "  3. Run: python3 scripts/task_manager.py list"
     Write-Host ""
 }

@@ -135,11 +135,11 @@ For each file in "Files involved":
 - If marked CREATE, check target directory and similar files for patterns
 - Identify relevant interfaces, types, and patterns
 
-**Semantic exploration (vector store):** After the above file exploration, run:
-```bash
-TM semantic-explore TASK-CODE
-```
-This searches the vector index using the task description, surfacing conceptually related code not listed in "Files involved." If `related_files` are returned, read the top 3-5 most relevant files to discover hidden dependencies, shared patterns, or code that should be updated alongside the task. Include these as "Additional related files" in the implementation briefing (Step 5).
+**Related code heuristics:** After the above file exploration, use local heuristics to find related code not listed in "Files involved":
+- Run `TM duplicates --keywords "<task keywords>"` to surface similar tasks.
+- Run `TM find-files "<keywords>"` to locate likely source files.
+- Read the top 3-5 most relevant files to discover hidden dependencies, shared patterns, or code that should be updated alongside the task.
+- Include these as "Additional related files" in the implementation briefing (Step 5).
 
 #### Step 4.5: Frontend Design Wizard (conditional)
 
@@ -173,38 +173,16 @@ python3 ${CLAW_ROOT}/scripts/frontend_wizard.py list-palettes
 3. **Scope Summary**: What needs to be done
 4. **Technical Approach**: Implementation steps based on task details and codebase exploration
 5. **Files to Create/Modify**: Every file with what needs to happen
-6. **Additional Related Files** (from semantic exploration): Files surfaced by vector search that may need attention — hidden dependencies, shared patterns, or related implementations. Omit if none found.
+6. **Additional Related Files** (from local exploration): Nearby modules, shared utilities, or follow-up files discovered during code analysis. Omit if none found.
 7. **Dependencies**: Status of all dependencies
 8. **Risks**: Any concerns found during exploration
 9. **Quality Gate**: Remind that verify command must pass before closing
 
 Ask: "Ready to start implementation, or would you like to adjust the approach?"
 
-#### Step 5.5: Image Generation (on-demand)
+#### Step 5.5: Visual Assets
 
-During implementation, if the task requires visual assets (detected from description keywords like "icon", "banner", "mockup", "diagram", "placeholder image", "logo", or explicit user request), offer image generation using the CodeClaw image generator.
-
-**Prerequisites:** Image generation must be enabled in `project-config.json` > `image_generation` > `enabled`. If disabled, skip this step.
-
-**Workflow:**
-
-1. **Detect need:** Scan the task description and technical details for visual asset keywords. If found, or if the user explicitly requests an image, proceed.
-2. **Generate:** Run `python3 ${CLAW_ROOT}/scripts/image_generator.py generate "<prompt>" --size <size> --style <style>`. Parse the JSON response for `image_path`.
-3. **Preview:** The generator auto-opens a cross-platform preview. Inform the user: "Image preview opened. Review the generated image."
-4. **Confirm/Regenerate/Cancel loop:**
-   - **Normal mode:** Use `AskUserQuestion` with options: **"Confirm (save to project)"** | **"Regenerate (new attempt)"** | **"Regenerate with modified prompt"** | **"Cancel"**. STOP until user responds.
-   - **Yolo mode:** Auto-confirm the first generated image. Log: "Auto-accepted generated image (yolo mode)." Save to the configured output directory.
-5. **Save:** On confirm, run `python3 ${CLAW_ROOT}/scripts/image_generator.py generate "<prompt>" --output <target_path> --no-preview` or copy the temp file to the project path.
-6. **On regenerate:** Repeat from step 2 with the same or modified prompt.
-7. **On cancel:** Discard the temp file and continue implementation without the image.
-
-**Configuration reference** (`project-config.json` > `image_generation`):
-- `enabled`: bool (default `false`)
-- `provider`: `"local"` | `"dalle"` | `"replicate"` | `"stability"` (default `"local"`)
-- `api_key_env`: env var name for cloud API key
-- `default_size`: default `"1024x1024"`
-- `default_style`: default `"natural"`
-- `output_dir`: default `"assets/generated"`
+If the task needs a visual asset, ask the user to provide it or use the frontend design wizard when the task is frontend-related. CodeClaw no longer ships a standalone image-generation workflow in this flow.
 
 ---
 
@@ -212,15 +190,9 @@ During implementation, if the task requires visual assets (detected from descrip
 
 After full implementation and quality gate passes:
 
-**6-pre. Update vector index:**
+**6-pre. No extra index refresh is required.**
 
-Trigger incremental re-index of changed files so subsequent searches (by other agents or Continue Flow) see fresh results:
-
-```bash
-python3 ${CLAW_ROOT}/scripts/vector_memory.py hook <changed_file>
-```
-
-Run this for each file that was created or modified during implementation. This is non-blocking and silent on failure.
+The current workflow relies on normal task tracking and docs sync. PostToolUse already records the edited files against the active task.
 
 **6-review. Run quality gate:**
 
@@ -307,7 +279,7 @@ Always offer PR creation after task completion, regardless of whether testing pa
 
 ## Pick All Flow
 
-Pick up and implement **all pending tasks for the current active release**. By default, tasks are implemented **in parallel** using subagents (one agent per task). Use `/task pick all sequential` to implement tasks one at a time instead.
+Pick up and implement **all pending tasks for the current active release**. By default, tasks are implemented sequentially in dependency order so the review trail stays on the task itself.
 
 This flow is triggered by `/task pick all` or `/task pick all sequential`.
 
@@ -334,163 +306,31 @@ Filter to only `todo` and `progressing` tasks. If none pending → "All tasks fo
 
 #### Step 1: Build dependency graph
 
-Parse `Dependencies:` fields from each pending task. Group independent tasks (no unmet dependencies) into parallel batches. Tasks whose dependencies are not yet done go into later batches.
+Parse `Dependencies:` fields from each pending task. Group tasks into dependency batches so the next task is always clear.
 
 #### Step 2: Present the plan
 
-Present: "Found **N pending tasks** for release X.X.X. **M can run in parallel** in batch 1."
+Present: "Found **N pending tasks** for release X.X.X. **M are ready** in batch 1."
 
 | Batch | Tasks | Notes |
 |-------|-------|-------|
 | 1 | CODE1, CODE2 | Independent |
 | 2 | CODE3 | Depends on CODE1 |
 
-**Default (parallel):** GATE: "Spawn agents to implement all tasks" / "Cancel"
+**Default:** GATE: "Implement tasks sequentially" / "Cancel"
 
-**Sequential mode (`/task pick all sequential`):** GATE: "Implement tasks one by one" / "Cancel"
+#### Step 3a: Sequential execution (default)
 
-#### Step 3a: Parallel execution (default)
+For each batch, process the tasks one by one in dependency order:
 
-**Execution mode:** If `$CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` = `"1"`, use Agent Teams mode. Otherwise skip to standard subagent mode.
+1. Move the task to progressing and assign it if needed.
+2. Checkout the task branch.
+3. Read the task details and related code.
+4. Implement the task according to DESCRIPTION and TECHNICAL DETAILS.
+5. Run `{VERIFY_COMMAND}` and fix any failures, up to 3 attempts.
+6. Commit, push, create the PR, and move the task to done.
 
-**── Agent Teams mode ──**
-
-Create team `"claw-pick-{VERSION}"` via `TeamCreate` with `description: "Task implementation for release {VERSION}"`. Create `TaskCreate` entries for each task in the batch, plus `"QA review: batch {BATCH_NUM}"`, `"Documentation: batch {BATCH_NUM}"`, and `"Security scan: batch {BATCH_NUM}"`. Spawn teammates (all in parallel, `team_name: "claw-pick-{VERSION}"`):
-
-| Teammate | Count | Config |
-|----------|-------|--------|
-| `backend-dev-{CODE}` | 1 per task in batch | `mode: "bypassPermissions"` |
-| `frontend-dev-{CODE}` | 1 per task in batch | `mode: "bypassPermissions"` |
-| `qa-agent` | 1 | `mode: "bypassPermissions"` |
-| `documenter` | 1 | `mode: "bypassPermissions"` |
-| `security-scanner` | 1 | `mode: "bypassPermissions"` |
-
-Backend dev prompt (`name: "backend-dev-{CODE}"`):
-
-```
-"You are backend-dev-{CODE} on team claw-pick-{VERSION}. Implement server-side logic for task {CODE}.
-1. Claim task 'Implement {CODE}' via TaskUpdate (owner: your name)
-2. `TM move {CODE} --to progressing` + `PM edit-issue number=ISSUE_NUM add-assignee="@me"`
-3. Checkout task branch: `git checkout -b task/{CODE} {DEVELOPMENT_BRANCH}` (or `git checkout task/{CODE}` if exists)
-4. `TM parse {CODE}` — read full task details
-5. Explore codebase: read Files involved + related server-side code
-6. Implement server-side logic, APIs, data layer per DESCRIPTION and TECHNICAL DETAILS
-7. Run {VERIFY_COMMAND} — fix and retry (max 3)
-8. `git add <files> && git commit -m 'feat(backend): {description} ({CODE})'`
-9. `git push -u origin task/{CODE}`
-10. SendMessage to frontend-dev-{CODE}: 'Backend complete. API contracts: [endpoints/interfaces]. Integration points: [details]'
-11. SendMessage to security-scanner: 'Backend changes ready for review. PR branch: task/{CODE}, files: [list]'
-12. Wait for security-scanner approval before proceeding
-13. TaskUpdate mark completed. SendMessage to team lead: {{ code, success, summary, files_changed[] }}"
-```
-
-Frontend dev prompt (`name: "frontend-dev-{CODE}"`):
-
-```
-"You are frontend-dev-{CODE} on team claw-pick-{VERSION}. Implement UI/client-side for task {CODE}.
-1. Wait for SendMessage from backend-dev-{CODE} with API contracts and integration points
-2. If task has no frontend component: SendMessage to team lead 'No frontend work for {CODE}', TaskUpdate completed, exit
-3. Checkout task branch: `git checkout task/{CODE}`
-4. `TM parse {CODE}` — read full task details
-5. Implement UI, client-side logic, animations per DESCRIPTION and TECHNICAL DETAILS, using backend API contracts
-6. Run {VERIFY_COMMAND} — fix and retry (max 3)
-7. `git add <files> && git commit -m 'feat(frontend): {description} ({CODE})'`
-8. `git push origin task/{CODE}`
-9. SendMessage to security-scanner: 'Frontend changes ready for review. Files: [list]'
-10. SendMessage to qa-agent: 'Implementation complete for {CODE}. Ready for QA.'
-11. Wait for security-scanner and qa-agent approval. If bugs reported, fix and re-push (max 3 iterations)
-12. Create PR: `PM create-pr title='feat: {description} ({CODE})' head='task/{CODE}' base='{DEVELOPMENT_BRANCH}' body='Implements {CODE} for release {VERSION}' milestone='{VERSION}' assignee='@me'`
-13. `TM move {CODE} --to done --completed-summary 'Implemented: {title}'`
-14. TaskUpdate completed. SendMessage to team lead: {{ code, success, pr_url, files_changed[] }}"
-```
-
-QA agent prompt (`name: "qa-agent"`):
-
-```
-"You are qa-agent on team claw-pick-{VERSION}. Test and review all task implementations.
-1. Claim 'QA review' task via TaskUpdate
-2. Wait for frontend-dev SendMessage notifications that implementation is complete
-3. For each task:
-   a. Read all changed files and the PR diff
-   b. Review for: correctness, edge cases, error handling, code style, test coverage, DRY, performance, project conventions
-   c. Run {VERIFY_COMMAND} to validate tests pass
-   d. If bugs found: SendMessage to responsible dev (backend-dev or frontend-dev) with specific issues and required fixes. Wait for fix notification, then re-review (max 3 iterations)
-   e. If approved: SendMessage to frontend-dev: 'QA approved for {CODE}'
-   f. Post QA comment on PR via `{PLATFORM_CLI} pr comment {NUMBER}` with findings summary
-4. TaskUpdate completed. SendMessage to team lead: {{ reviewed_count, bugs_found, bugs_fixed, approved_count }}"
-```
-
-Documenter prompt (`name: "documenter"`):
-
-```
-"You are documenter on team claw-pick-{VERSION}. Update documentation as tasks are implemented.
-1. Claim 'Documentation' task via TaskUpdate
-2. Monitor teammate SendMessage notifications for implementation progress
-3. For each completed task:
-   a. Read changed files and understand what was implemented
-   b. Update or create relevant documentation in docs/ (API docs, architecture, usage guides)
-   c. Update README.md if new features affect setup or usage
-   d. Commit docs: `git add docs/ && git commit -m 'docs: update documentation for {CODE}'`
-4. TaskUpdate completed. SendMessage to team lead: {{ docs_updated[], files_changed[] }}"
-```
-
-Security scanner prompt (`name: "security-scanner"`):
-
-```
-"You are security-scanner on team claw-pick-{VERSION}. Perform strict security testing on all implementations.
-1. Claim 'Security scan' task via TaskUpdate
-2. Wait for dev SendMessage notifications with changes ready for review
-3. For each set of changes:
-   a. Read all changed files thoroughly
-   b. Analyze for OWASP Top 10: injection (SQL, command, XSS, LDAP), broken auth, sensitive data exposure, XXE, broken access control, security misconfiguration, insecure deserialization, vulnerable components, insufficient logging
-   c. Check for: hardcoded secrets (API keys, passwords, tokens), path traversal, race conditions, ReDoS, CSRF, unvalidated redirects, insecure direct object references
-   d. Run quality gate if available: `python3 ${CLAW_ROOT}/scripts/quality_gate.py --files <files> --json`
-   e. CRITICAL vulnerabilities → SendMessage to responsible dev AND team lead: 'BLOCKING: [vulnerability]. Must fix before continuing.' Wait for fix, re-scan
-   f. Non-critical findings → SendMessage to dev as warnings, do not block
-   g. Approved → SendMessage to dev: 'Security approved for changes in [files]'
-4. Post security summary on PR via `{PLATFORM_CLI} pr comment {NUMBER}`
-5. TaskUpdate completed. SendMessage to team lead: {{ scanned_count, critical[], high[], medium[], low[] }}"
-```
-
-After all teammates complete → `SendMessage {type: "shutdown_request"}` to all → `TeamDelete`. Continue to Step 4 (batch results).
-
-**── Standard subagent mode (default) ──**
-
-For each batch, spawn Agent subagents with `mode: "bypassPermissions"`:
-
-```
-prompt: "You are a task implementation agent. Implement task {CODE} for release {VERSION}.
-
-1. Mark task as in-progress: `TM move {CODE} --to progressing`
-2. Auto-assign (platform-only/dual): `PM edit-issue number=ISSUE_NUM add-assignee="@me"`
-3. Checkout task branch: `git checkout -b task/{CODE} {DEVELOPMENT_BRANCH}` (or `git checkout task/{CODE}` if exists)
-4. Read full task details: `TM parse {CODE}`
-5. Explore the codebase: read all files listed in Files involved and related code
-6. Implement the task according to DESCRIPTION and TECHNICAL DETAILS
-7. Create/modify files as specified in Files involved
-8. Run {VERIFY_COMMAND} — on failure, fix and retry (max 3 attempts)
-9. Commit: `git add <changed files> && git commit -m 'feat: {description} ({CODE})'`
-10. Push branch: `git push -u origin task/{CODE}`
-11. Create PR: `PM create-pr title='feat: {description} ({CODE})' head='task/{CODE}' base='{DEVELOPMENT_BRANCH}' body='Implements {CODE} for release {VERSION}' milestone='{VERSION}' assignee='@me'`
-    - If verify command failed or was skipped, append to body: '**Note:** Testing was skipped or incomplete. Needs manual testing.' and add label `needs-testing`.
-12. Mark task as done: `TM move {CODE} --to done --completed-summary 'Implemented: {title}'`
-
-Report: {{ code, success, summary, files_changed[], pr_url, error_if_any }}"
-```
-
-Wait for **all agents in the current batch** to complete before proceeding to the next batch.
-
-**Post-batch vector re-index:** After each batch completes, run a consolidated incremental re-index to ensure the next batch sees updated search results:
-
-```bash
-python3 ${CLAW_ROOT}/scripts/vector_memory.py index --root .
-```
-
-This is non-blocking — if the index is unavailable or dependencies are missing, it will be silently skipped.
-
-#### Step 3b: Sequential execution (`/task pick all sequential`)
-
-For each task in dependency order, execute the standard **Pick Flow** (from Step 1 through Step 6) one at a time. Wait for user confirmation at each task's closing gate before moving to the next.
+Wait for the current batch to finish before moving to the next batch.
 
 #### Step 4: Present batch results
 
@@ -551,11 +391,10 @@ Use `next_number` from next-id JSON. Numbering is globally sequential across all
 1. Read relevant existing files based on task description.
 2. Look at similar completed tasks for pattern reference.
 3. Identify files to create/modify — verify paths with `Glob`.
-4. If vector memory is available, run a semantic search with the task description to discover related code patterns:
-   ```bash
-   python3 ${CLAW_ROOT}/scripts/vector_memory.py search "<task description keywords>" --root . --top-k 10 --json
-   ```
-   Use results to inform the "Files involved" section and identify dependencies.
+4. Use local heuristics to discover related code patterns:
+   - Read similar completed tasks and nearby source files
+   - Look for matching module names, imports, and keywords
+   - Use those findings to inform the "Files involved" section and identify dependencies
 
 #### Step 5: Draft the Task Block
 
@@ -618,7 +457,7 @@ Read section headers from `to-do.txt` (local/dual) or label mappings (platform-o
 
 ## Create All Flow
 
-Create tasks from **all pending ideas** in `ideas.txt` in one batch. By default, tasks are created **in parallel** using subagents (one agent per idea). Use `/task create all sequential` to process ideas one at a time instead.
+Create tasks from **all pending ideas** in `ideas.txt` in one batch. Process ideas sequentially by default so each draft can be reviewed before the next one starts.
 
 ### Create All — Idea Discovery
 
@@ -644,71 +483,19 @@ Present: "Found **N pending ideas** to convert into tasks."
 
 GATE: "Create tasks from all ideas" / "Cancel"
 
-#### Step 2a: Parallel execution (default)
+#### Step 2a: Sequential execution (default)
 
-**Execution mode:** If `$CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` = `"1"`, use Agent Teams mode. Otherwise skip to standard subagent mode.
+For each idea in order, execute the standard Create Flow one at a time:
 
-**── Agent Teams mode ──**
+1. Parse the idea details.
+2. Explore the codebase to understand scope, patterns, and relevant files.
+3. Determine the next task code.
+4. Draft the task block with Priority, Dependencies, DESCRIPTION, TECHNICAL DETAILS, and Files involved.
+5. Insert the task into `to-do.txt`.
+6. Move the idea to approved.
+7. Record the created task.
 
-Create team `"claw-create-all"` via `TeamCreate` with `description: "Batch idea-to-task conversion"`. Create `TaskCreate` entries for each idea, plus `"Consistency review"`. Spawn teammates (`team_name: "claw-create-all"`):
-
-| Teammate | Count | Config |
-|----------|-------|--------|
-| `task-creator-{IDEA_CODE}` | 1 per idea | `mode: "bypassPermissions"` |
-| `consistency-reviewer` | 1 | `mode: "bypassPermissions"` |
-
-Task creator prompt (`name: "task-creator-{IDEA_CODE}"`):
-
-```
-"You are task-creator-{IDEA_CODE} on team claw-create-all. Convert idea {IDEA_CODE} into a task spec.
-1. Claim task via TaskUpdate
-2. `TM parse {IDEA_CODE}` — read idea details
-3. Explore codebase: understand scope, patterns, relevant files
-4. `TM next-id --type task` — get next task code
-5. Draft task block: Priority, Dependencies, DESCRIPTION (4-10 lines), TECHNICAL DETAILS, Files involved
-6. Insert task into to-do.txt via Edit
-7. Move idea: `TM move {IDEA_CODE} --to approved`
-8. SendMessage to consistency-reviewer: 'Task created: {TASK_CODE} from {IDEA_CODE}'
-9. TaskUpdate completed. SendMessage to team lead: {{ idea_code, task_code, title, priority }}"
-```
-
-Consistency reviewer prompt (`name: "consistency-reviewer"`):
-
-```
-"You are consistency-reviewer on team claw-create-all. Review all created task specs.
-1. Claim 'Consistency review' task via TaskUpdate
-2. Wait for task-creator SendMessage notifications
-3. After all tasks created, review to-do.txt for:
-   a. Consistent formatting across all new tasks
-   b. No duplicate or overlapping scope between tasks
-   c. Proper dependency chains (no circular deps)
-   d. Correct priority assignments
-   e. Complete Technical Details and Files involved sections
-4. If issues found: SendMessage to relevant task-creator with fixes needed
-5. TaskUpdate completed. SendMessage to team lead: {{ reviewed_count, issues_found, fixes_applied }}"
-```
-
-After all teammates complete → `SendMessage {type: "shutdown_request"}` to all → `TeamDelete`. Continue to Step 3 (results).
-
-**── Standard subagent mode (default) ──**
-
-For each idea, spawn Agent subagents with `mode: "bypassPermissions"`:
-
-```
-prompt: "You are a task creation agent. Convert idea {IDEA_CODE} into a fully specified task.
-
-1. Read the idea details: `TM parse {IDEA_CODE}`
-2. Explore the codebase to understand scope, existing patterns, and relevant files
-3. Determine task code prefix and next number: `TM next-id --type task`
-4. Draft a task block with: Priority, Dependencies, DESCRIPTION (4-10 lines), TECHNICAL DETAILS (structured by architecture), Files involved (CREATE/MODIFY)
-5. Insert the task into to-do.txt: use the Edit tool at the correct section
-6. Move the idea from ideas.txt to idea-disapproved.txt (approved): `TM move {IDEA_CODE} --to approved`
-7. Report: {{ idea_code, task_code, title, priority, files_count }}"
-```
-
-#### Step 2b: Sequential execution (`/task create all sequential`)
-
-For each idea in order, execute the standard **Create Flow** one at a time. Wait for user confirmation at each task's draft gate before moving to the next.
+Wait for user confirmation at each task's draft gate before moving to the next idea.
 
 #### Step 3: Present results
 
@@ -767,7 +554,7 @@ If the branch does not exist, suggest `/task pick <TASK-CODE>` to create it. All
 **MODIFY files:** Read and `Grep` for key changes. Note: applied vs still needed.
 Cross-check each technical requirement against code artifacts.
 
-**Semantic assessment:** Run `TM semantic-explore TASK-CODE` to discover any new or modified files across the project that are conceptually related to this task. This catches changes made by other agents or parallel tasks since the task was last active, revealing integration points that may need attention.
+**Related code heuristics:** Run `TM duplicates --keywords "<task keywords>"` and `TM find-files "<keywords>"` to discover any new or modified files across the project that are conceptually related to this task. This catches changes made by other work since the task was last active, revealing integration points that may need attention.
 
 #### Step 4: Explore Related Code
 
@@ -788,7 +575,7 @@ Ask: "Ready to continue implementation, or would you like to adjust the approach
 
 ## Continue All Flow
 
-Resume work on **all in-progress tasks** simultaneously. By default, tasks are continued **in parallel** using subagents (one agent per task). Use `/task continue all sequential` to process tasks one at a time instead.
+Resume work on **all in-progress tasks** sequentially by default so each update can be reviewed before the next task starts.
 
 ### Continue All — Task Discovery
 
@@ -811,53 +598,22 @@ Present: "Found **N in-progress tasks** to continue."
 | 1 | CODE1 | Title | HIGH |
 | 2 | CODE2 | Title | MEDIUM |
 
-GATE: "Spawn agents to continue all tasks" / "Cancel"
+GATE: "Implement tasks sequentially" / "Cancel"
 
-#### Step 2a: Parallel execution (default)
+#### Step 2a: Sequential execution (default)
 
-**Execution mode:** If `$CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` = `"1"`, use Agent Teams mode. Otherwise skip to standard subagent mode.
+For each task in priority order, execute the standard Continue Flow one at a time:
 
-**── Agent Teams mode ──**
+1. Checkout the task branch.
+2. Read the full task details.
+3. Assess the current implementation state.
+4. Explore related code for patterns and context.
+5. Implement the remaining work according to DESCRIPTION and TECHNICAL DETAILS.
+6. Run `{VERIFY_COMMAND}` and fix failures, up to 3 attempts.
+7. Commit the changes.
+8. Mark the task as done.
 
-Create team `"claw-continue-all"` via `TeamCreate` with `description: "Continue all in-progress tasks"`. Create `TaskCreate` entries for each task, plus `"QA review"`, `"Documentation"`, and `"Security scan"`. Spawn teammates (`team_name: "claw-continue-all"`):
-
-| Teammate | Count | Config |
-|----------|-------|--------|
-| `backend-dev-{CODE}` | 1 per task | `mode: "bypassPermissions"` |
-| `frontend-dev-{CODE}` | 1 per task | `mode: "bypassPermissions"` |
-| `qa-agent` | 1 | `mode: "bypassPermissions"` |
-| `documenter` | 1 | `mode: "bypassPermissions"` |
-| `security-scanner` | 1 | `mode: "bypassPermissions"` |
-
-Use the same agent prompts as Pick All Agent Teams mode, adapted for continuation:
-- Backend dev: assess current state first (`TM parse`, check existing files), then implement remaining server-side work
-- Frontend dev: wait for backend dev, then implement remaining UI work
-- QA, documenter, security-scanner: same review/docs/security prompts as Pick All
-
-After all teammates complete → `SendMessage {type: "shutdown_request"}` to all → `TeamDelete`. Continue to Step 3 (results).
-
-**── Standard subagent mode (default) ──**
-
-For each in-progress task, spawn Agent subagents with `mode: "bypassPermissions"`:
-
-```
-prompt: "You are a task continuation agent. Continue implementing task {CODE}.
-
-1. Checkout task branch: `git checkout task/{CODE}`
-2. Read full task details: `TM parse {CODE}`
-3. Assess current implementation state: check which files exist, what's done vs remaining
-4. Explore related code for patterns and context
-5. Implement remaining work according to DESCRIPTION and TECHNICAL DETAILS
-6. Run {VERIFY_COMMAND} — on failure, fix and retry (max 3 attempts)
-7. Commit: `git add <changed files> && git commit -m 'feat: {description} ({CODE})'`
-8. Mark task as done: `TM move {CODE} --to done --completed-summary 'Completed: {title}'`
-
-Report: {{ code, success, summary, files_changed[], error_if_any }}"
-```
-
-#### Step 2b: Sequential execution (`/task continue all sequential`)
-
-For each task in priority order, execute the standard **Continue Flow** one at a time. Wait for user direction before moving to the next.
+Wait for user direction before moving to the next task.
 
 #### Step 3: Present results
 
