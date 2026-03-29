@@ -169,41 +169,62 @@ def _path_matches_allowlist(path: str, allowlist: list[str]) -> bool:
     Returns:
         ``True`` if the path is permitted, ``False`` otherwise.
     """
+    is_win = _PLATFORM_SYSTEM == "Windows"
+
+    def _normalize(value: str) -> list[str]:
+        normalized = value.replace("\\", "/").rstrip("/")
+        if is_win:
+            normalized = normalized.lower()
+        variants = [normalized]
+        if is_win and len(normalized) >= 3 and normalized[1] == ":" and normalized[2] == "/":
+            variants.append(normalized[3:])
+            variants.append("/" + normalized[3:])
+        return sorted(set(variants))
+
     try:
-        resolved = str(Path(path).resolve())
+        normalized_path_variants = _normalize(str(Path(path).resolve()))
     except (OSError, ValueError):
         return False
-
-    is_win = _PLATFORM_SYSTEM == "Windows"
-    if is_win:
-        resolved_lower = resolved.lower()
 
     for pattern in allowlist:
         if not pattern:
             continue
         # Glob-style pattern
-        if "*" in pattern or "?" in pattern:
+        normalized_pattern_variants = _normalize(pattern)
+        if any("*" in p or "?" in p for p in normalized_pattern_variants):
             try:
-                if fnmatch.fnmatch(resolved, pattern):
-                    return True
-                if is_win and fnmatch.fnmatch(
-                    resolved_lower, pattern.lower()
-                ):
-                    return True
+                for resolved in normalized_path_variants:
+                    for pattern_candidate in normalized_pattern_variants:
+                        if fnmatch.fnmatch(resolved, pattern_candidate):
+                            return True
             except (ValueError, OSError):
                 continue
         else:
             # Literal prefix match
             try:
-                pattern_resolved = str(Path(pattern).resolve())
+                pattern_resolved = Path(pattern).as_posix().rstrip("/")
+                if is_win:
+                    pattern_resolved = pattern_resolved.lower()
             except (OSError, ValueError):
                 continue
-            if is_win:
-                if resolved_lower.startswith(pattern_resolved.lower()):
-                    return True
+            if _PLATFORM_SYSTEM == "Windows":
+                pattern_variants = [pattern_resolved, f"/{pattern_resolved}"]
+                if len(pattern_resolved) >= 3 and pattern_resolved[1] == ":" and pattern_resolved[2] == "/":
+                    pattern_variants.append(pattern_resolved[3:])
+                    if pattern_resolved[3:].startswith("/"):
+                        pattern_variants.append(pattern_resolved[3:])
             else:
-                if resolved.startswith(pattern_resolved):
-                    return True
+                pattern_variants = [pattern_resolved]
+
+            if is_win:
+                for resolved in normalized_path_variants:
+                    for pattern_candidate in pattern_variants:
+                        if resolved.startswith(pattern_candidate):
+                            return True
+            else:
+                for resolved in normalized_path_variants:
+                    if resolved.startswith(pattern_resolved):
+                        return True
     return False
 
 
